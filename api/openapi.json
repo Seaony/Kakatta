@@ -1,0 +1,1898 @@
+{
+  "openapi": "3.1.0",
+  "jsonSchemaDialect": "https://spec.openapis.org/oas/3.1/dialect/base",
+  "info": {
+    "title": "Kakatta 接口",
+    "version": "1.0.0",
+    "description": "字段使用小写蛇形命名，时间为 UTC Unix 整数毫秒。成功直接返回描述中的值；失败统一返回 ErrorEnvelope。初始化、登录和验证码端点校验各自凭据，其余业务、描述和事件流都要求会话或 Bearer 令牌。重复、冲突的认证凭据直接拒绝，不回退选择较弱凭据。浏览器写操作统一检查同源，不另发 CSRF 令牌。"
+  },
+  "servers": [
+    {
+      "url": "/"
+    }
+  ],
+  "tags": [
+    {
+      "name": "安全",
+      "description": "初始化、登录和安全设置。"
+    },
+    {
+      "name": "设置",
+      "description": "设置值及元数据。"
+    },
+    {
+      "name": "系统",
+      "description": "健康检查、事件流和接口描述。"
+    }
+  ],
+  "paths": {
+    "/healthz": {
+      "get": {
+        "operationId": "getHealth",
+        "summary": "检查服务是否可用",
+        "description": "检查服务是否可用",
+        "tags": [
+          "系统"
+        ],
+        "security": [],
+        "x-authentication": "none",
+        "responses": {
+          "200": {
+            "description": "服务可用。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthReady"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "服务不可用；不披露内部原因。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthUnavailable"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/setup": {
+      "get": {
+        "operationId": "getSetupStatus",
+        "summary": "读取初始化状态",
+        "description": "读取初始化状态",
+        "tags": [
+          "安全"
+        ],
+        "security": [],
+        "x-authentication": "initialization_status",
+        "responses": {
+          "200": {
+            "description": "只返回是否初始化及令牌到期时间；不返回令牌、用户名或设置。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupStatus"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "post": {
+        "operationId": "setupAdmin",
+        "summary": "以一次性令牌建立管理员",
+        "description": "验证初始化令牌后原子建立管理员。令牌只在内存保留三十分钟，成功后不能再使用。",
+        "tags": [
+          "安全"
+        ],
+        "security": [],
+        "x-authentication": "initialization_token",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetupRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "建立管理员并登录。",
+            "headers": {
+              "Set-Cookie": {
+                "description": "认证成功后设置 HttpOnly、Path=/、SameSite=Lax 且无 Domain 的 Cookie；HTTP 用 kakatta_session，实际 HTTPS 或可信代理报告 HTTPS 时用 __Host-kakatta_session 并加 Secure。登录返回 totp_required 时不发 Cookie。",
+                "schema": {
+                  "type": "string",
+                  "x-sensitive": true
+                }
+              },
+              "Cache-Control": {
+                "description": "敏感响应不得缓存。",
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "operationId": "login",
+        "summary": "使用用户名和密码登录",
+        "description": "使用用户名和密码登录",
+        "tags": [
+          "安全"
+        ],
+        "security": [],
+        "x-authentication": "username_password",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "已认证时发 Cookie；需要两步验证时只返回五分钟挑战。",
+            "headers": {
+              "Set-Cookie": {
+                "description": "认证成功后设置 HttpOnly、Path=/、SameSite=Lax 且无 Domain 的 Cookie；HTTP 用 kakatta_session，实际 HTTPS 或可信代理报告 HTTPS 时用 __Host-kakatta_session 并加 Secure。登录返回 totp_required 时不发 Cookie。",
+                "schema": {
+                  "type": "string",
+                  "x-sensitive": true
+                }
+              },
+              "Cache-Control": {
+                "description": "敏感响应不得缓存。",
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/totp": {
+      "post": {
+        "operationId": "verifyLoginTOTP",
+        "summary": "完成登录的两步验证",
+        "description": "完成登录的两步验证",
+        "tags": [
+          "安全"
+        ],
+        "security": [],
+        "x-authentication": "login_challenge_and_totp",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TOTPLoginRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "验证码消费与创建会话同时成功后才发 Cookie。",
+            "headers": {
+              "Set-Cookie": {
+                "description": "认证成功后设置 HttpOnly、Path=/、SameSite=Lax 且无 Domain 的 Cookie；HTTP 用 kakatta_session，实际 HTTPS 或可信代理报告 HTTPS 时用 __Host-kakatta_session 并加 Secure。登录返回 totp_required 时不发 Cookie。",
+                "schema": {
+                  "type": "string",
+                  "x-sensitive": true
+                }
+              },
+              "Cache-Control": {
+                "description": "敏感响应不得缓存。",
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "operationId": "logout",
+        "summary": "退出当前会话或令牌",
+        "description": "退出当前会话或令牌",
+        "tags": [
+          "安全"
+        ],
+        "security": [
+          {
+            "CookieSession": []
+          },
+          {
+            "SecureCookieSession": []
+          },
+          {
+            "BearerToken": []
+          }
+        ],
+        "x-authentication": "session_or_api_token",
+        "responses": {
+          "204": {
+            "description": "当前凭据已吊销。",
+            "headers": {
+              "Set-Cookie": {
+                "description": "退出后清除会话 Cookie；名称及安全属性随当前可信协议确定。",
+                "schema": {
+                  "type": "string",
+                  "x-sensitive": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/me": {
+      "get": {
+        "operationId": "getMe",
+        "summary": "读取当前身份与界面偏好",
+        "description": "读取当前身份与界面偏好",
+        "tags": [
+          "安全"
+        ],
+        "security": [
+          {
+            "CookieSession": []
+          },
+          {
+            "SecureCookieSession": []
+          },
+          {
+            "BearerToken": []
+          }
+        ],
+        "x-authentication": "session_or_api_token",
+        "responses": {
+          "200": {
+            "description": "当前身份。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/settings": {
+      "get": {
+        "operationId": "getSettings",
+        "summary": "读取有效设置快照",
+        "description": "读取有效设置快照",
+        "tags": [
+          "设置"
+        ],
+        "security": [
+          {
+            "CookieSession": []
+          },
+          {
+            "SecureCookieSession": []
+          },
+          {
+            "BearerToken": []
+          }
+        ],
+        "x-authentication": "session_or_api_token",
+        "responses": {
+          "200": {
+            "description": "有效值、来源和推荐范围警告。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsSnapshot"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "patchSettings",
+        "summary": "原子保存设置补丁",
+        "description": "整个 values 补丁一起校验、一起保存。环境覆盖项只读；推荐范围之外只警告，不自动改值。时区保护记录由存储事务一起更新。",
+        "tags": [
+          "设置"
+        ],
+        "security": [
+          {
+            "CookieSession": []
+          },
+          {
+            "SecureCookieSession": []
+          },
+          {
+            "BearerToken": []
+          }
+        ],
+        "x-authentication": "session_or_api_token",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettingsPatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "保存后的完整有效快照。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsSnapshot"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationFailed"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/settings/definitions": {
+      "get": {
+        "operationId": "listSettingDefinitions",
+        "summary": "读取设置元数据",
+        "description": "读取设置元数据",
+        "tags": [
+          "设置"
+        ],
+        "security": [
+          {
+            "CookieSession": []
+          },
+          {
+            "SecureCookieSession": []
+          },
+          {
+            "BearerToken": []
+          }
+        ],
+        "x-authentication": "session_or_api_token",
+        "responses": {
+          "200": {
+            "description": "直接返回设置定义数组。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SettingDefinition"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/security/tokens": {
+      "get": {
+        "operationId": "listSecurityTokens",
+        "summary": "列出设备和令牌元数据",
+        "description": "列出设备和令牌元数据",
+        "tags": [
+          "安全"
+        ],
+        "security": [
+          {
+            "CookieSession": []
+          },
+          {
+            "SecureCookieSession": []
+          },
+          {
+            "BearerToken": []
+          }
+        ],
+        "x-authentication": "session_or_api_token",
+        "responses": {
+          "200": {
+            "description": "已存凭据只返回元数据。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "post": {
+        "operationId": "createSecurityToken",
+        "summary": "创建接口令牌",
+        "description": "创建接口令牌",
+        "tags": [
+          "安全"
+        ],
+        "security": [
+          {
+            "CookieSession": []
+          },
+          {
+            "SecureCookieSession": []
+          },
+          {
+            "BearerToken": []
+          }
+        ],
+        "x-authentication": "session_or_api_token",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTokenRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "创建成功，明文只返回本次。",
+            "headers": {
+              "Cache-Control": {
+                "description": "敏感响应不得缓存。",
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssuedToken"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/security/tokens/{id}": {
+      "delete": {
+        "operationId": "revokeSecurityToken",
+        "summary": "吊销指定设备或令牌",
+        "description": "吊销指定设备或令牌",
+        "tags": [
+          "安全"
+        ],
+        "security": [
+          {
+            "CookieSession": []
+          },
+          {
+            "SecureCookieSession": []
+          },
+          {
+            "BearerToken": []
+          }
+        ],
+        "x-authentication": "session_or_api_token",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "设备或接口令牌编号。"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "指定凭据已吊销。"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/security/password": {
+      "post": {
+        "operationId": "changePassword",
+        "summary": "修改登录密码",
+        "description": "修改登录密码",
+        "tags": [
+          "安全"
+        ],
+        "security": [
+          {
+            "CookieSession": []
+          },
+          {
+            "SecureCookieSession": []
+          },
+          {
+            "BearerToken": []
+          }
+        ],
+        "x-authentication": "session_or_api_token",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePasswordRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "密码已更新，其他会话和令牌按安全规则吊销。"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/security/totp/setup": {
+      "post": {
+        "operationId": "beginTOTPSetup",
+        "summary": "开始绑定两步验证",
+        "description": "开始绑定两步验证",
+        "tags": [
+          "安全"
+        ],
+        "security": [
+          {
+            "CookieSession": []
+          },
+          {
+            "SecureCookieSession": []
+          },
+          {
+            "BearerToken": []
+          }
+        ],
+        "x-authentication": "session_or_api_token",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TOTPSetupRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "本次绑定的临时密钥和 URI；尚未启用两步验证。",
+            "headers": {
+              "Cache-Control": {
+                "description": "敏感响应不得缓存。",
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TOTPSetup"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/security/totp/enable": {
+      "post": {
+        "operationId": "enableTOTP",
+        "summary": "验证并启用两步验证",
+        "description": "验证并启用两步验证",
+        "tags": [
+          "安全"
+        ],
+        "security": [
+          {
+            "CookieSession": []
+          },
+          {
+            "SecureCookieSession": []
+          },
+          {
+            "BearerToken": []
+          }
+        ],
+        "x-authentication": "session_or_api_token",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TOTPEnableRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "两步验证已启用。"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/security/totp/disable": {
+      "post": {
+        "operationId": "disableTOTP",
+        "summary": "关闭两步验证",
+        "description": "关闭两步验证",
+        "tags": [
+          "安全"
+        ],
+        "security": [
+          {
+            "CookieSession": []
+          },
+          {
+            "SecureCookieSession": []
+          },
+          {
+            "BearerToken": []
+          }
+        ],
+        "x-authentication": "session_or_api_token",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TOTPDisableRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "两步验证已关闭。"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/events": {
+      "get": {
+        "operationId": "streamEvents",
+        "summary": "订阅已认证的事件流",
+        "description": "订阅已认证的事件流",
+        "tags": [
+          "系统"
+        ],
+        "security": [
+          {
+            "CookieSession": []
+          },
+          {
+            "SecureCookieSession": []
+          },
+          {
+            "BearerToken": []
+          }
+        ],
+        "x-authentication": "session_or_api_token",
+        "parameters": [
+          {
+            "name": "Last-Event-ID",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "上次接收的事件位置。"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SSE 事件流。数据使用事件类型及原因代码；保活、慢客户端和断线恢复由服务端统一处理。凭据吊销后不得继续接收业务数据。",
+            "headers": {
+              "Cache-Control": {
+                "description": "敏感响应不得缓存。",
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                }
+              }
+            },
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/openapi.json": {
+      "get": {
+        "operationId": "getOpenAPI",
+        "summary": "读取完整接口描述",
+        "description": "读取完整接口描述",
+        "tags": [
+          "系统"
+        ],
+        "security": [
+          {
+            "CookieSession": []
+          },
+          {
+            "SecureCookieSession": []
+          },
+          {
+            "BearerToken": []
+          }
+        ],
+        "x-authentication": "session_or_api_token",
+        "responses": {
+          "200": {
+            "description": "与仓库描述及编译时嵌入的内容一致。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OpenAPIDocument"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "JsonValue": {
+        "description": "任意合法 JSON 值；设置键及值的业务校验由设置模块负责。",
+        "oneOf": [
+          {
+            "type": "null"
+          },
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "string"
+          },
+          {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/JsonValue"
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            }
+          }
+        ]
+      },
+      "LocalizedMessage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "args"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "minLength": 1
+          },
+          "args": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "description": "没有参数时仍返回空对象。"
+          }
+        }
+      },
+      "FieldIssue": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "key",
+          "reason"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/LocalizedMessage"
+          }
+        }
+      },
+      "ErrorEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "error",
+          "fields",
+          "request_id"
+        ],
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/LocalizedMessage"
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FieldIssue"
+            }
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "服务端生成的请求编号，不照抄客户端输入。"
+          }
+        }
+      },
+      "HealthReady": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "ok"
+          }
+        }
+      },
+      "HealthUnavailable": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "unavailable"
+          }
+        }
+      },
+      "SetupStatus": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "initialized",
+          "token_expires_at"
+        ],
+        "properties": {
+          "initialized": {
+            "type": "boolean"
+          },
+          "token_expires_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "UTC Unix 毫秒；尚无记录时为 null。"
+          }
+        }
+      },
+      "SetupRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "token",
+          "username",
+          "password"
+        ],
+        "properties": {
+          "token": {
+            "type": "string",
+            "minLength": 1,
+            "writeOnly": true,
+            "x-sensitive": true,
+            "description": "容器日志中的一次性初始化令牌。"
+          },
+          "username": {
+            "type": "string",
+            "minLength": 1
+          },
+          "password": {
+            "type": "string",
+            "minLength": 1,
+            "writeOnly": true,
+            "x-sensitive": true,
+            "description": "管理员密码。"
+          }
+        }
+      },
+      "LoginRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "username",
+          "password"
+        ],
+        "properties": {
+          "username": {
+            "type": "string",
+            "minLength": 1
+          },
+          "password": {
+            "type": "string",
+            "minLength": 1,
+            "writeOnly": true,
+            "x-sensitive": true,
+            "description": "管理员密码。"
+          }
+        }
+      },
+      "TOTPLoginRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "challenge",
+          "code"
+        ],
+        "properties": {
+          "challenge": {
+            "type": "string",
+            "minLength": 1,
+            "writeOnly": true,
+            "x-sensitive": true,
+            "description": "第一步登录发放的五分钟挑战。"
+          },
+          "code": {
+            "type": "string",
+            "pattern": "^[0-9]{6}$",
+            "writeOnly": true,
+            "x-sensitive": true,
+            "description": "验证器中的六位数字，保留开头的零。"
+          }
+        }
+      },
+      "Me": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "username",
+          "auth_kind",
+          "token_id",
+          "language",
+          "appearance",
+          "totp_enabled"
+        ],
+        "properties": {
+          "username": {
+            "type": "string"
+          },
+          "auth_kind": {
+            "type": "string",
+            "enum": [
+              "web_session",
+              "api_token"
+            ]
+          },
+          "token_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "system",
+              "zh-CN",
+              "en"
+            ]
+          },
+          "appearance": {
+            "type": "string",
+            "enum": [
+              "system",
+              "light",
+              "dark"
+            ]
+          },
+          "totp_enabled": {
+            "type": "boolean"
+          }
+        }
+      },
+      "AuthenticatedLogin": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status",
+          "user"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "authenticated"
+          },
+          "user": {
+            "$ref": "#/components/schemas/Me"
+          }
+        }
+      },
+      "TOTPRequiredLogin": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status",
+          "challenge",
+          "expires_at"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "totp_required"
+          },
+          "challenge": {
+            "type": "string",
+            "minLength": 1,
+            "x-sensitive": true,
+            "description": "仅用于本次第二步验证的挑战，不是登录会话。"
+          },
+          "expires_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "UTC Unix 毫秒。"
+          }
+        }
+      },
+      "LoginResult": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/AuthenticatedLogin"
+          },
+          {
+            "$ref": "#/components/schemas/TOTPRequiredLogin"
+          }
+        ],
+        "discriminator": {
+          "propertyName": "status",
+          "mapping": {
+            "authenticated": "#/components/schemas/AuthenticatedLogin",
+            "totp_required": "#/components/schemas/TOTPRequiredLogin"
+          }
+        }
+      },
+      "SettingValues": {
+        "type": "object",
+        "additionalProperties": {
+          "$ref": "#/components/schemas/JsonValue"
+        }
+      },
+      "SettingSource": {
+        "type": "string",
+        "enum": [
+          "default",
+          "stored",
+          "environment"
+        ]
+      },
+      "SettingsSnapshot": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "values",
+          "sources",
+          "warnings"
+        ],
+        "properties": {
+          "values": {
+            "$ref": "#/components/schemas/SettingValues"
+          },
+          "sources": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SettingSource"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FieldIssue"
+            }
+          }
+        }
+      },
+      "SettingsPatch": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "values"
+        ],
+        "properties": {
+          "values": {
+            "$ref": "#/components/schemas/SettingValues"
+          }
+        }
+      },
+      "SettingRecommendation": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "min",
+          "max",
+          "text"
+        ],
+        "properties": {
+          "min": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "max": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "text": {
+            "$ref": "#/components/schemas/LocalizedMessage"
+          }
+        }
+      },
+      "SettingDefinition": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "key",
+          "group",
+          "kind",
+          "default",
+          "unit",
+          "options",
+          "recommendation",
+          "label",
+          "why",
+          "risk",
+          "task_override"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "group": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "integer",
+              "boolean",
+              "string",
+              "range",
+              "quiet_hours",
+              "ids",
+              "strings",
+              "nullable_id"
+            ]
+          },
+          "default": {
+            "$ref": "#/components/schemas/JsonValue"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/JsonValue"
+            }
+          },
+          "recommendation": {
+            "$ref": "#/components/schemas/SettingRecommendation"
+          },
+          "label": {
+            "$ref": "#/components/schemas/LocalizedMessage"
+          },
+          "why": {
+            "$ref": "#/components/schemas/LocalizedMessage"
+          },
+          "risk": {
+            "$ref": "#/components/schemas/LocalizedMessage"
+          },
+          "task_override": {
+            "type": "boolean"
+          }
+        }
+      },
+      "TokenMetadata": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "kind",
+          "name",
+          "created_at",
+          "last_used_at",
+          "expires_at",
+          "revoked_at",
+          "current"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "web_session",
+              "api_token"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "UTC Unix 毫秒；尚无记录时为 null。"
+          },
+          "last_used_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "UTC Unix 毫秒；尚无记录时为 null。"
+          },
+          "expires_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "UTC Unix 毫秒；尚无记录时为 null。"
+          },
+          "revoked_at": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "UTC Unix 毫秒；尚无记录时为 null。"
+          },
+          "current": {
+            "type": "boolean"
+          }
+        }
+      },
+      "TokenList": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "tokens"
+        ],
+        "properties": {
+          "tokens": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TokenMetadata"
+            }
+          }
+        }
+      },
+      "CreateTokenRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "IssuedToken": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "token",
+          "created_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "token": {
+            "type": "string",
+            "minLength": 1,
+            "x-sensitive": true,
+            "description": "仅在创建成功时返回一次；之后列表只返回元数据。"
+          },
+          "created_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "UTC Unix 毫秒。"
+          }
+        }
+      },
+      "ChangePasswordRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "old_password",
+          "new_password"
+        ],
+        "properties": {
+          "old_password": {
+            "type": "string",
+            "minLength": 1,
+            "writeOnly": true,
+            "x-sensitive": true,
+            "description": "当前密码。"
+          },
+          "new_password": {
+            "type": "string",
+            "minLength": 1,
+            "writeOnly": true,
+            "x-sensitive": true,
+            "description": "新密码。"
+          }
+        }
+      },
+      "TOTPSetupRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "password"
+        ],
+        "properties": {
+          "password": {
+            "type": "string",
+            "minLength": 1,
+            "writeOnly": true,
+            "x-sensitive": true,
+            "description": "当前密码。"
+          }
+        }
+      },
+      "TOTPSetup": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "setup_token",
+          "secret",
+          "uri",
+          "expires_at"
+        ],
+        "properties": {
+          "setup_token": {
+            "type": "string",
+            "minLength": 1,
+            "x-sensitive": true,
+            "description": "本次绑定使用的临时令牌。"
+          },
+          "secret": {
+            "type": "string",
+            "minLength": 1,
+            "x-sensitive": true,
+            "description": "仅在本次绑定响应中返回，验证成功后才保存。"
+          },
+          "uri": {
+            "type": "string",
+            "minLength": 1,
+            "x-sensitive": true,
+            "description": "验证器绑定 URI，仅在本次绑定响应中返回。",
+            "format": "uri"
+          },
+          "expires_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "UTC Unix 毫秒。"
+          }
+        }
+      },
+      "TOTPEnableRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "setup_token",
+          "code"
+        ],
+        "properties": {
+          "setup_token": {
+            "type": "string",
+            "minLength": 1,
+            "writeOnly": true,
+            "x-sensitive": true,
+            "description": "本次绑定返回的临时令牌。"
+          },
+          "code": {
+            "type": "string",
+            "pattern": "^[0-9]{6}$",
+            "writeOnly": true,
+            "x-sensitive": true,
+            "description": "验证器中的六位数字，保留开头的零。"
+          }
+        }
+      },
+      "TOTPDisableRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "password",
+          "code"
+        ],
+        "properties": {
+          "password": {
+            "type": "string",
+            "minLength": 1,
+            "writeOnly": true,
+            "x-sensitive": true,
+            "description": "当前密码。"
+          },
+          "code": {
+            "type": "string",
+            "pattern": "^[0-9]{6}$",
+            "writeOnly": true,
+            "x-sensitive": true,
+            "description": "验证器中的六位数字，保留开头的零。"
+          }
+        }
+      },
+      "OpenAPIDocument": {
+        "type": "object",
+        "additionalProperties": {
+          "$ref": "#/components/schemas/JsonValue"
+        },
+        "description": "仓库 api/openapi.json 的完整内容。"
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "JSON、字段或参数不合法。JSON 请求拒绝重复字段及未声明的属性，设置值映射仍由设置模块校验。",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "尚未登录、凭据不正确，或会话、令牌、挑战已失效。",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "浏览器跨站写操作被拒绝。",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "指定对象不存在。",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "当前初始化或两步验证状态不允许此操作。",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
+          }
+        }
+      },
+      "PayloadTooLarge": {
+        "description": "请求体过大。",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
+          }
+        }
+      },
+      "UnsupportedMediaType": {
+        "description": "请求内容类型不是受支持的 JSON。",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
+          }
+        }
+      },
+      "ValidationFailed": {
+        "description": "设置校验失败；fields 中列出每个字段的原因。",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
+          }
+        }
+      },
+      "TooManyRequests": {
+        "description": "登录失败保护正在限制请求。",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
+          }
+        },
+        "headers": {
+          "Retry-After": {
+            "description": "重新尝试前至少等待的秒数。",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      },
+      "InternalError": {
+        "description": "服务暂时无法完成请求；不返回内部错误和敏感输入。",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorEnvelope"
+            }
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "CookieSession": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "kakatta_session",
+        "description": "明文 HTTP 的网页登录会话，HttpOnly、Path=/、SameSite=Lax，无 Domain。"
+      },
+      "SecureCookieSession": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "__Host-kakatta_session",
+        "description": "HTTPS 的网页登录会话，HttpOnly、Secure、Path=/、SameSite=Lax，无 Domain；只信任真实连接或可信代理报告的 HTTPS。"
+      },
+      "BearerToken": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "opaque",
+        "description": "安全设置中新建的随机接口令牌。"
+      }
+    }
+  }
+}
