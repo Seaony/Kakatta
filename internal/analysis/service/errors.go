@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/Seaony/Kakatta/internal/analysis/client"
 	"github.com/Seaony/Kakatta/internal/locales"
 	"github.com/Seaony/Kakatta/internal/service"
 	"github.com/Seaony/Kakatta/internal/settings"
@@ -27,6 +28,21 @@ func storageFailure(err error) error {
 	}
 	return &storageError{business: &service.ServiceError{Kind: service.ErrorUnavailable,
 		Reason: locales.Message{Code: "service.storage_failure", Args: map[string]any{}}, Fields: []settings.Issue{}}, cause: err}
+}
+
+func requestFailure(err error) error {
+	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	var business *service.ServiceError
+	if errors.As(err, &business) {
+		return err
+	}
+	kind := service.ErrorUnavailable
+	if errors.Is(err, client.ErrConfigChanged) {
+		kind = service.ErrorConflict
+	}
+	return &storageError{business: &service.ServiceError{Kind: kind, Reason: *trialReason(err), Fields: []settings.Issue{}}, cause: err}
 }
 
 func invalidProvider(field string) error {
