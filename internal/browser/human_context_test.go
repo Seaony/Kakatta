@@ -80,18 +80,19 @@ func (w *lookupWire) Write(ctx context.Context, msg *cdproto.Message) error {
 
 func lookupProtocol(t *testing.T) (*Human, *lookupWire, context.CancelCauseFunc) {
 	t.Helper()
-	lifetime, cancel := context.WithCancelCause(t.Context())
+	lifetime, cancelTransport := context.WithCancel(t.Context())
 	wire := &lookupWire{runtimeWire: &runtimeWire{in: make(chan cdproto.Message, 128), closed: make(chan struct{})}, entered: make(chan struct{})}
 	browser, err := chromedp.NewBrowserTransport(lifetime, wire)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancelTarget := chromedp.NewContext(lifetime, chromedp.WithTargetID("main"), func(c *chromedp.Context) { c.Browser = browser })
-	t.Cleanup(func() { cancelTarget(); cancel(nil); wire.Close() })
+	sessionCtx, cancelSession := context.WithCancelCause(ctx)
+	t.Cleanup(func() { cancelSession(nil); cancelTarget(); cancelTransport(); wire.Close() })
 	if err := initializeTarget(ctx); err != nil {
 		t.Fatal(err)
 	}
-	return NewHuman(&Session{ctx: ctx}, pacer.New(nil), pacer.Between(0, 0)), wire, cancel
+	return NewHuman(&Session{ctx: sessionCtx}, pacer.New(nil), pacer.Between(0, 0)), wire, cancelSession
 }
 
 func awaitLookup(t *testing.T, finished <-chan error, stop context.CancelCauseFunc) error {

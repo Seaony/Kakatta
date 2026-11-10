@@ -121,7 +121,7 @@ func (w *generationWire) counts() (generation, stale int) {
 
 func generationProtocol(t *testing.T) (*Human, *generationWire, context.CancelCauseFunc) {
 	t.Helper()
-	lifetime, cancel := context.WithCancelCause(t.Context())
+	lifetime, cancelTransport := context.WithCancel(t.Context())
 	wire := &generationWire{
 		lookupWire: &lookupWire{runtimeWire: &runtimeWire{in: make(chan cdproto.Message, 128), closed: make(chan struct{})}},
 		paused:     make(chan struct{}), pending: make(chan cdproto.Message, 1),
@@ -131,11 +131,12 @@ func generationProtocol(t *testing.T) (*Human, *generationWire, context.CancelCa
 		t.Fatal(err)
 	}
 	ctx, cancelTarget := chromedp.NewContext(lifetime, chromedp.WithTargetID("main"), func(c *chromedp.Context) { c.Browser = browser })
-	t.Cleanup(func() { cancelTarget(); cancel(nil); wire.Close() })
+	sessionCtx, cancelSession := context.WithCancelCause(ctx)
+	t.Cleanup(func() { cancelSession(nil); cancelTarget(); cancelTransport(); wire.Close() })
 	if err := initializeTarget(ctx); err != nil {
 		t.Fatal(err)
 	}
-	return NewHuman(&Session{ctx: ctx}, pacer.New(nil), pacer.Between(0, 0)), wire, cancel
+	return NewHuman(&Session{ctx: sessionCtx}, pacer.New(nil), pacer.Between(0, 0)), wire, cancelSession
 }
 
 func awaitPausedDOM(t *testing.T, wire *generationWire) {

@@ -74,7 +74,7 @@ func (w *navigationWire) Write(ctx context.Context, msg *cdproto.Message) error 
 
 func navigationProtocol(t *testing.T) (*Session, *navigationWire, context.CancelCauseFunc) {
 	t.Helper()
-	lifetime, cancel := context.WithCancelCause(t.Context())
+	lifetime, cancelTransport := context.WithCancel(t.Context())
 	wire := &navigationWire{
 		runtimeWire: &runtimeWire{in: make(chan cdproto.Message, 128), closed: make(chan struct{})},
 		entered:     make(chan struct{}),
@@ -84,11 +84,12 @@ func navigationProtocol(t *testing.T) (*Session, *navigationWire, context.Cancel
 		t.Fatal(err)
 	}
 	ctx, cancelTarget := chromedp.NewContext(lifetime, chromedp.WithTargetID("main"), func(c *chromedp.Context) { c.Browser = browser })
-	t.Cleanup(func() { cancelTarget(); cancel(nil); wire.Close() })
+	sessionCtx, cancelSession := context.WithCancelCause(ctx)
+	t.Cleanup(func() { cancelSession(nil); cancelTarget(); cancelTransport(); wire.Close() })
 	if err := initializeTarget(ctx); err != nil {
 		t.Fatal(err)
 	}
-	return &Session{ctx: ctx}, wire, cancel
+	return &Session{ctx: sessionCtx}, wire, cancelSession
 }
 
 func (w *navigationWire) lifecycle(frame, loader, name string) {

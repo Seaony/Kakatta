@@ -60,19 +60,20 @@ func (w *readWire) Write(ctx context.Context, msg *cdproto.Message) error {
 
 func readProtocol(t *testing.T) (*Human, *chromedp.Node, *readWire, context.CancelCauseFunc) {
 	t.Helper()
-	lifetime, cancel := context.WithCancelCause(t.Context())
+	lifetime, cancelTransport := context.WithCancel(t.Context())
 	wire := &readWire{lookupWire: &lookupWire{runtimeWire: &runtimeWire{in: make(chan cdproto.Message, 128), closed: make(chan struct{})}, entered: make(chan struct{})}}
 	browser, err := chromedp.NewBrowserTransport(lifetime, wire)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancelTarget := chromedp.NewContext(lifetime, chromedp.WithTargetID("main"), func(c *chromedp.Context) { c.Browser = browser })
-	t.Cleanup(func() { cancelTarget(); cancel(nil); wire.Close() })
+	sessionCtx, cancelSession := context.WithCancelCause(ctx)
+	t.Cleanup(func() { cancelSession(nil); cancelTarget(); cancelTransport(); wire.Close() })
 	if err := initializeTarget(ctx); err != nil {
 		t.Fatal(err)
 	}
-	human := NewHuman(&Session{ctx: ctx}, pacer.New(immediateClickClock{}), pacer.Between(0, 0))
-	return human, &chromedp.Node{Node: &cdp.Node{BackendNodeID: 2, NodeType: 1}}, wire, cancel
+	human := NewHuman(&Session{ctx: sessionCtx}, pacer.New(immediateClickClock{}), pacer.Between(0, 0))
+	return human, &chromedp.Node{Node: &cdp.Node{BackendNodeID: 2, NodeType: 1}}, wire, cancelSession
 }
 
 func contextRead(h *Human, ctx context.Context, n *chromedp.Node, mode string) error {
