@@ -6,6 +6,7 @@ import (
 	"net/url"
 
 	"github.com/Seaony/Kakatta/internal/notification"
+	"github.com/Seaony/Kakatta/internal/notify"
 )
 
 type notificationHandler struct {
@@ -69,6 +70,14 @@ func (b *notificationHandler) listChannels(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	result, err := b.notifications.ListChannels(r.Context())
+	if err == nil {
+		for index := range result {
+			result[index], err = channelToHTTP(result[index])
+			if err != nil {
+				break
+			}
+		}
+	}
 	b.reply(w, r, http.StatusOK, result, err)
 }
 
@@ -82,7 +91,15 @@ func (b *notificationHandler) createChannel(w http.ResponseWriter, r *http.Reque
 		b.failure(w, r, err)
 		return
 	}
+	patch, err = channelPatchFromHTTP(notification.ChannelPatch(patch), "")
+	if err != nil {
+		b.failure(w, r, err)
+		return
+	}
 	result, err := b.notifications.CreateChannel(r.Context(), notification.ChannelPatch(patch))
+	if err == nil {
+		result, err = channelToHTTP(result)
+	}
 	b.reply(w, r, http.StatusCreated, result, err)
 }
 
@@ -93,6 +110,9 @@ func (b *notificationHandler) getChannel(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	result, err := b.notifications.GetChannel(r.Context(), id)
+	if err == nil {
+		result, err = channelToHTTP(result)
+	}
 	b.reply(w, r, http.StatusOK, result, err)
 }
 
@@ -107,7 +127,24 @@ func (b *notificationHandler) updateChannel(w http.ResponseWriter, r *http.Reque
 		b.failure(w, r, err)
 		return
 	}
+	var currentType notify.Type
+	if _, present := patch["type"]; !present {
+		current, err := b.notifications.GetChannel(r.Context(), id)
+		if err != nil {
+			b.failure(w, r, err)
+			return
+		}
+		currentType = current.Type
+	}
+	patch, err = channelPatchFromHTTP(notification.ChannelPatch(patch), currentType)
+	if err != nil {
+		b.failure(w, r, err)
+		return
+	}
 	result, err := b.notifications.UpdateChannel(r.Context(), id, notification.ChannelPatch(patch))
+	if err == nil {
+		result, err = channelToHTTP(result)
+	}
 	b.reply(w, r, http.StatusOK, result, err)
 }
 

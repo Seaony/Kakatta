@@ -2673,6 +2673,7 @@ export interface components {
             grade_distribution: components["schemas"]["GradeCount"][];
             notifications: components["schemas"]["NotificationOverview"];
             period: string;
+            /** @description 全部当前任务的完整快照，无分页；按各任务 state 准确统计任务状态数量。 */
             tasks: components["schemas"]["TaskOverview"][];
             timezone: string;
             /**
@@ -4035,15 +4036,15 @@ export interface components {
              * @enum {string}
              */
             method: "GET" | "POST";
-            query_params?: {
-                [key: string]: components["schemas"]["JsonValue"];
-            };
+            /** @description JSON 文本字符串，解码后必须是 JSON 对象；数值原文保留。省略沿原默认，null 或直接提交对象均非法，不自动 stringify 兼容。 */
+            query_params?: string;
             /**
              * @default JSON
              * @enum {string}
              */
             content_type: "JSON" | "FORM";
-            body_template?: components["schemas"]["JsonValue"];
+            /** @description 任意合法 JSON 的文本字符串，数值原文保留；字符串文本可包含 JSON null，但 HTTP 字段本身不可为 null。省略沿原默认，不接受直接对象或自动 stringify 兼容。 */
+            body_template?: string;
         };
         /** @description 字段省略保留旧值；可选空串清空，headers 整对象替换且 {} 清空；null 非法。 */
         ChannelWebhookSecrets: {

@@ -672,7 +672,8 @@
             "schema": {
               "type": "integer",
               "format": "int64",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 9007199254740991
             },
             "description": "设备或接口令牌编号。"
           }
@@ -1339,7 +1340,8 @@
             "schema": {
               "type": "integer",
               "format": "int64",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 9007199254740991
             }
           }
         ]
@@ -1413,7 +1415,8 @@
             "schema": {
               "type": "integer",
               "format": "int64",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -1484,7 +1487,8 @@
             "schema": {
               "type": "integer",
               "format": "int64",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 9007199254740991
             }
           }
         ]
@@ -1554,7 +1558,8 @@
             "schema": {
               "type": "integer",
               "format": "int64",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 9007199254740991
             }
           }
         ]
@@ -1624,7 +1629,8 @@
             "schema": {
               "type": "integer",
               "format": "int64",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 9007199254740991
             }
           }
         ]
@@ -1687,7 +1693,8 @@
             "schema": {
               "type": "integer",
               "format": "int64",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 9007199254740991
             }
           }
         ]
@@ -1750,7 +1757,8 @@
             "schema": {
               "type": "integer",
               "format": "int64",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 9007199254740991
             }
           }
         ]
@@ -1826,7 +1834,8 @@
             "schema": {
               "type": "integer",
               "format": "int64",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -1906,7 +1915,8 @@
             "schema": {
               "type": "integer",
               "format": "int64",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 9007199254740991
             }
           }
         ]
@@ -1976,7 +1986,8 @@
             "schema": {
               "type": "integer",
               "format": "int64",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -3205,7 +3216,8 @@
             "schema": {
               "type": "integer",
               "format": "int64",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -3276,7 +3288,8 @@
             "schema": {
               "type": "integer",
               "format": "int64",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 9007199254740991
             }
           }
         ]
@@ -3346,7 +3359,8 @@
             "schema": {
               "type": "integer",
               "format": "int64",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 9007199254740991
             }
           }
         ]
@@ -3417,7 +3431,8 @@
             "schema": {
               "type": "integer",
               "format": "int64",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -3576,7 +3591,8 @@
             "schema": {
               "type": "integer",
               "format": "int64",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -3587,7 +3603,8 @@
             "schema": {
               "type": "integer",
               "format": "int64",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -3727,7 +3744,8 @@
             "schema": {
               "type": "integer",
               "format": "int64",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -3798,7 +3816,8 @@
             "schema": {
               "type": "integer",
               "format": "int64",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 9007199254740991
             }
           }
         ]
@@ -3868,7 +3887,8 @@
             "schema": {
               "type": "integer",
               "format": "int64",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 9007199254740991
             }
           }
         ]
@@ -4096,7 +4116,8 @@
             "schema": {
               "type": "integer",
               "format": "int64",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 9007199254740991
             }
           }
         ]
@@ -4172,7 +4193,8 @@
             "schema": {
               "type": "integer",
               "format": "int64",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -4258,7 +4280,8 @@
             "schema": {
               "type": "integer",
               "format": "int64",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -4353,7 +4376,8 @@
             "schema": {
               "type": "integer",
               "format": "int64",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -5091,7 +5115,8 @@
             "schema": {
               "type": "integer",
               "format": "int64",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -5128,7 +5153,9 @@
             "description": "UTC 毫秒，含起点。",
             "schema": {
               "type": "integer",
-              "format": "int64"
+              "format": "int64",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -5138,7 +5165,9 @@
             "description": "UTC 毫秒，不含终点。",
             "schema": {
               "type": "integer",
-              "format": "int64"
+              "format": "int64",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -5231,7 +5260,8 @@
             "schema": {
               "type": "integer",
               "format": "int64",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 9007199254740991
             }
           }
         ]
@@ -5301,7 +5331,8 @@
             "schema": {
               "type": "integer",
               "format": "int64",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -6371,7 +6402,8 @@
             "schema": {
               "type": "integer",
               "format": "int64",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 9007199254740991
             }
           }
         ]
@@ -6445,7 +6477,8 @@
             "schema": {
               "type": "integer",
               "format": "int64",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -6523,7 +6556,8 @@
             "schema": {
               "type": "integer",
               "format": "int64",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 9007199254740991
             }
           }
         ]
@@ -6593,7 +6627,8 @@
             "schema": {
               "type": "integer",
               "format": "int64",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 9007199254740991
             }
           }
         ]
@@ -6666,7 +6701,8 @@
             "schema": {
               "type": "integer",
               "format": "int64",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 9007199254740991
             }
           }
         ]
@@ -6739,7 +6775,8 @@
             "schema": {
               "type": "integer",
               "format": "int64",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 9007199254740991
             }
           }
         ]
@@ -6945,7 +6982,8 @@
             "schema": {
               "type": "integer",
               "format": "int64",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 9007199254740991
             }
           }
         ]
@@ -7020,7 +7058,8 @@
             "schema": {
               "type": "integer",
               "format": "int64",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -7092,7 +7131,8 @@
             "schema": {
               "type": "integer",
               "format": "int64",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 9007199254740991
             }
           }
         ]
@@ -7169,7 +7209,8 @@
             "schema": {
               "type": "integer",
               "format": "int64",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -7328,7 +7369,8 @@
             "schema": {
               "type": "integer",
               "format": "int64",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 9007199254740991
             }
           }
         ]
@@ -7704,7 +7746,8 @@
             "schema": {
               "type": "integer",
               "format": "int64",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -7916,7 +7959,9 @@
               "null"
             ],
             "format": "int64",
-            "description": "UTC Unix 毫秒；尚无记录时为 null。"
+            "description": "UTC Unix 毫秒；尚无记录时为 null。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         }
       },
@@ -8019,7 +8064,8 @@
           "token_id": {
             "type": "integer",
             "format": "int64",
-            "minimum": 1
+            "minimum": 1,
+            "maximum": 9007199254740991
           },
           "language": {
             "type": "string",
@@ -8081,7 +8127,9 @@
           "expires_at": {
             "type": "integer",
             "format": "int64",
-            "description": "UTC Unix 毫秒。"
+            "description": "UTC Unix 毫秒。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         }
       },
@@ -8262,7 +8310,8 @@
           "id": {
             "type": "integer",
             "format": "int64",
-            "minimum": 1
+            "minimum": 1,
+            "maximum": 9007199254740991
           },
           "kind": {
             "type": "string",
@@ -8280,7 +8329,9 @@
               "null"
             ],
             "format": "int64",
-            "description": "UTC Unix 毫秒；尚无记录时为 null。"
+            "description": "UTC Unix 毫秒；尚无记录时为 null。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "last_used_at": {
             "type": [
@@ -8288,7 +8339,9 @@
               "null"
             ],
             "format": "int64",
-            "description": "UTC Unix 毫秒；尚无记录时为 null。"
+            "description": "UTC Unix 毫秒；尚无记录时为 null。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "expires_at": {
             "type": [
@@ -8296,7 +8349,9 @@
               "null"
             ],
             "format": "int64",
-            "description": "UTC Unix 毫秒；尚无记录时为 null。"
+            "description": "UTC Unix 毫秒；尚无记录时为 null。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "revoked_at": {
             "type": [
@@ -8304,7 +8359,9 @@
               "null"
             ],
             "format": "int64",
-            "description": "UTC Unix 毫秒；尚无记录时为 null。"
+            "description": "UTC Unix 毫秒；尚无记录时为 null。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "current": {
             "type": "boolean"
@@ -8351,7 +8408,8 @@
           "id": {
             "type": "integer",
             "format": "int64",
-            "minimum": 1
+            "minimum": 1,
+            "maximum": 9007199254740991
           },
           "token": {
             "type": "string",
@@ -8362,7 +8420,9 @@
           "created_at": {
             "type": "integer",
             "format": "int64",
-            "description": "UTC Unix 毫秒。"
+            "description": "UTC Unix 毫秒。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         }
       },
@@ -8438,7 +8498,9 @@
           "expires_at": {
             "type": "integer",
             "format": "int64",
-            "description": "UTC Unix 毫秒。"
+            "description": "UTC Unix 毫秒。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         }
       },
@@ -8513,7 +8575,9 @@
           },
           "count": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "success_rate": {
             "anyOf": [
@@ -8529,7 +8593,9 @@
           },
           "tokens": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         },
         "required": [
@@ -8546,11 +8612,15 @@
         "properties": {
           "active": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "total": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         },
         "required": [
@@ -8565,7 +8635,9 @@
         "properties": {
           "account_id": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "name": {
             "type": "string"
@@ -8614,7 +8686,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -8625,7 +8699,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -8635,13 +8711,17 @@
           },
           "id": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "last_cooldown_end_at": {
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -8653,7 +8733,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -8665,7 +8747,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -8680,7 +8764,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -8701,7 +8787,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -8728,7 +8816,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -8748,7 +8838,9 @@
           },
           "verify_level": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         },
         "required": [
@@ -8780,20 +8872,28 @@
           "from_at": {
             "format": "int64",
             "type": "integer",
-            "description": "UTC Unix 整数毫秒。"
+            "description": "UTC Unix 整数毫秒。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "new_count": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "seen_count": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "to_at": {
             "format": "int64",
             "type": "integer",
-            "description": "UTC Unix 整数毫秒。"
+            "description": "UTC Unix 整数毫秒。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         },
         "required": [
@@ -8813,7 +8913,9 @@
           },
           "value": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         },
         "required": [
@@ -8852,7 +8954,9 @@
           "rev": {
             "format": "int64",
             "type": "integer",
-            "description": "条件含义的语义版本；事实和覆盖仅在版本相同时适用。"
+            "description": "条件含义的语义版本；事实和覆盖仅在版本相同时适用。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "source": {
             "anyOf": [
@@ -8925,7 +9029,9 @@
           },
           "sample": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         },
         "required": [
@@ -9058,7 +9164,9 @@
           },
           "days": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "dropped_spec": {
             "anyOf": [
@@ -9080,7 +9188,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -9090,7 +9200,9 @@
           },
           "sample": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         },
         "required": [
@@ -9223,7 +9335,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -9265,12 +9379,16 @@
           "last_seen_at": {
             "format": "int64",
             "type": "integer",
-            "description": "UTC Unix 整数毫秒。"
+            "description": "UTC Unix 整数毫秒。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "price": {
             "format": "int64",
             "type": "integer",
-            "description": "整数分。"
+            "description": "整数分。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "seller_id": {
             "type": "string"
@@ -9402,7 +9520,9 @@
           "rev": {
             "format": "int64",
             "type": "integer",
-            "description": "条件含义的语义版本；事实和覆盖仅在版本相同时适用。"
+            "description": "条件含义的语义版本；事实和覆盖仅在版本相同时适用。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "source": {
             "$ref": "#/components/schemas/AnalysisProfileSource"
@@ -9467,7 +9587,9 @@
         "properties": {
           "count": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "reason": {
             "$ref": "#/components/schemas/LocalizedMessage"
@@ -9503,7 +9625,9 @@
           "rev": {
             "format": "int64",
             "type": "integer",
-            "description": "条件含义的语义版本；事实和覆盖仅在版本相同时适用。"
+            "description": "条件含义的语义版本；事实和覆盖仅在版本相同时适用。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "source": {
             "$ref": "#/components/schemas/AnalysisProfileSource"
@@ -9541,7 +9665,9 @@
           "rev": {
             "format": "int64",
             "type": "integer",
-            "description": "条件含义的语义版本；事实和覆盖仅在版本相同时适用。"
+            "description": "条件含义的语义版本；事实和覆盖仅在版本相同时适用。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "source": {
             "anyOf": [
@@ -9615,7 +9741,9 @@
           "rev": {
             "format": "int64",
             "type": "integer",
-            "description": "条件含义的语义版本；事实和覆盖仅在版本相同时适用。"
+            "description": "条件含义的语义版本；事实和覆盖仅在版本相同时适用。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "status": {
             "$ref": "#/components/schemas/AnalysisCheckStatus"
@@ -9641,11 +9769,15 @@
           "fair_price": {
             "format": "int64",
             "type": "integer",
-            "description": "整数分。"
+            "description": "整数分。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "sample": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "score": {
             "format": "double",
@@ -9712,7 +9844,9 @@
         "properties": {
           "limit": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "reason": {
             "$ref": "#/components/schemas/LocalizedMessage"
@@ -9742,7 +9876,9 @@
           },
           "value": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         },
         "required": [
@@ -9836,7 +9972,9 @@
         "properties": {
           "id": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "reason": {
             "anyOf": [
@@ -9865,7 +10003,9 @@
         "properties": {
           "applied": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "items": {
             "items": {
@@ -9875,11 +10015,15 @@
           },
           "requested": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "skipped": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         },
         "required": [
@@ -9906,7 +10050,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -9941,11 +10087,15 @@
         "properties": {
           "active": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "limit": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "sessions": {
             "items": {
@@ -9968,13 +10118,17 @@
           "deleted": {
             "additionalProperties": {
               "format": "int64",
-              "type": "integer"
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
             },
             "type": "object"
           },
           "images_deleted": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "warnings": {
             "items": {
@@ -10026,7 +10180,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -10040,7 +10196,9 @@
           "to_at": {
             "format": "int64",
             "type": "integer",
-            "description": "UTC Unix 整数毫秒。"
+            "description": "UTC Unix 整数毫秒。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         },
         "required": [
@@ -10059,7 +10217,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -10070,7 +10230,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -10099,13 +10261,17 @@
           },
           "id": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "item_count": {
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -10136,7 +10302,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -10163,11 +10331,15 @@
         "properties": {
           "network_failure_count": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "risk_failure_count": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "unresolved_events": {
             "items": {
@@ -10228,7 +10400,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -10239,7 +10413,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -10249,13 +10425,17 @@
           },
           "attempts": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "decided_layer": {
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -10269,7 +10449,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -10291,7 +10473,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -10303,7 +10487,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -10313,7 +10499,9 @@
           "found_at": {
             "format": "int64",
             "type": "integer",
-            "description": "UTC Unix 整数毫秒。"
+            "description": "UTC Unix 整数毫秒。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "grade": {
             "anyOf": [
@@ -10327,7 +10515,9 @@
           },
           "id": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "is_baseline": {
             "type": "boolean"
@@ -10342,7 +10532,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -10360,7 +10552,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -10392,7 +10586,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -10414,7 +10610,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -10439,7 +10637,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -10460,7 +10660,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -10472,7 +10674,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -10482,7 +10686,9 @@
           },
           "search_generation": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "seller_type": {
             "anyOf": [
@@ -10509,7 +10715,9 @@
           },
           "task_id": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "title_screen_reason": {
             "anyOf": [
@@ -10624,7 +10832,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -10635,7 +10845,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -10645,13 +10857,17 @@
           },
           "attempts": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "decided_layer": {
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -10671,7 +10887,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -10693,7 +10911,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -10705,7 +10925,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -10715,7 +10937,9 @@
           "found_at": {
             "format": "int64",
             "type": "integer",
-            "description": "UTC Unix 整数毫秒。"
+            "description": "UTC Unix 整数毫秒。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "grade": {
             "anyOf": [
@@ -10729,7 +10953,9 @@
           },
           "id": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "is_baseline": {
             "type": "boolean"
@@ -10754,7 +10980,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -10775,7 +11003,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -10786,7 +11016,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -10818,7 +11050,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -10835,7 +11069,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -10857,7 +11093,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -10882,7 +11120,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -10903,7 +11143,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -10915,7 +11157,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -10925,7 +11169,9 @@
           },
           "search_generation": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "seller": {
             "anyOf": [
@@ -10965,7 +11211,9 @@
           },
           "task_id": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "title_screen_reason": {
             "anyOf": [
@@ -11076,7 +11324,9 @@
         "properties": {
           "count": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "kind": {
             "type": "string"
@@ -11097,7 +11347,9 @@
           },
           "rescored_count": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         },
         "required": [
@@ -11124,7 +11376,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -11148,7 +11402,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -11160,7 +11416,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -11171,7 +11429,9 @@
           "first_seen_at": {
             "format": "int64",
             "type": "integer",
-            "description": "UTC Unix 整数毫秒。"
+            "description": "UTC Unix 整数毫秒。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "image_urls": {
             "items": {
@@ -11192,7 +11452,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -11204,7 +11466,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -11215,7 +11479,9 @@
           "last_seen_at": {
             "format": "int64",
             "type": "integer",
-            "description": "UTC Unix 整数毫秒。"
+            "description": "UTC Unix 整数毫秒。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "original_price_text": {
             "anyOf": [
@@ -11231,7 +11497,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -11253,7 +11521,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -11295,7 +11565,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -11325,7 +11597,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -11392,7 +11666,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -11416,7 +11692,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -11428,7 +11706,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -11445,7 +11725,9 @@
           "first_seen_at": {
             "format": "int64",
             "type": "integer",
-            "description": "UTC Unix 整数毫秒。"
+            "description": "UTC Unix 整数毫秒。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "image_urls": {
             "items": {
@@ -11466,7 +11748,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -11478,7 +11762,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -11489,7 +11775,9 @@
           "last_seen_at": {
             "format": "int64",
             "type": "integer",
-            "description": "UTC Unix 整数毫秒。"
+            "description": "UTC Unix 整数毫秒。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "original_price_text": {
             "anyOf": [
@@ -11505,7 +11793,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -11533,7 +11823,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -11585,7 +11877,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -11615,7 +11909,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -11675,7 +11971,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -11685,7 +11983,9 @@
           },
           "id": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "model": {
             "anyOf": [
@@ -11701,7 +12001,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -11722,7 +12024,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -11770,12 +12074,16 @@
           "observed_at": {
             "format": "int64",
             "type": "integer",
-            "description": "UTC Unix 整数毫秒。"
+            "description": "UTC Unix 整数毫秒。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "price": {
             "format": "int64",
             "type": "integer",
-            "description": "整数分。"
+            "description": "整数分。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "seller_id": {
             "anyOf": [
@@ -11833,11 +12141,15 @@
         "properties": {
           "delta": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "previous_count": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "ratio": {
             "anyOf": [
@@ -11865,7 +12177,9 @@
         "properties": {
           "applied": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         },
         "required": [
@@ -11880,7 +12194,9 @@
           "latest_analyzed_at": {
             "format": "int64",
             "type": "integer",
-            "description": "UTC Unix 整数毫秒。"
+            "description": "UTC Unix 整数毫秒。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "reasons": {
             "items": {
@@ -11890,7 +12206,9 @@
           },
           "sample_count": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         },
         "required": [
@@ -11906,7 +12224,9 @@
         "properties": {
           "count": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "success_rate": {
             "anyOf": [
@@ -11933,27 +12253,39 @@
         "properties": {
           "new_count": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "price_drop_count": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "recommended_ai_count": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "recommended_count": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "recommended_keyword_count": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "scanned_count": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         },
         "required": [
@@ -11973,7 +12305,9 @@
           "from_at": {
             "format": "int64",
             "type": "integer",
-            "description": "UTC Unix 整数毫秒。"
+            "description": "UTC Unix 整数毫秒。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "new": {
             "$ref": "#/components/schemas/MetricComparison"
@@ -11990,7 +12324,9 @@
           "to_at": {
             "format": "int64",
             "type": "integer",
-            "description": "UTC Unix 整数毫秒。"
+            "description": "UTC Unix 整数毫秒。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         },
         "required": [
@@ -12022,7 +12358,9 @@
           "as_of": {
             "format": "int64",
             "type": "integer",
-            "description": "UTC Unix 整数毫秒。"
+            "description": "UTC Unix 整数毫秒。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "cards": {
             "$ref": "#/components/schemas/OverviewCards"
@@ -12046,7 +12384,9 @@
           "from_at": {
             "format": "int64",
             "type": "integer",
-            "description": "UTC Unix 整数毫秒。"
+            "description": "UTC Unix 整数毫秒。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "grade_distribution": {
             "items": {
@@ -12064,7 +12404,8 @@
             "items": {
               "$ref": "#/components/schemas/TaskOverview"
             },
-            "type": "array"
+            "type": "array",
+            "description": "全部当前任务的完整快照，无分页；按各任务 state 准确统计任务状态数量。"
           },
           "timezone": {
             "type": "string"
@@ -12072,7 +12413,9 @@
           "to_at": {
             "format": "int64",
             "type": "integer",
-            "description": "UTC Unix 整数毫秒。"
+            "description": "UTC Unix 整数毫秒。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         },
         "required": [
@@ -12112,7 +12455,9 @@
           },
           "total": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         },
         "required": [
@@ -12139,7 +12484,9 @@
           },
           "total": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         },
         "required": [
@@ -12166,7 +12513,9 @@
           },
           "total": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         },
         "required": [
@@ -12193,7 +12542,9 @@
           },
           "total": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         },
         "required": [
@@ -12220,7 +12571,9 @@
           },
           "total": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         },
         "required": [
@@ -12247,7 +12600,9 @@
           },
           "total": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         },
         "required": [
@@ -12274,7 +12629,9 @@
           },
           "total": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         },
         "required": [
@@ -12301,7 +12658,9 @@
           },
           "total": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         },
         "required": [
@@ -12328,7 +12687,9 @@
           },
           "total": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         },
         "required": [
@@ -12355,7 +12716,9 @@
           },
           "total": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         },
         "required": [
@@ -12382,7 +12745,9 @@
           },
           "total": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         },
         "required": [
@@ -12397,7 +12762,9 @@
         "properties": {
           "id": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "item_id": {
             "type": "string"
@@ -12405,12 +12772,16 @@
           "observed_at": {
             "format": "int64",
             "type": "integer",
-            "description": "UTC Unix 整数毫秒。"
+            "description": "UTC Unix 整数毫秒。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "price": {
             "format": "int64",
             "type": "integer",
-            "description": "整数分。"
+            "description": "整数分。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         },
         "required": [
@@ -12454,7 +12825,9 @@
           },
           "id": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "name": {
             "type": "string"
@@ -12474,36 +12847,52 @@
           "as_of": {
             "format": "int64",
             "type": "integer",
-            "description": "UTC Unix 整数毫秒。"
+            "description": "UTC Unix 整数毫秒。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "daily_detail_limit": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "daily_detail_used": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "daily_search_limit": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "daily_search_used": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "day_start_at": {
             "format": "int64",
             "type": "integer",
-            "description": "UTC Unix 整数毫秒。"
+            "description": "UTC Unix 整数毫秒。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "hourly_limit": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "hourly_used": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         },
         "required": [
@@ -12524,7 +12913,9 @@
         "properties": {
           "finding_id": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "needs_detail": {
             "type": "boolean"
@@ -12558,19 +12949,27 @@
           "as_of": {
             "format": "int64",
             "type": "integer",
-            "description": "UTC Unix 整数毫秒。"
+            "description": "UTC Unix 整数毫秒。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "cached_detail_count": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "needs_detail_count": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "requested_count": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         },
         "required": [
@@ -12593,7 +12992,9 @@
           },
           "needs_detail_count": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         },
         "required": [
@@ -12666,25 +13067,35 @@
         "properties": {
           "failed_count": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "from_at": {
             "format": "int64",
             "type": "integer",
-            "description": "UTC Unix 整数毫秒。"
+            "description": "UTC Unix 整数毫秒。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "skipped_count": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "success_count": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "to_at": {
             "format": "int64",
             "type": "integer",
-            "description": "UTC Unix 整数毫秒。"
+            "description": "UTC Unix 整数毫秒。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         },
         "required": [
@@ -12703,7 +13114,9 @@
           "as_of": {
             "format": "int64",
             "type": "integer",
-            "description": "UTC Unix 整数毫秒。"
+            "description": "UTC Unix 整数毫秒。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "average_duration_ms": {
             "anyOf": [
@@ -12727,20 +13140,28 @@
           },
           "failed_count": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "from_at": {
             "format": "int64",
             "type": "integer",
-            "description": "UTC Unix 整数毫秒。"
+            "description": "UTC Unix 整数毫秒。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "skipped_count": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "success_count": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "success_rate": {
             "anyOf": [
@@ -12757,11 +13178,15 @@
           "to_at": {
             "format": "int64",
             "type": "integer",
-            "description": "UTC Unix 整数毫秒。"
+            "description": "UTC Unix 整数毫秒。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "total_count": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         },
         "required": [
@@ -12796,7 +13221,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -12817,7 +13244,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -12828,7 +13257,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -12839,7 +13270,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -12859,13 +13292,17 @@
           },
           "id": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "layer1_rejected": {
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -12876,7 +13313,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -12887,7 +13326,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -12908,7 +13349,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -12919,7 +13362,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -12940,7 +13385,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -12961,7 +13408,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -12970,13 +13419,17 @@
           },
           "repeat_count": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "scanned_count": {
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -12987,7 +13440,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -12998,7 +13453,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -13010,7 +13467,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -13067,7 +13526,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -13096,11 +13557,15 @@
           },
           "run_id": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "seq": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "status": {
             "anyOf": [
@@ -13131,7 +13596,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -13143,7 +13610,9 @@
           },
           "task_id": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         },
         "required": [
@@ -13174,7 +13643,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -13203,7 +13674,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -13213,14 +13686,18 @@
           },
           "queued_count": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "running": {
             "type": "boolean"
           },
           "running_count": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         },
         "required": [
@@ -13281,7 +13758,9 @@
           "fetched_at": {
             "format": "int64",
             "type": "integer",
-            "description": "UTC Unix 整数毫秒。"
+            "description": "UTC Unix 整数毫秒。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "introduction": {
             "anyOf": [
@@ -13297,7 +13776,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -13318,7 +13799,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -13329,7 +13812,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -13387,7 +13872,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -13399,7 +13886,8 @@
               {
                 "type": "integer",
                 "format": "int64",
-                "minimum": 0
+                "minimum": 0,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -13412,7 +13900,8 @@
               {
                 "type": "integer",
                 "format": "int64",
-                "minimum": 0
+                "minimum": 0,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -13425,7 +13914,8 @@
               {
                 "type": "integer",
                 "format": "int64",
-                "minimum": 0
+                "minimum": 0,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -13438,7 +13928,8 @@
               {
                 "type": "integer",
                 "format": "int64",
-                "minimum": 0
+                "minimum": 0,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -13480,7 +13971,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -13590,13 +14083,17 @@
         "properties": {
           "account_id": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "expires_at": {
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -13617,7 +14114,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -13639,7 +14138,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -13650,7 +14151,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -13662,7 +14165,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -13721,7 +14226,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -13731,7 +14238,9 @@
           },
           "id": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "kind": {
             "anyOf": [
@@ -13757,7 +14266,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -13769,7 +14280,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -13781,7 +14294,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -13822,7 +14337,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -13833,7 +14350,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -13844,7 +14363,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -13855,7 +14376,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -13878,7 +14401,9 @@
           "as_of": {
             "format": "int64",
             "type": "integer",
-            "description": "UTC Unix 整数毫秒。"
+            "description": "UTC Unix 整数毫秒。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "browsers": {
             "$ref": "#/components/schemas/BrowserStatus"
@@ -13920,7 +14445,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -13940,7 +14467,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -13952,7 +14481,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -13963,13 +14494,17 @@
           "channel_ids": {
             "items": {
               "format": "int64",
-              "type": "integer"
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
             },
             "type": "array"
           },
           "consecutive_failures": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "crawl_overrides": {
             "$ref": "#/components/schemas/SettingValues"
@@ -13978,7 +14513,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -13999,7 +14536,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -14011,11 +14550,15 @@
           },
           "id": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "interval_minutes": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "judge_mode": {
             "$ref": "#/components/schemas/AnalysisMode"
@@ -14037,7 +14580,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -14059,7 +14604,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -14075,13 +14622,17 @@
           },
           "max_pages": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "max_price": {
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -14093,7 +14644,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -14108,7 +14661,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -14120,7 +14675,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -14178,17 +14735,23 @@
           },
           "search_generation": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "sort_index": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "updated_at": {
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -14250,7 +14813,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -14267,7 +14832,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -14279,7 +14846,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -14290,7 +14859,9 @@
           "channel_ids": {
             "items": {
               "format": "int64",
-              "type": "integer"
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
             },
             "type": "array"
           },
@@ -14311,7 +14882,9 @@
           },
           "interval_minutes": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "judge_mode": {
             "$ref": "#/components/schemas/AnalysisMode"
@@ -14327,13 +14900,17 @@
           },
           "max_pages": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "max_price": {
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -14345,7 +14922,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -14489,12 +15068,16 @@
           },
           "task_id": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "updated_at": {
             "format": "int64",
             "type": "integer",
-            "description": "UTC Unix 整数毫秒。"
+            "description": "UTC Unix 整数毫秒。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         },
         "required": [
@@ -14532,7 +15115,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -14545,13 +15130,17 @@
           },
           "new_finding_count": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "next_run_at": {
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -14583,11 +15172,15 @@
           },
           "recommended_count": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "scanned_count": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "state": {
             "$ref": "#/components/schemas/TaskOverviewState"
@@ -14606,7 +15199,9 @@
           },
           "task_id": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "trend": {
             "items": {
@@ -14661,7 +15256,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -14685,7 +15282,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -14697,7 +15296,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -14708,7 +15309,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -14718,7 +15321,9 @@
           },
           "task_id": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         },
         "required": [
@@ -14744,26 +15349,36 @@
           },
           "existing_exclude_match_count": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "generation": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "needs_reanalysis_count": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "rescored_count": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "search_reset": {
             "type": "boolean"
           },
           "title_rejected_count": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         },
         "required": [
@@ -14809,7 +15424,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -14821,7 +15438,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -14831,7 +15450,9 @@
           },
           "id": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "judge_mode": {
             "$ref": "#/components/schemas/AnalysisMode"
@@ -14861,7 +15482,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -14881,7 +15504,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -14893,7 +15518,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -14904,13 +15531,17 @@
           "channel_ids": {
             "items": {
               "format": "int64",
-              "type": "integer"
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
             },
             "type": "array"
           },
           "consecutive_failures": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "crawl_overrides": {
             "$ref": "#/components/schemas/SettingValues"
@@ -14919,7 +15550,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -14940,7 +15573,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -14950,7 +15585,9 @@
           "finding_counts": {
             "additionalProperties": {
               "format": "int64",
-              "type": "integer"
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
             },
             "type": "object"
           },
@@ -14959,11 +15596,15 @@
           },
           "id": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "interval_minutes": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "judge_mode": {
             "$ref": "#/components/schemas/AnalysisMode"
@@ -14985,7 +15626,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -15007,7 +15650,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -15023,13 +15668,17 @@
           },
           "max_pages": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "max_price": {
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -15041,7 +15690,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -15056,7 +15707,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -15078,7 +15731,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -15139,17 +15794,23 @@
           },
           "search_generation": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "sort_index": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "updated_at": {
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -15213,19 +15874,27 @@
         "properties": {
           "height": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "width": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "x": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "y": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         },
         "required": [
@@ -15260,7 +15929,9 @@
           },
           "next_no": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "risks": {
             "items": {
@@ -15328,7 +15999,9 @@
           },
           "rev": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "source": {
             "$ref": "#/components/schemas/AnalysisProfileSource"
@@ -15363,7 +16036,9 @@
           },
           "rev": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "source": {
             "$ref": "#/components/schemas/AnalysisProfileSource"
@@ -15396,7 +16071,9 @@
           },
           "next_no": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "risks": {
             "type": "array",
@@ -15446,7 +16123,8 @@
                 "type": "integer",
                 "format": "int64",
                 "minimum": 0,
-                "description": "整数分。"
+                "description": "整数分。",
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -15459,7 +16137,8 @@
                 "type": "integer",
                 "format": "int64",
                 "minimum": 0,
-                "description": "整数分。"
+                "description": "整数分。",
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -15471,7 +16150,8 @@
             "items": {
               "type": "integer",
               "format": "int64",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 9007199254740991
             },
             "uniqueItems": true
           },
@@ -15510,7 +16190,8 @@
           "interval_minutes": {
             "type": "integer",
             "format": "int64",
-            "minimum": 1
+            "minimum": 1,
+            "maximum": 9007199254740991
           },
           "judge_mode": {
             "$ref": "#/components/schemas/AnalysisMode"
@@ -15529,7 +16210,8 @@
           "max_pages": {
             "type": "integer",
             "format": "int64",
-            "minimum": 1
+            "minimum": 1,
+            "maximum": 9007199254740991
           },
           "max_price": {
             "anyOf": [
@@ -15537,7 +16219,8 @@
                 "type": "integer",
                 "format": "int64",
                 "minimum": 0,
-                "description": "整数分。"
+                "description": "整数分。",
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -15550,7 +16233,8 @@
                 "type": "integer",
                 "format": "int64",
                 "minimum": 0,
-                "description": "整数分。"
+                "description": "整数分。",
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -15661,7 +16345,8 @@
                 "type": "integer",
                 "format": "int64",
                 "minimum": 0,
-                "description": "整数分。"
+                "description": "整数分。",
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -15674,7 +16359,8 @@
                 "type": "integer",
                 "format": "int64",
                 "minimum": 0,
-                "description": "整数分。"
+                "description": "整数分。",
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -15686,7 +16372,8 @@
             "items": {
               "type": "integer",
               "format": "int64",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 9007199254740991
             },
             "uniqueItems": true
           },
@@ -15725,7 +16412,8 @@
           "interval_minutes": {
             "type": "integer",
             "format": "int64",
-            "minimum": 1
+            "minimum": 1,
+            "maximum": 9007199254740991
           },
           "judge_mode": {
             "$ref": "#/components/schemas/AnalysisMode"
@@ -15744,7 +16432,8 @@
           "max_pages": {
             "type": "integer",
             "format": "int64",
-            "minimum": 1
+            "minimum": 1,
+            "maximum": 9007199254740991
           },
           "max_price": {
             "anyOf": [
@@ -15752,7 +16441,8 @@
                 "type": "integer",
                 "format": "int64",
                 "minimum": 0,
-                "description": "整数分。"
+                "description": "整数分。",
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -15765,7 +16455,8 @@
                 "type": "integer",
                 "format": "int64",
                 "minimum": 0,
-                "description": "整数分。"
+                "description": "整数分。",
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -15858,7 +16549,8 @@
               {
                 "type": "integer",
                 "format": "int64",
-                "minimum": 1
+                "minimum": 1,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -15883,7 +16575,8 @@
               {
                 "type": "integer",
                 "format": "int64",
-                "minimum": 1
+                "minimum": 1,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -15994,7 +16687,8 @@
             "items": {
               "type": "integer",
               "format": "int64",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 9007199254740991
             },
             "minItems": 1,
             "description": "正整数发现编号；服务端先稳定去重，按去重后的唯一编号计数，要求 1–200 个。重复编号不会增加 requested 或额外执行动作。"
@@ -16021,7 +16715,8 @@
             "items": {
               "type": "integer",
               "format": "int64",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 9007199254740991
             },
             "minItems": 1,
             "description": "正整数发现编号；服务端先稳定去重，按去重后的唯一编号计数，要求 1–200 个。重复编号不会增加 requested 或额外执行动作。"
@@ -16111,17 +16806,23 @@
           "effective_now": {
             "format": "int64",
             "type": "integer",
-            "description": "UTC Unix 整数毫秒；保护额度窗口使用同一持久时钟。"
+            "description": "UTC Unix 整数毫秒；保护额度窗口使用同一持久时钟。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "limit": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "next_check_at": {
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -16132,11 +16833,15 @@
           "protected_start": {
             "format": "int64",
             "type": "integer",
-            "description": "UTC Unix 整数毫秒；保护额度窗口使用同一持久时钟。"
+            "description": "UTC Unix 整数毫秒；保护额度窗口使用同一持久时钟。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "protected_used": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         },
         "required": [
@@ -16156,13 +16861,17 @@
           "affected_task_ids": {
             "items": {
               "format": "int64",
-              "type": "integer"
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
             },
             "type": "array"
           },
           "id": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         },
         "required": [
@@ -16177,15 +16886,21 @@
         "properties": {
           "at": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "channel_id": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "delivery_id": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "error": {
             "anyOf": [
@@ -16216,13 +16931,17 @@
         "properties": {
           "finding_id": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "task_id": {
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -16264,7 +16983,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -16338,7 +17059,9 @@
         "properties": {
           "asset_version": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "content": {
             "type": "string"
@@ -16372,7 +17095,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -16490,7 +17215,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -16509,7 +17236,9 @@
           },
           "id": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "name": {
             "type": "string"
@@ -16526,7 +17255,9 @@
           },
           "sort_index": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "text_model": {
             "anyOf": [
@@ -16585,7 +17316,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -16654,7 +17387,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -16665,7 +17400,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -16674,7 +17411,9 @@
           },
           "input_tokens": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "json_mode": {
             "anyOf": [
@@ -16698,7 +17437,9 @@
           },
           "output_tokens": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "reason": {
             "anyOf": [
@@ -16714,7 +17455,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -16788,7 +17531,9 @@
           "from": {
             "format": "int64",
             "type": "integer",
-            "description": "UTC Unix 整数毫秒；区间为 [from,until)，未知保留起点为 null。"
+            "description": "UTC Unix 整数毫秒；区间为 [from,until)，未知保留起点为 null。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "incomplete": {
             "type": "boolean"
@@ -16797,7 +17542,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -16814,7 +17561,9 @@
           "until": {
             "format": "int64",
             "type": "integer",
-            "description": "UTC Unix 整数毫秒；区间为 [from,until)，未知保留起点为 null。"
+            "description": "UTC Unix 整数毫秒；区间为 [from,until)，未知保留起点为 null。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         },
         "required": [
@@ -16846,33 +17595,47 @@
           },
           "calls": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "duration_ms": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "input_tokens": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "missing_usage_calls": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "ok_calls": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "output_tokens": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "reasoning_tokens": {
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -16917,7 +17680,9 @@
           },
           "id": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "last_error": {
             "anyOf": [
@@ -16933,7 +17698,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -17010,7 +17777,9 @@
           },
           "id": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "last_error": {
             "anyOf": [
@@ -17026,7 +17795,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -17140,7 +17911,9 @@
           },
           "id": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "last_error": {
             "anyOf": [
@@ -17156,7 +17929,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -17269,7 +18044,9 @@
           },
           "id": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "last_error": {
             "anyOf": [
@@ -17285,7 +18062,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -17396,7 +18175,9 @@
           },
           "id": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "last_error": {
             "anyOf": [
@@ -17412,7 +18193,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -17519,7 +18302,9 @@
           },
           "id": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "last_error": {
             "anyOf": [
@@ -17535,7 +18320,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -17648,7 +18435,9 @@
           },
           "id": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "last_error": {
             "anyOf": [
@@ -17664,7 +18453,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -17777,7 +18568,9 @@
           },
           "id": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "last_error": {
             "anyOf": [
@@ -17793,7 +18586,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -17904,7 +18699,9 @@
           },
           "id": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "last_error": {
             "anyOf": [
@@ -17920,7 +18717,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -18027,7 +18826,9 @@
           },
           "id": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "last_error": {
             "anyOf": [
@@ -18043,7 +18844,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -18130,10 +18933,8 @@
             "default": "POST"
           },
           "query_params": {
-            "type": "object",
-            "additionalProperties": {
-              "$ref": "#/components/schemas/JsonValue"
-            }
+            "type": "string",
+            "description": "JSON 文本字符串，解码后必须是 JSON 对象；数值原文保留。省略沿原默认，null 或直接提交对象均非法，不自动 stringify 兼容。"
           },
           "content_type": {
             "type": "string",
@@ -18144,7 +18945,8 @@
             "default": "JSON"
           },
           "body_template": {
-            "$ref": "#/components/schemas/JsonValue"
+            "type": "string",
+            "description": "任意合法 JSON 的文本字符串，数值原文保留；字符串文本可包含 JSON null，但 HTTP 字段本身不可为 null。省略沿原默认，不接受直接对象或自动 stringify 兼容。"
           }
         },
         "required": [],
@@ -18185,7 +18987,9 @@
           },
           "id": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "last_error": {
             "anyOf": [
@@ -18201,7 +19005,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -18335,7 +19141,9 @@
           },
           "id": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "last_error": {
             "anyOf": [
@@ -18351,7 +19159,9 @@
             "anyOf": [
               {
                 "format": "int64",
-                "type": "integer"
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -18635,7 +19445,9 @@
           },
           "item_premium": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "lower_config_key": {
             "type": "string"
@@ -18648,7 +19460,9 @@
           },
           "typical_premium": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           }
         },
         "required": [
@@ -18717,7 +19531,9 @@
           },
           "as_of": {
             "format": "int64",
-            "type": "integer"
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
           },
           "brand_new": {
             "type": "boolean"
@@ -18762,7 +19578,8 @@
             "items": {
               "type": "integer",
               "format": "int64",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 9007199254740991
             },
             "uniqueItems": true
           }
@@ -18848,7 +19665,8 @@
               {
                 "format": "int64",
                 "type": "integer",
-                "minimum": 0
+                "minimum": 0,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -18861,7 +19679,8 @@
               {
                 "format": "int64",
                 "type": "integer",
-                "minimum": 0
+                "minimum": 0,
+                "maximum": 9007199254740991
               },
               {
                 "type": "null"
@@ -18992,7 +19811,8 @@
             "description": "重新尝试前至少等待的秒数。",
             "schema": {
               "type": "integer",
-              "minimum": 0
+              "minimum": 0,
+              "maximum": 9007199254740991
             }
           }
         }

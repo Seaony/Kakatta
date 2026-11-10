@@ -109,7 +109,7 @@ func TestBusinessNotificationsCRUDAllKindsPreserveSecretsAndNumbers(t *testing.T
 		{"feishu", `{}`, `{"url":"http://127.0.0.1:1/private-feishu","secret":"private-sign"}`},
 		{"pushplus", `{"topic":"family"}`, `{"token":"private-pushplus"}`},
 		{"serverchan", `{}`, `{"send_key":"private-serverchan"}`},
-		{"webhook", `{"method":"POST","content_type":"JSON","body_template":{"number":9007199254740993}}`, `{"url":"http://127.0.0.1:1/private-hook","headers":{"Authorization":"private-header"}}`},
+		{"webhook", `{"method":"POST","content_type":"JSON","body_template":"{\"number\":9007199254740993}"}`, `{"url":"http://127.0.0.1:1/private-hook","headers":{"Authorization":"private-header"}}`},
 		{"email", `{"host":"127.0.0.1","port":587,"encryption":"starttls","username":"sender","from":"from@example.invalid","to":"to@example.invalid"}`, `{"password":"private-password"}`},
 	} {
 		t.Run(sample.kind, func(t *testing.T) {
