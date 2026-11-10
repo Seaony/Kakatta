@@ -417,8 +417,7 @@ type overviewFinding struct {
 }
 
 func overviewFindingsTx(ctx context.Context, tx *sql.Tx, from, to int64) ([]overviewFinding, error) {
-	recommended := `(` + findingVisibleSQL + `) AND (` + findingRecommendationBudgetSQL + `) AND (f.decision='matched' OR (f.decision='scored' AND (f.grade IN ('steal','good') OR (f.score IS NULL AND f.grade IS NULL))))`
-	rows, err := tx.QueryContext(ctx, `SELECT f.id,f.task_id,f.item_id,f.found_at,f.is_baseline,f.decision,f.reject_kind,f.score,f.grade,f.analyzed_at,f.decided_layer,CASE WHEN `+recommended+` THEN 1 ELSE 0 END FROM findings f JOIN listings l ON l.item_id=f.item_id JOIN tasks t ON t.id=f.task_id WHERE f.found_at<? AND (f.found_at>=? OR f.analyzed_at>=?)`, to, from, from)
+	rows, err := tx.QueryContext(ctx, `SELECT f.id,f.task_id,f.item_id,f.found_at,f.is_baseline,f.decision,f.reject_kind,f.score,f.grade,f.analyzed_at,f.decided_layer,CASE WHEN `+findingRecommendedSQL+` THEN 1 ELSE 0 END FROM findings f JOIN listings l ON l.item_id=f.item_id JOIN tasks t ON t.id=f.task_id WHERE f.found_at<? AND (f.found_at>=? OR f.analyzed_at>=?)`, to, from, from)
 	if err != nil {
 		return nil, err
 	}

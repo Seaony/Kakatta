@@ -17,6 +17,7 @@ const findingVisibleSQL = `l.is_dismissed=0 AND NOT EXISTS(SELECT 1 FROM blocked
 // 列表只排除已知超预算；推荐资格还要确认有价格可核对。
 const findingWithinBudgetSQL = `NOT(t.budget_max IS NOT NULL AND l.price IS NOT NULL AND l.price>t.budget_max)`
 const findingRecommendationBudgetSQL = `(t.budget_max IS NULL OR (l.price IS NOT NULL AND l.price<=t.budget_max))`
+const findingRecommendedSQL = `(` + findingVisibleSQL + `) AND (` + findingRecommendationBudgetSQL + `) AND (f.decision='matched' OR (f.decision='scored' AND (f.grade IN ('steal','good') OR (f.score IS NULL AND f.grade IS NULL))))`
 const findingDefaultSQL = `((f.decision='matched' OR (f.decision='scored' AND (COALESCE(f.grade IN ('steal','good','fair'),0) OR (f.score IS NULL AND f.grade IS NULL)))) AND ` + findingWithinBudgetSQL + `)`
 const findingScoreSQL = `CASE WHEN f.decision IN ('pending','failed') THEN NULL ELSE f.score END`
 const findingFromSQL = ` FROM findings f JOIN listings l ON l.item_id=f.item_id JOIN tasks t ON t.id=f.task_id `

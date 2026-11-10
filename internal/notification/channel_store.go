@@ -89,13 +89,17 @@ func channelObject(raw json.RawMessage, field string) (map[string]json.RawMessag
 }
 
 func (s *Service) channelSecrets(record channelRecord) (map[string]json.RawMessage, error) {
+	return channelSecretsWithCipher(record, s.cipher)
+}
+
+func channelSecretsWithCipher(record channelRecord, cipher *security.Cipher) (map[string]json.RawMessage, error) {
 	if len(record.SecretEnc) == 0 {
 		return map[string]json.RawMessage{}, nil
 	}
-	if s.cipher == nil {
+	if cipher == nil {
 		return nil, security.ErrMasterKey
 	}
-	plain, err := s.cipher.Open(record.SecretEnc, "channels", "secret_enc", record.UUID)
+	plain, err := cipher.Open(record.SecretEnc, "channels", "secret_enc", record.UUID)
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +108,11 @@ func (s *Service) channelSecrets(record channelRecord) (map[string]json.RawMessa
 }
 
 func (s *Service) channelConfig(record channelRecord) (notify.ChannelConfig, error) {
-	secrets, err := s.channelSecrets(record)
+	return channelConfigWithCipher(record, s.cipher)
+}
+
+func channelConfigWithCipher(record channelRecord, cipher *security.Cipher) (notify.ChannelConfig, error) {
+	secrets, err := channelSecretsWithCipher(record, cipher)
 	if err != nil {
 		return notify.ChannelConfig{}, err
 	}

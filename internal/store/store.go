@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	_ "modernc.org/sqlite"
 )
@@ -17,6 +18,10 @@ import (
 type Store struct {
 	db   *sql.DB
 	path string
+
+	snapshotMu    sync.Mutex
+	snapshotReads sync.WaitGroup
+	closed        bool
 }
 
 func Open(ctx context.Context, path string) (*Store, error) {
@@ -116,7 +121,13 @@ func open(ctx context.Context, path string, steps []migration) (_ *Store, err er
 
 func (s *Store) DB() *sql.DB { return s.db }
 
-func (s *Store) Close() error { return s.db.Close() }
+func (s *Store) Close() error {
+	s.snapshotMu.Lock()
+	s.closed = true
+	s.snapshotMu.Unlock()
+	s.snapshotReads.Wait()
+	return s.db.Close()
+}
 
 func filePath(path string) (string, error) {
 	if strings.TrimSpace(path) == "" || strings.EqualFold(strings.TrimSpace(path), ":memory:") || strings.HasPrefix(strings.ToLower(path), "file:") || strings.ContainsRune(path, 0) {
