@@ -180,12 +180,14 @@ func NoGoodReasons([]RecentScoredFinding) []ReasonCount
 
 清单合并按生成项的顺序替换同名旧编辑项，再按旧相对顺序追加未命中的旧编辑项；不得重用删除的编号。`breakdown` 固定为 `base/items/ai/caps/gates`，程序原因用 Message，模型调整理由保留原文。普通保存不补回被删的通用项；用户规格保护、重分析与通知由编排处理。关键词、证据、规格分别按文档的三套规则规整，不共用一个含糊的文本匹配器。
 
+没有规格维度的任务使用固定配置键 `*`，并非规格不明；「较 14 天前」只用原配置 14 天序列，价格带跟随合理价实际样本窗口。最终合理价落到整数分时四舍五入，每日中位数和分位数保留插值精度。
+
 ## 模型请求
 
 `internal/analysis/client` 不依赖分析规则、数据库、抓取或业务 HTTP。`New(Dependencies)` 必须取得 `Repository`、`Accounting`、全应用共享的 `Slots`、专用 `HTTPDoer` 和超时；普通调用 `Complete(ctx, Request)`，试分析 `Test(ctx, providerID, titleRequest, analysisRequest)`，恢复探测 `Probe(ctx, providerID)`。Request 仅传用途、任务编号、提示词、图片、结构化 Schema 和纯 Validate 回调，不开放跳过每日上限的参数。
 
 - Repository 提供 `Providers/Provider/LoadCompat/SaveCompat/ChangeProvider`；ProviderRef 的 `ID/ConfigToken` 防止旧请求写坏新配置。兼容保存原子地只向降级方向合并并返回实际保存值，地址或模型变化后的重置归存储层。
-- Accounting 的 `Before(ctx, CallStart) (Ticket,error)` 紧邻每次物理请求，成功持久化票据才发送；`After(ctx, Ticket, CallEnd)` 每票据恰好一次，用有界且不随用户取消的上下文收尾。usage 按每次请求计；reasoning 已含在输出，不再加一次。After 失败必须跨调用闭锁，不能把存储失败当供应商错误轮换；无法补记的未知用量恢复规则，在接持久适配器前单独定清楚。
+- Accounting 的 `Before(ctx, CallStart) (Ticket,error)` 紧邻每次物理请求，检查每日上限并返回内存票据才发送，不新增持久票据；`After(ctx, Ticket, CallEnd)` 每票据恰好一次，在请求结束后写一条 ai_calls，用有界且不随用户取消的上下文收尾。usage 按每次请求计；reasoning 已含在输出，不再加一次。After 写入失败后停止本进程全部后续模型请求，不把存储失败当供应商错误轮换。进程取得 usage 前崩溃按缺失 usage 处理，不封整天或增加未知用量状态。
 - `CallStart` 含服务商配置引用、模型、purpose、TaskID 和实际 JSONMode；`CallEnd` 含可用结果 OK、HTTPStatus、ErrorKind、Usage、FinishReason、Duration。Result 含文本、服务商/模型、JSONMode、Thinking、耗时与全部 Call 元数据，不含密钥或请求正文。
 - Slots 的 `Acquire(ctx) (release,error)` 覆盖整个逻辑调用，所有用途共享；兼容重发、解析重试和轮换不新建名额池。每次实际请求重新 Before，只有 test 可越过每日上限。probe 固定输出上限 5。
 - 返回可识别的 `ErrNoProvider/ErrDailyLimit/ErrInfrastructure/ErrConfigChanged`；普通失败为带 Last 原因和 Retryable 的 Failure。取消保留原 context 错误；记账、兼容和状态存储失败立即结束，不重发。请求状态与重试严格按第 8 节，不隐含 SDK 重试或 3xx 跳转。
