@@ -21,7 +21,8 @@ func loadDeliveryIntentTx(ctx context.Context, tx *sql.Tx, id int64) (intent, er
 		return intent{}, err
 	}
 	if reason.Valid {
-		if err := json.Unmarshal([]byte(reason.String), &value.Reason); err != nil || value.Reason == nil || value.Reason.Code == "" {
+		value.Reason, err = decodeNotificationMessage([]byte(reason.String))
+		if err != nil || value.Reason == nil || value.Reason.Code == "" {
 			return intent{}, errors.New("通知意图的原因记录损坏")
 		}
 	}

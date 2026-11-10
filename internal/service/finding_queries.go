@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"strings"
 	"unicode/utf8"
@@ -377,7 +376,7 @@ func findingDeliveriesTx(ctx context.Context, tx *sql.Tx, id int64) ([]DeliveryS
 		}
 		seen[key] = true
 		if failure.Valid {
-			if err := json.Unmarshal([]byte(failure.String), &row.Error); err != nil {
+			if err := decodeJSONNumber(failure.String, &row.Error); err != nil {
 				return nil, err
 			}
 		}

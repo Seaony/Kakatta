@@ -25,12 +25,22 @@ func runError(kind ErrorKind, code string) error {
 }
 
 func logJSON(raw string, target any) error {
+	return decodeJSONNumberMode(raw, target, true)
+}
+
+func decodeJSONNumber(raw string, target any) error {
+	return decodeJSONNumberMode(raw, target, false)
+}
+
+func decodeJSONNumberMode(raw string, target any, strict bool) error {
 	if !utf8.ValidString(raw) {
 		return errors.New("运行日志不是有效的文本")
 	}
 	decoder := json.NewDecoder(strings.NewReader(raw))
 	decoder.UseNumber()
-	decoder.DisallowUnknownFields()
+	if strict {
+		decoder.DisallowUnknownFields()
+	}
 	if err := decoder.Decode(target); err != nil {
 		return err
 	}

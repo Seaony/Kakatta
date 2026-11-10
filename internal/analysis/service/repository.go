@@ -94,6 +94,7 @@ func scanProvider(row interface{ Scan(...any) error }) (providerRecord, error) {
 	if state.Valid {
 		var reason locales.Message
 		decoder := json.NewDecoder(bytes.NewBufferString(state.String))
+		decoder.UseNumber()
 		decoder.DisallowUnknownFields()
 		if err := decoder.Decode(&reason); err != nil {
 			return p, err

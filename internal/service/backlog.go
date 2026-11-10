@@ -61,7 +61,7 @@ func scanFinding(row findingScanner) (Finding, error) {
 		{breakdown, &finding.ScoreBreakdown}, {fairBasis, &finding.FairBasis},
 		{keywords, &finding.MatchedKeywords}, {skipReason, &finding.NotifySkipReason}} {
 		if field.raw.Valid {
-			if err := json.Unmarshal([]byte(field.raw.String), field.target); err != nil {
+			if err := decodeJSONNumber(field.raw.String, field.target); err != nil {
 				return Finding{}, fmt.Errorf("发现记录损坏：%w", err)
 			}
 		}

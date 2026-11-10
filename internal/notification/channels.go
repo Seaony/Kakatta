@@ -361,7 +361,8 @@ func (s *Service) ChannelDeliveries(ctx context.Context, id int64) ([]service.De
 			return nil, notificationStorageError(err)
 		}
 		if failure.Valid {
-			if err := json.Unmarshal([]byte(failure.String), &item.Error); err != nil {
+			item.Error, err = decodeNotificationMessage([]byte(failure.String))
+			if err != nil {
 				return nil, notificationStorageError(err)
 			}
 		}

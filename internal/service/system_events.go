@@ -1,12 +1,9 @@
 package service
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
-	"io"
 
 	"github.com/Seaony/Kakatta/internal/locales"
 )
@@ -102,12 +99,10 @@ func scanSystemEvent(row interface{ Scan(...any) error }) (SystemEvent, error) {
 	}
 	if raw.Valid {
 		var message *locales.Message
-		decoder := json.NewDecoder(bytes.NewBufferString(raw.String))
-		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&message); err != nil {
+		if err := logJSON(raw.String, &message); err != nil {
 			return SystemEvent{}, err
 		}
-		if decoder.Decode(new(any)) != io.EOF || message == nil || message.Code == "" {
+		if message == nil || message.Code == "" {
 			return SystemEvent{}, errors.New("系统事件的原因记录损坏")
 		}
 		if message.Args == nil {

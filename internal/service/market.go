@@ -132,7 +132,7 @@ func loadMarketInsightTx(ctx context.Context, tx *sql.Tx, taskID int64) (*Market
 		return nil, err
 	}
 	if rawStats.Valid {
-		if err := json.Unmarshal([]byte(rawStats.String), &insight.Stats); err != nil {
+		if err := decodeJSONNumber(rawStats.String, &insight.Stats); err != nil {
 			return nil, fmt.Errorf("行情解读快照损坏：%w", err)
 		}
 	}

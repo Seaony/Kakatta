@@ -337,7 +337,7 @@ func overviewAccountsTx(ctx context.Context, tx *sql.Tx) (map[int64]overviewAcco
 		}
 		if raw.Valid {
 			account.reason = new(locales.Message)
-			if err := json.Unmarshal([]byte(raw.String), account.reason); err != nil {
+			if err := decodeJSONNumber(raw.String, account.reason); err != nil {
 				return nil, err
 			}
 		}
@@ -656,7 +656,7 @@ func overviewEventsTx(ctx context.Context, tx *sql.Tx) ([]SystemEvent, error) {
 		}
 		if message.Valid {
 			event.Message = new(locales.Message)
-			if err := json.Unmarshal([]byte(message.String), event.Message); err != nil {
+			if err := decodeJSONNumber(message.String, event.Message); err != nil {
 				return nil, fmt.Errorf("系统事件原因无法读取：%w", err)
 			}
 		}

@@ -612,11 +612,11 @@ func formatNestedMessage(value any) (locales.Message, error) {
 	if err != nil {
 		return locales.Message{}, errFormatMessage
 	}
-	var message locales.Message
-	if json.Unmarshal(encoded, &message) != nil || message.Code == "" {
+	message, err := decodeNotificationMessage(encoded)
+	if err != nil || message == nil || message.Code == "" {
 		return locales.Message{}, errFormatMessage
 	}
-	return message, nil
+	return *message, nil
 }
 
 func formatIntArg(value any) (int64, bool) {

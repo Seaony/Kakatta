@@ -108,12 +108,9 @@ func scanTask(row taskScanner) (Task, error) {
 			return Task{}, errors.New("任务保存的配置损坏")
 		}
 	}
-	if lastError.Valid {
-		var message locales.Message
-		if json.Unmarshal([]byte(lastError.String), &message) != nil || message.Code == "" {
-			return Task{}, errors.New("任务保存的错误原因损坏")
-		}
-		task.LastError = &message
+	task.LastError, err = logMessage(lastError)
+	if err != nil {
+		return Task{}, err
 	}
 	task.ChannelIDs = []int64{}
 	return task, nil

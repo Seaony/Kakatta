@@ -45,7 +45,8 @@ func scanChannel(row channelScanner) (channelRecord, error) {
 	}
 	result.Config = json.RawMessage(config)
 	if lastError.Valid {
-		if err := json.Unmarshal([]byte(lastError.String), &result.LastError); err != nil {
+		result.LastError, err = decodeNotificationMessage([]byte(lastError.String))
+		if err != nil {
 			return channelRecord{}, err
 		}
 	}

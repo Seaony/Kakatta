@@ -6,7 +6,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"io"
 	"strings"
 	"unicode/utf8"
 
@@ -122,14 +121,9 @@ func decodeSellerAssessment(raw string) (*analysis.SellerResult, error) {
 	if !utf8.ValidString(raw) || !bytes.HasPrefix(bytes.TrimSpace([]byte(raw)), []byte("{")) {
 		return nil, errors.New("卖家判断记录不是有效对象")
 	}
-	decoder := json.NewDecoder(strings.NewReader(raw))
-	decoder.DisallowUnknownFields()
 	var value analysis.SellerResult
-	if err := decoder.Decode(&value); err != nil {
+	if err := logJSON(raw, &value); err != nil {
 		return nil, err
-	}
-	if decoder.Decode(new(any)) != io.EOF {
-		return nil, errors.New("卖家判断记录包含多余内容")
 	}
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(raw), &fields); err != nil {

@@ -184,7 +184,8 @@ func loadPendingPlannedIntentTx(ctx context.Context, tx *sql.Tx, findingID int64
 		return nil, err
 	}
 	if reason.Valid {
-		if err := json.Unmarshal([]byte(reason.String), &value.Reason); err != nil {
+		value.Reason, err = decodeNotificationMessage([]byte(reason.String))
+		if err != nil {
 			return nil, err
 		}
 	}
