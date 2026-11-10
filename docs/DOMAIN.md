@@ -178,7 +178,7 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 | 字段 | 类型 | 默认 | 说明 |
 |---|---|---|---|
 | id | INTEGER PK | | |
-| name | TEXT NOT NULL | 关键词 | 1–30 字 |
+| name | TEXT NOT NULL | 关键词的前 30 字 | 1–30 字；省略时才截取默认名，显式填写超长时报错 |
 | keyword | TEXT NOT NULL | | 1–50 字，存之前去掉首尾空白 |
 | enabled | INTEGER NOT NULL | 1 | |
 | account_id | INTEGER REFERENCES accounts ON DELETE SET NULL | 自动分配 | |
@@ -191,7 +191,7 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 | max_pages | INTEGER NOT NULL | `crawl.max_pages` | ≥ 1，只拦小于 1 的；超过 3 时界面提示风险，但允许保存（`DECISIONS.md` 第 17 条） |
 | interval_minutes | INTEGER NOT NULL | `crawl.task_interval_minutes` | ≥ 1 |
 | crawl_overrides_json | TEXT NOT NULL | `{}` | 本任务单独的频率设置，见 3.2 |
-| judge_mode | TEXT NOT NULL | 配了 AI 时 `ai`，否则 `keyword` | |
+| judge_mode | TEXT NOT NULL | 配了 AI 时 `ai`，否则 `keyword` | 切换规则见下文 |
 | requirement | TEXT NOT NULL | `""` | AI 任务的大白话需求 |
 | profile_json | TEXT NOT NULL | `{}` | 需求清单，见下文；AI 任务至少要有一项规格或一条必须满足 |
 | budget_min / budget_max | INTEGER | 空 | 分；大概预算，不是硬上限：打分不看，超出上限的不推送（13.2） |
@@ -212,6 +212,8 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 | no_good_hint_dismissed_at | INTEGER | | 用户在「长期没有推荐」的提示上点「知道了」的时间（5.6） |
 
 索引：`(enabled, next_run_at)`、`(account_id)`。
+
+切换成关键词判断时，保存前确认「切换成关键词判断会清空需求清单（包括你改过的项），无法恢复」；保存后 `profile_json = {}`，不另藏旧清单。切回 AI 判断仍按 AI 清单要求校验。已有结论保留、按当时的判断字段显示；要按新规则判断就重新分析。待处理发现切成关键词时从 `title` 改为 `detail`，切成 AI 时从 `detail` 改为 `title`。切换判断方式不重置搜索基线（第 77 条）。
 
 **需求清单 `profile_json`**（`DECISIONS.md` 第 48 条）：
 
@@ -737,7 +739,9 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 | 网络或代理连不上、页面结构变化、筛选失败、响应超时、导航失败 | 失败（`network` / `page`） | 是 |
 | 整次运行超时 | 失败（`timeout`） | 是 |
 
-服务启动时，上次没结束的运行记录一律改为失败（`restart`）。
+运行开始时，先保存 `outcome = failed`、`failure_kind = restart`、`ended_at = NULL` 的内部占位，读取时按未结束显示，不进入已完成统计。资源启动前还要提交每账号的内部会话标记；全部资源真正关闭后，和账号间隔结算一起清除。
+
+服务启动时，上次没结束的运行记录一律改为失败（`restart`），结束时间取启动时第 64 条保护后的 UTC 时间；有资源标记的账号也从此时重新等待账号间隔，不能恢复旧浏览器或旧手动队列。保留原已抽间隔与当前配置最小间隔中较大的一项，记录完成后才清标记（第 77 条）。
 
 ---
 
@@ -925,7 +929,7 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 
 - 用任务当前的条件重判第一层（5.1）。没通过就直接得出结论（`rejected`，`decided_layer = 1`），到此为止。
 - 通过的放回补处理队列：`decision = pending`，`attempts = 0`，`retryable = 0`，`search_generation` 改成任务当前的代次，`reanalyze_requested_at` 写现在；AI 任务 `stage = title`（从第二层开始重走，用当前的需求清单），关键词任务 `stage = detail`。之后由下一次正常运行处理：在处理集合里排最前面（4.8），仍受 `ai.max_items_per_run` 和 `max_details_per_run` 限制，处理不完的留到再下一次。
-- 商品的 `detail_fetched_at` 在 24 小时以内：不用等运行，直接用已有的详情重判（AI 任务第二层、第三层照常调 AI），不打开闲鱼、不占额度。
+- 单件重新分析时，商品的 `detail_fetched_at` 在 24 小时以内：不用等运行，直接用已有的详情重判（AI 任务第二层、第三层照常调 AI），不打开闲鱼、不占额度。批量重新分析一律进入正常运行队列；之后处理时仍可复用 24 小时详情缓存，不重新打开详情。
 - 界面提示「会在下次运行时分析」，旁边给「立即运行」按钮（6.4）。
 - 用户手动改过的规格和检查项结论保留。
 - 重新分析不发「发现推荐」和「新商品」通知：这个发现还没做过推送判定的，判定时达到推送条件只写 `recommended_price`，`notify_skip_reason` 写「重新分析的结果不发推荐通知」（13.7）；已经判定过的不再判定（13.2）。之后的降价和降价后升档照常通知（第 10 节）。

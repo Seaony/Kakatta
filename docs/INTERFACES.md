@@ -86,6 +86,28 @@ func ResolveTask(global Snapshot, intervalMinutes int64, overrides json.RawMessa
 
 ## HTTP 和网页类型
 
+### 业务服务和事务
+
+`internal/service` 保存任务、商品、发现、账号、运行、行情和清理的唯一公开类型，HTTP 不复制一套同义对象。同包按职责拆文件，用具名事务函数组合，不引入通用仓储层。依赖只向下，业务包不导入 HTTP 包；保存成功后才发布变化事件、取消旧代运行和唤醒调度。
+
+```go
+func (s *appsettings.Store) SnapshotTx(ctx context.Context, tx *sql.Tx) (settings.Snapshot, error)
+func (s eventstore.Store) RaiseTx(ctx context.Context, tx *sql.Tx, kind string, subjectID int64, message locales.Message) (bool, error)
+func (s eventstore.Store) ResolveTx(ctx context.Context, tx *sql.Tx, kind string, subjectID int64) (bool, error)
+func config.AcquireServerLock(dataDir string) (io.Closer, error)
+```
+
+这些事务入口不提交、不再申请连接；事务打开者唯一负责提交。`SnapshotTx` 复用现有设置读取与校验，不观察或保存时钟，额度动作仍在同一事务显式 `ObserveClock`、记账和 `SaveClock`。事件和账号状态同事务保存，回滚时一并回滚。正式服务在打开数据库和恢复状态前取得数据目录独占锁，持有到资源和数据库全部关闭；维护命令不拿服务锁，保留既定的跨进程凭据恢复能力。
+
+- 时间为 UTC 毫秒，ID 为正 `int64`，金额为整数分；行情的分位数、中位数和变化额保留 `float64` 分，走势百分比为比率。未知值为 `null`，数组为 `[]`。
+- 写入保留字段是否出现：创建缺省用领域默认，更新缺省保留，只有可空字段接受 `null`；服务唯一解码和校验，不在 HTTP 再做一套默认。
+- 所有列表使用 `Page<T>{items,next_cursor,total}`，默认 50、最大 200，游标绑定筛选和排序。全量导出使用完整读快照，不受分页上限截断。
+- 搜索代次每次写入都检查，晚到结果只更新仍存在的对象，不用 UPSERT 复活已删除数据；非搜索规则提交时重读当前值。
+- 资源的排队、启动、保留和关闭由一个所有者管理。关闭完成才释放名额、结算账号间隔并删除恢复标记；排队不预造运行记录、不消耗人工会话十分钟。
+- 门禁无法通过等待恢复时不编造恢复时间；所需入口访问数大于配置上限时，自动等待配置变化，手动记跳过且预计时间为空。
+
+### 传输与基础网页
+
 唯一接口描述是 `api/openapi.json`，格式为 OpenAPI 3.1。Go 嵌入该文件，网页从仓库文件生成类型，不从运行中的服务抓取描述。业务路径统一以 `/api/v1` 开头；`/healthz`、`/mcp` 和远程画面另有固定边界。
 
 失败响应统一为：
