@@ -28,6 +28,7 @@ var ErrNotFound = errors.New("页面上找不到元素")
 type Human struct {
 	s        *Session
 	queries  cdp.Session
+	domRead  chan struct{}
 	p        *pacer.Pacer
 	keyDelay pacer.Range // 每个字之间的间隔
 	x, y     float64     // 鼠标当前位置
@@ -35,15 +36,31 @@ type Human struct {
 
 // NewHuman 创建操作者。keyDelay 是逐字输入时每个字之间的间隔。
 func NewHuman(s *Session, p *pacer.Pacer, keyDelay pacer.Range) *Human {
-	return &Human{s: s, queries: chromedp.FromContext(s.Context()).Target, p: p, keyDelay: keyDelay, x: 200, y: 200}
+	return &Human{s: s, queries: chromedp.FromContext(s.Context()).Target, domRead: make(chan struct{}, 1), p: p, keyDelay: keyDelay, x: 200, y: 200}
+}
+
+// 重取文档会清掉前端编号，同一条读取链结束后才能开始下一条。
+func (h *Human) lockDOM(ctx context.Context) (func(), error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	select {
+	case h.domRead <- struct{}{}:
+		return func() { <-h.domRead }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 }
 
 // Find 等到至少一个匹配的节点，查询只走 DOM 命令。
-func (h *Human) Find(ctx context.Context, sel string, timeout time.Duration) ([]*chromedp.Node, error) {
+func (h *Human) Find(caller context.Context, sel string, timeout time.Duration) (nodes []*chromedp.Node, err error) {
+	ctx, cancelLifetime := h.s.operationContext(caller)
+	defer cancelLifetime()
 	tctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	defer func() { err = h.findError(caller, tctx, sel, err) }()
 	for {
-		nodes, err := h.FindNow(tctx, sel)
+		nodes, err := h.findNodes(tctx, sel)
 		if err != nil {
 			return nil, err
 		}
@@ -51,19 +68,46 @@ func (h *Human) Find(ctx context.Context, sel string, timeout time.Duration) ([]
 			return nodes, nil
 		}
 		if err := h.p.Wait(tctx, pacer.Between(50*time.Millisecond, 50*time.Millisecond)); err != nil {
-			if ctx.Err() != nil {
-				return nil, ctx.Err()
-			}
-			return nil, fmt.Errorf("%w：%s", ErrNotFound, sel)
+			return nil, err
 		}
 	}
 }
 
 // FindNow 每次重新取文档根节点，不使用上次页面的节点编号。
-func (h *Human) FindNow(ctx context.Context, sel string) ([]*chromedp.Node, error) {
+func (h *Human) FindNow(caller context.Context, sel string) (nodes []*chromedp.Node, err error) {
+	ctx, cancelLifetime := h.s.operationContext(caller)
+	defer cancelLifetime()
+	defer func() { err = operationError(ctx, err) }()
+	return h.findNodes(ctx, sel)
+}
+
+func (h *Human) findNodes(ctx context.Context, sel string) ([]*chromedp.Node, error) {
 	tctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
+	unlock, err := h.lockDOM(tctx)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
 	return retryDOMRead(func() ([]*chromedp.Node, error) { return h.findNow(tctx, sel) })
+}
+
+func (h *Human) findError(caller, lookup context.Context, sel string, err error) error {
+	if err == nil {
+		return nil
+	}
+	if caller.Err() != nil || h.s.ctx.Err() != nil {
+		return operationError(h.s.ctx, operationError(caller, err))
+	}
+	readErr := err
+	for errors.Unwrap(readErr) != nil {
+		readErr = errors.Unwrap(readErr)
+	}
+	// 只把查找自身的超时当作缺元素，协议错误仍须报给调用方。
+	if lookup.Err() == context.DeadlineExceeded && readErr == context.DeadlineExceeded {
+		return fmt.Errorf("%w：%s", ErrNotFound, sel)
+	}
+	return operationError(lookup, err)
 }
 
 var errDOMChanged = errors.New("查询期间页面内容已变化")
@@ -83,11 +127,10 @@ func retryDOMRead(query func() ([]*chromedp.Node, error)) ([]*chromedp.Node, err
 	return nil, err
 }
 
-func (h *Human) findNow(ctx context.Context, sel string) ([]*chromedp.Node, error) {
-	tctx, cancel := context.WithTimeout(h.s.ctx, 5*time.Second)
-	defer cancel()
-	stop := context.AfterFunc(ctx, cancel)
-	defer stop()
+func (h *Human) findNow(tctx context.Context, sel string) ([]*chromedp.Node, error) {
+	if err := tctx.Err(); err != nil {
+		return nil, err
+	}
 	depth := int64(-1)
 	root, err := cdp.Call(tctx, h.queries, dom.GetDocument, dom.GetDocumentParams{Depth: &depth})
 	if err != nil {
@@ -135,11 +178,46 @@ func (h *Human) findNow(ctx context.Context, sel string) ([]*chromedp.Node, erro
 	return out, nil
 }
 
-func (h *Human) Box(n *chromedp.Node) (x, y, w, ht float64, err error) { return h.box(n) }
+func (h *Human) Box(n *chromedp.Node) (x, y, w, ht float64, err error) {
+	return h.BoxContext(h.s.ctx, n)
+}
+
+func (h *Human) BoxContext(caller context.Context, n *chromedp.Node) (x, y, w, ht float64, err error) {
+	ctx, cancel := h.s.readContext(caller)
+	defer cancel()
+	defer func() { err = operationError(ctx, err) }()
+	if err := ctx.Err(); err != nil {
+		return 0, 0, 0, 0, err
+	}
+	return h.boxContext(ctx, n)
+}
 
 // VisibleChecked 把真正不可见和读取失败分开，风控检查不能在读取失败时放行。
 func (h *Human) VisibleChecked(n *chromedp.Node) (bool, error) {
-	res, err := chromedp.Call(h.s.ctx, dom.GetBoxModel, dom.GetBoxModelParams{BackendNodeID: n.BackendNodeID})
+	return h.VisibleCheckedContext(h.s.ctx, n)
+}
+
+func (h *Human) VisibleCheckedContext(caller context.Context, n *chromedp.Node) (visible bool, err error) {
+	ctx, cancel := h.s.readContext(caller)
+	defer cancel()
+	defer func() { err = operationError(ctx, err) }()
+	return h.visibleChecked(ctx, n)
+}
+
+func (h *Human) visibleChecked(ctx context.Context, n *chromedp.Node) (bool, error) {
+	unlock, err := h.lockDOM(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer unlock()
+	return h.readVisible(ctx, n)
+}
+
+func (h *Human) readVisible(ctx context.Context, n *chromedp.Node) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	res, err := chromedp.Call(ctx, dom.GetBoxModel, dom.GetBoxModelParams{BackendNodeID: n.BackendNodeID})
 	if err != nil {
 		if strings.Contains(err.Error(), "Could not compute box model") {
 			return false, nil
@@ -150,11 +228,11 @@ func (h *Human) VisibleChecked(n *chromedp.Node) (bool, error) {
 		return false, nil
 	}
 	for current := n; current != nil && current.NodeType == 1; current = current.Parent {
-		id, err := h.currentNodeID(current)
+		id, err := h.currentNodeID(ctx, current)
 		if err != nil {
 			return false, fmt.Errorf("刷新元素编号 %d：%w", current.BackendNodeID, err)
 		}
-		style, err := chromedp.Call(h.s.ctx, css.GetComputedStyleForNode, css.GetComputedStyleForNodeParams{NodeID: id})
+		style, err := chromedp.Call(ctx, css.GetComputedStyleForNode, css.GetComputedStyleForNodeParams{NodeID: id})
 		if err != nil {
 			return false, fmt.Errorf("读元素样式 %d：%w", id, err)
 		}
@@ -168,8 +246,8 @@ func (h *Human) VisibleChecked(n *chromedp.Node) (bool, error) {
 	return true, nil
 }
 
-func (h *Human) currentNodeID(n *chromedp.Node) (cdp.NodeID, error) {
-	res, err := chromedp.Call(h.s.ctx, dom.PushNodesByBackendIDsToFrontend, dom.PushNodesByBackendIDsToFrontendParams{BackendNodeIDs: []cdp.BackendNodeID{n.BackendNodeID}})
+func (h *Human) currentNodeID(ctx context.Context, n *chromedp.Node) (cdp.NodeID, error) {
+	res, err := chromedp.Call(ctx, dom.PushNodesByBackendIDsToFrontend, dom.PushNodesByBackendIDsToFrontendParams{BackendNodeIDs: []cdp.BackendNodeID{n.BackendNodeID}})
 	if err != nil {
 		return 0, err
 	}
@@ -180,17 +258,26 @@ func (h *Human) currentNodeID(n *chromedp.Node) (cdp.NodeID, error) {
 }
 
 // SearchText 只用 DOM 搜索可见文字，不把脚本或样式里的内容当作页面提示。
-func (h *Human) SearchText(ctx context.Context, text string) ([]*chromedp.Node, error) {
+func (h *Human) SearchText(caller context.Context, text string) (nodes []*chromedp.Node, err error) {
+	ctx, cancelLifetime := h.s.operationContext(caller)
+	defer cancelLifetime()
 	tctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
+	defer func() { err = operationError(tctx, err) }()
+	unlock, err := h.lockDOM(tctx)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
 	return retryDOMRead(func() ([]*chromedp.Node, error) { return h.searchText(tctx, text) })
 }
 
 func (h *Human) searchText(ctx context.Context, text string) ([]*chromedp.Node, error) {
-	tctx, cancel := context.WithTimeout(h.s.ctx, 5*time.Second)
+	tctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	stop := context.AfterFunc(ctx, cancel)
-	defer stop()
+	if err := tctx.Err(); err != nil {
+		return nil, err
+	}
 	depth := int64(-1)
 	root, err := cdp.Call(tctx, h.queries, dom.GetDocument, dom.GetDocumentParams{Depth: &depth})
 	if err != nil {
@@ -234,7 +321,7 @@ func (h *Human) searchText(ctx context.Context, text string) ([]*chromedp.Node, 
 			return n.NodeValue, nil
 		}
 		if n.NodeType == 1 {
-			visible, err := h.VisibleChecked(n)
+			visible, err := h.readVisible(tctx, n)
 			if err != nil || !visible {
 				return "", err
 			}
@@ -310,16 +397,19 @@ func (h *Human) Visible(n *chromedp.Node) bool {
 	return visible
 }
 
-func (h *Human) FirstVisible(ctx context.Context, sel string, timeout time.Duration) (*chromedp.Node, error) {
+func (h *Human) FirstVisible(caller context.Context, sel string, timeout time.Duration) (node *chromedp.Node, err error) {
+	ctx, cancelLifetime := h.s.operationContext(caller)
+	defer cancelLifetime()
 	tctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	defer func() { err = h.findError(caller, tctx, sel, err) }()
 	for {
-		nodes, err := h.FindNow(tctx, sel)
+		nodes, err := h.findNodes(tctx, sel)
 		if err != nil {
 			return nil, err
 		}
 		for _, n := range nodes {
-			visible, err := h.VisibleChecked(n)
+			visible, err := h.visibleChecked(tctx, n)
 			if err != nil {
 				return nil, err
 			}
@@ -328,10 +418,7 @@ func (h *Human) FirstVisible(ctx context.Context, sel string, timeout time.Durat
 			}
 		}
 		if err := h.p.Wait(tctx, pacer.Between(50*time.Millisecond, 50*time.Millisecond)); err != nil {
-			if ctx.Err() != nil {
-				return nil, ctx.Err()
-			}
-			return nil, fmt.Errorf("%w：%s", ErrNotFound, sel)
+			return nil, err
 		}
 	}
 }
@@ -405,11 +492,17 @@ type wheelParams struct {
 var dispatchWheel = cdp.Command[wheelParams, cdp.Empty]{Method: input.CommandDispatchMouseEvent}
 
 // Scroll 在页面当前位置用滚轮向下滚 dy 像素，分几下滚完。
-func (h *Human) Scroll(ctx context.Context, dy float64) error {
+func (h *Human) Scroll(caller context.Context, dy float64) (err error) {
+	ctx, cancel := h.s.operationContext(caller)
+	defer cancel()
+	defer func() { err = operationError(ctx, err) }()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	steps := 3 + int(h.rand()*3)
 	for i := 0; i < steps; i++ {
 		p := wheelParams{Type: chromedp.MouseWheel, X: h.x, Y: h.y, DeltaY: dy / float64(steps)}
-		if _, err := chromedp.Call(h.s.ctx, dispatchWheel, p); err != nil {
+		if _, err := chromedp.Call(ctx, dispatchWheel, p); err != nil {
 			return fmt.Errorf("滚轮操作失败：%w", err)
 		}
 		if err := h.p.Wait(ctx, pacer.Between(80*time.Millisecond, 220*time.Millisecond)); err != nil {
@@ -420,16 +513,22 @@ func (h *Human) Scroll(ctx context.Context, dy float64) error {
 }
 
 // Type 逐字输入。英文和数字用按键事件，中文用输入法提交；不伪造组合输入事件。
-func (h *Human) Type(ctx context.Context, text string) error {
+func (h *Human) Type(caller context.Context, text string) (err error) {
+	ctx, cancel := h.s.operationContext(caller)
+	defer cancel()
+	defer func() { err = operationError(ctx, err) }()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	for _, r := range text {
 		var err error
 		if r < utf8.RuneSelf && r >= 0x20 {
 			s := string(r)
-			if err = h.key(input.DispatchKeyEventParams{Type: input.DispatchKeyEventTypeKeyDown, Text: s, Key: s, UnmodifiedText: s}); err == nil {
-				err = h.key(input.DispatchKeyEventParams{Type: input.DispatchKeyEventTypeKeyUp, Key: s})
+			if err = h.keyContext(ctx, input.DispatchKeyEventParams{Type: input.DispatchKeyEventTypeKeyDown, Text: s, Key: s, UnmodifiedText: s}); err == nil {
+				err = h.keyContext(ctx, input.DispatchKeyEventParams{Type: input.DispatchKeyEventTypeKeyUp, Key: s})
 			}
 		} else {
-			_, err = chromedp.Call(h.s.ctx, input.InsertText, input.InsertTextParams{Text: string(r)})
+			_, err = chromedp.Call(ctx, input.InsertText, input.InsertTextParams{Text: string(r)})
 		}
 		if err != nil {
 			return fmt.Errorf("输入失败：%w", err)
@@ -442,7 +541,13 @@ func (h *Human) Type(ctx context.Context, text string) error {
 }
 
 // Press 按一次功能键，比如 "Enter"、"Tab"。
-func (h *Human) Press(ctx context.Context, key string) error {
+func (h *Human) Press(caller context.Context, key string) (err error) {
+	ctx, cancel := h.s.operationContext(caller)
+	defer cancel()
+	defer func() { err = operationError(ctx, err) }()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	k, ok := specialKeys[key]
 	if !ok {
 		return fmt.Errorf("不支持的按键：%s", key)
@@ -453,13 +558,13 @@ func (h *Human) Press(ctx context.Context, key string) error {
 		typ = input.DispatchKeyEventTypeRawKeyDown
 	}
 	down := input.DispatchKeyEventParams{Type: typ, Key: key, Code: k.code, WindowsVirtualKeyCode: k.vk, NativeVirtualKeyCode: k.vk, Text: k.text}
-	if err := h.key(down); err != nil {
+	if err := h.keyContext(ctx, down); err != nil {
 		return err
 	}
 	if err := h.p.Wait(ctx, pacer.Between(50*time.Millisecond, 120*time.Millisecond)); err != nil {
 		return err
 	}
-	return h.key(input.DispatchKeyEventParams{Type: input.DispatchKeyEventTypeKeyUp, Key: key, Code: k.code, WindowsVirtualKeyCode: k.vk, NativeVirtualKeyCode: k.vk})
+	return h.keyContext(ctx, input.DispatchKeyEventParams{Type: input.DispatchKeyEventTypeKeyUp, Key: key, Code: k.code, WindowsVirtualKeyCode: k.vk, NativeVirtualKeyCode: k.vk})
 }
 
 var specialKeys = map[string]struct {
@@ -500,18 +605,17 @@ func (h *Human) mouseContext(ctx context.Context, p input.DispatchMouseEventPara
 	return nil
 }
 
-func (h *Human) key(p input.DispatchKeyEventParams) error {
-	_, err := chromedp.Call(h.s.ctx, input.DispatchKeyEvent, p)
+func (h *Human) keyContext(ctx context.Context, p input.DispatchKeyEventParams) error {
+	_, err := chromedp.Call(ctx, input.DispatchKeyEvent, p)
 	return err
 }
 
-// box 返回元素内容区在页面上的位置和大小。
-func (h *Human) box(n *chromedp.Node) (x, y, w, ht float64, err error) {
-	return h.boxContext(h.s.ctx, n)
-}
-
+// boxContext 返回元素内容区在页面上的位置和大小。
 func (h *Human) boxContext(ctx context.Context, n *chromedp.Node) (x, y, w, ht float64, err error) {
 	res, err := chromedp.Call(ctx, dom.GetBoxModel, dom.GetBoxModelParams{BackendNodeID: n.BackendNodeID})
+	if err != nil && !strings.Contains(err.Error(), "Could not compute box model") {
+		return 0, 0, 0, 0, fmt.Errorf("读元素位置 %d：%w", n.BackendNodeID, err)
+	}
 	if err != nil || res.Model == nil || len(res.Model.Content) < 8 {
 		return 0, 0, 0, 0, fmt.Errorf("%w（没有位置）", ErrNotFound)
 	}
@@ -528,8 +632,18 @@ func (h *Human) rand() float64 { return h.p.Rand() }
 
 // Value 读输入框当前显示的值。不在页面里跑脚本：从无障碍树里取这个节点的 value（XIANYU.md 3.3 节）。
 func (h *Human) Value(n *chromedp.Node) (string, error) {
+	return h.ValueContext(h.s.ctx, n)
+}
+
+func (h *Human) ValueContext(caller context.Context, n *chromedp.Node) (value string, err error) {
+	ctx, cancel := h.s.readContext(caller)
+	defer cancel()
+	defer func() { err = operationError(ctx, err) }()
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	no := false
-	res, err := chromedp.Call(h.s.ctx, accessibility.GetPartialAXTree, accessibility.GetPartialAXTreeParams{BackendNodeID: n.BackendNodeID, FetchRelatives: &no})
+	res, err := chromedp.Call(ctx, accessibility.GetPartialAXTree, accessibility.GetPartialAXTreeParams{BackendNodeID: n.BackendNodeID, FetchRelatives: &no})
 	if err != nil {
 		return "", fmt.Errorf("读取输入框的值失败：%w", err)
 	}
@@ -546,15 +660,21 @@ func (h *Human) Value(n *chromedp.Node) (string, error) {
 }
 
 // Clear 容器里用 Ctrl+A 全选，再按退格。
-func (h *Human) Clear(ctx context.Context) error {
+func (h *Human) Clear(caller context.Context) (err error) {
+	ctx, cancel := h.s.operationContext(caller)
+	defer cancel()
+	defer func() { err = operationError(ctx, err) }()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	a := input.DispatchKeyEventParams{Type: input.DispatchKeyEventTypeRawKeyDown, Key: "a", Code: "KeyA", WindowsVirtualKeyCode: 65, NativeVirtualKeyCode: 65, Modifiers: 2}
-	if err := h.key(a); err != nil {
+	if err := h.keyContext(ctx, a); err != nil {
 		return err
 	}
 	if err := h.p.Wait(ctx, pacer.Between(50*time.Millisecond, 120*time.Millisecond)); err != nil {
 		return err
 	}
-	if err := h.key(input.DispatchKeyEventParams{Type: input.DispatchKeyEventTypeKeyUp, Key: "a", Code: "KeyA", WindowsVirtualKeyCode: 65, NativeVirtualKeyCode: 65, Modifiers: 2}); err != nil {
+	if err := h.keyContext(ctx, input.DispatchKeyEventParams{Type: input.DispatchKeyEventTypeKeyUp, Key: "a", Code: "KeyA", WindowsVirtualKeyCode: 65, NativeVirtualKeyCode: 65, Modifiers: 2}); err != nil {
 		return err
 	}
 	return h.Press(ctx, "Backspace")

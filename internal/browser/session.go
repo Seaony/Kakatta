@@ -352,6 +352,12 @@ func (s *Session) operationContext(caller context.Context) (context.Context, con
 	return ctx, func() { stop(); cancel(nil) }
 }
 
+func (s *Session) readContext(caller context.Context) (context.Context, context.CancelFunc) {
+	lifetime, cancelLifetime := s.operationContext(caller)
+	ctx, cancelTimeout := context.WithTimeout(lifetime, 5*time.Second)
+	return ctx, func() { cancelTimeout(); cancelLifetime() }
+}
+
 func operationError(ctx context.Context, err error) error {
 	if current := ctx.Err(); current != nil && !errors.Is(err, current) {
 		err = errors.Join(err, current)
@@ -364,16 +370,30 @@ func operationError(ctx context.Context, err error) error {
 
 // HasCookie 运行前只查 Cookie 名字，不查看值。
 func (s *Session) HasCookie(urls []string, name string) (bool, error) {
-	return s.cookiePresent(urls, name, false)
+	return s.HasCookieContext(s.ctx, urls, name)
+}
+
+func (s *Session) HasCookieContext(ctx context.Context, urls []string, name string) (bool, error) {
+	return s.cookiePresent(ctx, urls, name, false)
 }
 
 // LoginCookiePresent 只在判断扫码完成时检查非空，不返回、不保存 Cookie 值。
 func (s *Session) LoginCookiePresent(urls []string, name string) (bool, error) {
-	return s.cookiePresent(urls, name, true)
+	return s.LoginCookiePresentContext(s.ctx, urls, name)
 }
 
-func (s *Session) cookiePresent(urls []string, name string, requireValue bool) (bool, error) {
-	res, err := chromedp.Call(s.ctx, network.GetCookies, network.GetCookiesParams{URLs: urls})
+func (s *Session) LoginCookiePresentContext(ctx context.Context, urls []string, name string) (bool, error) {
+	return s.cookiePresent(ctx, urls, name, true)
+}
+
+func (s *Session) cookiePresent(caller context.Context, urls []string, name string, requireValue bool) (present bool, err error) {
+	ctx, cancel := s.readContext(caller)
+	defer cancel()
+	defer func() { err = operationError(ctx, err) }()
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	res, err := chromedp.Call(ctx, network.GetCookies, network.GetCookiesParams{URLs: urls})
 	if err != nil {
 		return false, err
 	}
