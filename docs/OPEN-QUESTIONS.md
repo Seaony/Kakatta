@@ -9,7 +9,3 @@
 ## 1. 域名和官网
 
 作者说以后再定。到时候参考 Dalibre：用 Astro 做官网，部署在 Cloudflare Workers。
-
-## 2. 判断与打分方案
-
-草案和讨论进度在 `PROPOSAL-JUDGMENT.md`，逐项讨论，每项确认后写进正式文档。

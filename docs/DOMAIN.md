@@ -38,9 +38,12 @@
 | 见过 | 某个任务在搜索结果里出现过某个商品。见过的记录永久保留（只随任务删除），所以老商品不会重新变成新商品。 |
 | 新商品 | 对某个任务来说，从没见过的商品。同一个商品对另一个任务仍然可能是新商品，要用那个任务的标准重新判断。 |
 | 发现 | 某个任务第一次见到某个新商品时产生的一条记录，带判断结果、是否已读、是否通知过。结果列表展示的就是发现。 |
-| 推荐 | AI 任务里匹配度达到任务的推荐门槛，或关键词任务里命中规则。 |
-| 分析标准 | AI 任务里，由用户的大白话需求生成、用户可以修改的一段文字，AI 照它判断。 |
-| 分层判断 | 第一层硬条件和排除词（免费，所有任务）→ 第二层文字模型看标题（便宜，AI 任务可选）→ 第三层多模态模型看图和描述（贵）。前一层通过才进下一层，详情页只给通过前两层的商品打开。 |
+| 推荐 | AI 任务里值得分达到「划算」（80 分）及以上、没有红色风险、没超出预算；关键词任务里命中规则。统计和概览用这个口径；推不推送看任务的推送档位（13.2）。 |
+| 需求清单 | AI 任务里，由用户的大白话需求整理成的一行一条的清单：可以接受的规格、必须满足、加分项、风险检查项和态度（2.6）。 |
+| 配置 | 需求清单里规格值的一种组合，如「iPad mini 6 / 256G」。比价按配置分组。 |
+| 合理价 | 同配置近 14 天在售价格的中位数（12.1）。 |
+| 值得分和档位 | 程序按比合理价便宜多少、加分项、风险和卖家算出的 0–100 分，加上 AI 在 −15 到 +8 之间的综合判断；档位是捡漏、划算、价格合理、偏贵或有顾虑、不建议（5.4）。AI 不直接打分。 |
+| 分层判断 | 第一层硬条件和排除词（免费，所有任务）→ 第二层批量整理标题：识别垃圾、抽规格（便宜，AI 任务固定开启）→ 第三层多模态模型看图和描述、提取事实（贵）→ 程序算分。前一层通过才进下一层，详情页只给通过前两层的商品打开。 |
 | 基线 | 任务第一次运行（或改了搜索条件后的第一次运行）看到的商品，只记录、不通知。 |
 | 补处理队列 | 上次没处理完（额度不够、超出本次上限）或可以重试的失败发现，下次运行优先处理。 |
 | 运行 | 任务的一次执行：搜索 → 找出新商品 → 分层判断 → 通知 → 记日志。 |
@@ -48,7 +51,7 @@
 | 风控冷却 | 某个账号遇到人机验证后，用户完成验证，账号还要暂停一段时间才自动运行，时长逐次加倍。 |
 | 推送渠道 | 一个配置好的推送目标，比如某个 Telegram 机器人。同一种渠道可以配多个，不同任务可以推到不同的渠道。 |
 | AI 服务商 | 一个 OpenAI 兼容接口的配置（地址、Key、模型）。可以配多个，按顺序使用，当前这个出错时换下一个。 |
-| 市场行情 | 某个任务近 14 天搜到的商品的价格统计，以及可选的 AI 行情解读。 |
+| 市场行情 | 某个任务近 14 天搜到的商品按配置的价格统计，以及可选的 AI 行情解读。 |
 
 ---
 
@@ -105,7 +108,7 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 
 **settings**：`key TEXT PK`、`value_json TEXT NOT NULL`、`updated_at INTEGER`。没有这一行就用第 3 节的默认值。
 
-**prompts**：`key TEXT PK`（`analysis` / `title_screen` / `criteria` / `market`）、`content TEXT NOT NULL`、`updated_at`。没有这一行就用第 8 节的内置原文。「还原」就是删掉这一行；保存的内容和内置原文一样时也直接删掉，系统状态里就不会误报「已自定义」。
+**prompts**：`key TEXT PK`（`analysis` / `title_screen` / `profile` / `market`）、`content TEXT NOT NULL`、`updated_at`。没有这一行就用第 8 节的内置原文。「还原」就是删掉这一行；保存的内容和内置原文一样时也直接删掉，系统状态里就不会误报「已自定义」。
 
 ### 2.5 闲鱼账号与代理
 
@@ -175,14 +178,14 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 | interval_minutes | INTEGER NOT NULL | `crawl.task_interval_minutes` | ≥ 1 |
 | crawl_overrides_json | TEXT NOT NULL | `{}` | 本任务单独的频率设置，见 3.2 |
 | judge_mode | TEXT NOT NULL | 配了 AI 时 `ai`，否则 `keyword` | |
-| requirement | TEXT NOT NULL | `""` | AI 任务的大白话需求，至少 10 个字 |
-| criteria | TEXT NOT NULL | `""` | AI 任务的分析标准，不能为空 |
-| title_screening | INTEGER NOT NULL | 1 | AI 任务是否启用第二层（文字模型看标题） |
-| recommend_threshold | INTEGER NOT NULL | 70 | 推荐门槛：50 / 60 / 70 / 80 / 90 |
+| requirement | TEXT NOT NULL | `""` | AI 任务的大白话需求 |
+| category | TEXT NOT NULL | `general` | 品类，决定带出哪套风险检查项（5.7） |
+| profile_json | TEXT NOT NULL | `{}` | 需求清单，见下文；AI 任务至少要有一项规格或一条必须满足 |
+| budget_min / budget_max | INTEGER | 空 | 分；大概预算，不是硬上限：打分不看，超出上限的不推送（13.2） |
 | match_keywords_json | TEXT NOT NULL | `[]` | 关键词任务的匹配词 |
 | exclude_keywords_json | TEXT NOT NULL | `[]` | 排除词，所有任务都可以填 |
 | analyze_on_first_run | INTEGER NOT NULL | 1 | 首次运行也分析最新的 10 个（不通知） |
-| notify_policy | TEXT NOT NULL | `recommended` | `recommended` 只通知推荐 / `all_new` 所有新商品 / `none` 不通知 |
+| notify_policy | TEXT NOT NULL | AI 任务 `good`，关键词任务 `recommended` | AI 任务：`steal` 只推捡漏 / `good` 划算及以上 / `fair` 价格合理及以上 / `all_new` 所有新商品 / `none` 不推送。关键词任务：`recommended` 命中就推 / `all_new` / `none`（13.2） |
 | notify_price_drop | INTEGER NOT NULL | 1 | 推荐过的商品降价时通知 |
 | search_generation | INTEGER NOT NULL | 1 | 搜索条件每改一次加 1，见 4.6 |
 | baseline_pending | INTEGER NOT NULL | 1 | 1 = 下一次成功运行是基线运行 |
@@ -195,6 +198,34 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 | failure_paused_until | INTEGER | | 失败保护 |
 
 索引：`(enabled, next_run_at)`、`(account_id)`。
+
+**需求清单 `profile_json`**（`DECISIONS.md` 第 48 条）：
+
+```json
+{
+  "summary": "会帮你找：iPad mini 6 或 7，256G 或 512G，WiFi 版，不要有锁和监管机",
+  "specs": [
+    {"name": "型号", "options": ["iPad mini 5", "iPad mini 6", "iPad mini 7"], "values": ["iPad mini 6", "iPad mini 7"], "source": "user", "edited": false},
+    {"name": "存储", "options": ["64G", "128G", "256G", "512G"], "values": ["256G", "512G"], "source": "user", "edited": false},
+    {"name": "网络", "options": ["WiFi", "蜂窝"], "values": ["WiFi"], "source": "ai", "edited": false}
+  ],
+  "musts": [{"text": "国行", "source": "user", "edited": false}],
+  "bonuses": [{"text": "电池 85% 以上", "source": "user", "edited": false}],
+  "risks": [
+    {"id": "id_lock", "attitude": "reject"},
+    {"id": "battery_replaced", "attitude": "mind"},
+    {"custom": "屏幕有烧屏", "attitude": "mind"}
+  ],
+  "allowed_kinds": []
+}
+```
+
+- `specs` 的顺序就是重要程度，越靠前越重要；比价样本不够时先去掉最后一项（12.1）。`values` 是可以接受的值，可以多选；为空表示「都行」。`options` 是给用户点选的候选值，用户也可以加自己的值。
+- `musts` 是规格以外的硬条件，只能是用户说过的（`source = user`）。保存时程序检查：`source = ai` 的必须满足一律移到 `bonuses`。AI 补充的条件只能进加分项或风险（`DECISIONS.md` 第 48 条）。
+- `risks`：`id` 来自风险字典（5.7），`custom` 是用户自己写的检查项。`attitude` 是 `reject` 不能接受 / `mind` 介意 / `ignore` 无所谓。生成时按品类模板带出，默认态度来自字典。用户写的检查项没有预设话术，问卖家时用「关于『xx』，方便说明一下吗？」。
+- `allowed_kinds`：用户的需求本身就是配件、坏机这类时，第二层放行的类型（如 `["broken"]`），见 5.2。
+- `edited`：用户手动改过的条目，重新生成时保留（8.6）。界面上 `source = ai` 的条目颜色淡一些，标「AI 补充的」。
+- 关键词任务的 `profile_json` 为 `{}`。
 
 **task_channels**：`task_id`、`channel_id`，主键是两者组合，两边都 `ON DELETE CASCADE`。任务里没勾任何渠道就不推送。
 
@@ -245,6 +276,21 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 
 主键 `(task_id, day, item_id)`。同一天再搜到就覆盖价格和时间。
 
+**task_item_specs**：每个任务眼里每件商品是什么、什么配置，比价用（`DECISIONS.md` 第 49、50 条）。不随发现删除。
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| task_id | INTEGER NOT NULL REFERENCES tasks ON DELETE CASCADE | |
+| item_id | TEXT NOT NULL | |
+| kind | TEXT | 第二层识别的类型：`sale` / `wanted` / `accessory` / `recycle` / `rental` / `repair` / `box` / `multi` / `broken` / `other`。关键词任务只有规则认出的 `wanted`、`recycle`、`rental`，其余为空 |
+| specs_json | TEXT | `[{"name": "存储", "value": "256G"}]`，按任务清单的规格名；读不出来的值为 `null` |
+| brand_new | INTEGER | 1 全新或未拆封 / 0 二手 / 空 不知道 |
+| config_key | TEXT | 规格值规整（NFKC、去首尾空白）后按清单顺序用 ` / ` 连起来；任何一项为空就为空（规格不明） |
+| source | TEXT NOT NULL | `title`（第二层）/ `detail`（第三层）/ `user`（用户手动改的） |
+| updated_at | INTEGER NOT NULL | |
+
+主键 `(task_id, item_id)`。`source = user` 的不会被第二层、第三层覆盖。清单的规格名改了以后，`config_key` 按新规格名从 `specs_json` 重算，读不到的为空，直到重新分析。
+
 **seller_profiles**：卖家主页的缓存。
 
 | 字段 | 说明 |
@@ -274,15 +320,22 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 | search_generation | INTEGER NOT NULL | 创建时任务的搜索代次 |
 | found_at | INTEGER NOT NULL | |
 | is_baseline | INTEGER NOT NULL | |
-| decision | TEXT NOT NULL | `pending` / `recommended` / `rejected` / `failed` / `skipped` |
+| decision | TEXT NOT NULL | `pending` / `scored`（AI 任务算完分）/ `matched`（关键词任务命中）/ `rejected` / `failed` / `skipped` |
+| reject_kind | TEXT | `rejected` 时：`filter`（第一层的价格、包邮、发布时间、地区）/ `excluded`（排除词）/ `junk`（不是在卖这件东西）/ `unmatched`（不符合需求）/ `keyword_miss`（关键词任务没命中） |
 | stage | TEXT NOT NULL | `pending` 时下一步做什么：`title`（等第二层）/ `detail`（等打开详情）；其他状态为 `done` |
 | decided_layer | INTEGER | 在第几层得出结论：1 / 2 / 3；跳过和失败为空 |
-| reason | TEXT | 一句话理由，或跳过、失败的原因 |
-| match_score | INTEGER | 0–100，只有第三层 AI 判断有 |
-| risk_tags_json / criteria_results_json | TEXT | 第三层的风险标签和逐项结果 |
-| seller_type | TEXT | `personal` / `dealer` / `unknown` |
-| insights_json | TEXT | 第三层的商品参数、卖家类型依据、交易风险、到手刀风险、描述可信度、联系卖家前建议 |
-| title_screen_reason | TEXT | 第二层的理由 |
+| reason | TEXT | 一句话：不符合、不建议、跳过或失败的原因；算完分的是分数的主要依据 |
+| analysis_json | TEXT | 第三层提取的事实，已经过证据核对（8.4） |
+| user_overrides_json | TEXT | 用户手动改的风险结论，如 `{"risks": {"id_lock": "ok"}}`（5.4） |
+| score | INTEGER | 0–100；无法比价、没算分时为空 |
+| grade | TEXT | `steal` 捡漏 / `good` 划算 / `fair` 价格合理 / `pricey` 偏贵或有顾虑 / `avoid` 不建议；无法比价且不是不建议时为空 |
+| score_breakdown_json | TEXT | 分数构成：基础分和依据、每项加减、AI 判断和理由、封顶（5.4） |
+| fair_price / fair_sample / fair_basis | INTEGER / INTEGER / TEXT | 算分时用的合理价、样本数、比价依据（如「同配置 · 近 14 天」「放宽到 30 天 · 去掉网络」） |
+| scored_price | INTEGER | 第一次算分时的价格，判断「降价后升档」用（第 10 节） |
+| scored_at | INTEGER | 最近一次算分的时间 |
+| summary | TEXT | AI 的一句话结论 |
+| seller_type | TEXT | `personal` / `dealer_suspect` / `dealer` / `unknown`（5.8） |
+| title_screen_reason | TEXT | 第二层的一句话说明 |
 | matched_keywords_json | TEXT | 关键词任务命中的词 |
 | analysis_model / analysis_provider_id | TEXT / INTEGER | 得出结论的模型和服务商，成功返回后才写 |
 | analyzed_at | INTEGER | |
@@ -291,12 +344,12 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 | is_read | INTEGER NOT NULL | 基线发现创建时就是已读，其余是未读 |
 | notified_at | INTEGER | 至少一个渠道发送成功的时间 |
 | notify_skip_reason | TEXT | 判断完、确定不发通知时写原因（13.7），发了的为空 |
-| recommended_price | INTEGER | 判为推荐时的价格 |
+| recommended_price | INTEGER | 第一次达到推送档位时的价格（13.2），降价通知的基准 |
 | last_drop_notified_price | INTEGER | 上一次发降价通知时的价格 |
 | drop_notified_at | INTEGER | |
 
 - 唯一约束：`(task_id, item_id)`。
-- 索引：`(task_id, found_at)`、`(task_id, decision)`、`(is_read)`、`(item_id)`。
+- 索引：`(task_id, found_at)`、`(task_id, decision)`、`(task_id, score)`、`(is_read)`、`(item_id)`。
 - 「分析失败（已放弃）」不另存字段：`decision = failed` 且 `retryable = 0`。
 - 「等待分析」也不另存字段：`decision = pending` 且 `reason` 以「等待分析」开头（8.5）。
 
@@ -312,7 +365,7 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 | base_url | TEXT NOT NULL | 如 `https://api.openai.com/v1`，去掉末尾的 `/` |
 | api_key_enc | BLOB | 本地 Ollama 可以不填 |
 | vision_model | TEXT NOT NULL | 第三层用，必须支持图片 |
-| text_model | TEXT | 第二层、生成标准、行情解读用；为空就用 `vision_model` |
+| text_model | TEXT | 第二层、生成需求清单、行情解读用；为空就用 `vision_model` |
 | enabled | INTEGER NOT NULL DEFAULT 1 | |
 | sort_index | INTEGER NOT NULL | 越小越先用 |
 | error_state | TEXT | 出了需要用户处理的错（Key 无效、余额不足、模型不存在、模型不支持图片）时写原因，有值就不参与自动使用 |
@@ -334,7 +387,7 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 
 主键 `(provider_id, model)`。服务商的地址或模型改了，删掉它的兼容标记重新试。
 
-**ai_calls**：每次请求一条，不存请求和回复的内容。字段：`id`、`at`、`provider_id`、`model`、`purpose`（`title_screen` / `analysis` / `criteria` / `market` / `test` / `probe`）、`task_id`、`ok`、`http_status`、`error_kind`、`json_mode`、`input_tokens`、`output_tokens`、`reasoning_tokens`（返回的 `usage.completion_tokens_details.reasoning_tokens`，没有为空）、`finish_reason`、`duration_ms`。索引 `(at)`。
+**ai_calls**：每次请求一条，不存请求和回复的内容。字段：`id`、`at`、`provider_id`、`model`、`purpose`（`title_screen` / `analysis` / `profile` / `market` / `test` / `probe`）、`task_id`、`ok`、`http_status`、`error_kind`、`json_mode`、`input_tokens`、`output_tokens`、`reasoning_tokens`（返回的 `usage.completion_tokens_details.reasoning_tokens`，没有为空）、`finish_reason`、`duration_ms`。索引 `(at)`。
 
 ### 2.10 推送渠道
 
@@ -441,7 +494,7 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 
 | 键 | 默认值 | 说明 |
 |---|---|---|
-| `ai.max_items_per_run` | 10 | 每次运行最多处理几个商品（第二、三层和关键词判断合计），推荐 5–20 |
+| `ai.max_items_per_run` | 10 | 每次运行最多处理几个商品（第三层和关键词判断合计；第二层批量整理不算），推荐 5–20 |
 | `ai.image_count` | 4 | 第三层每个商品发几张图，1–4 |
 | `ai.max_concurrent_requests` | 2 | 整个服务端同时进行的 AI 请求数 |
 | `ai.request_timeout_seconds` | 90 | |
@@ -495,7 +548,7 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 3. 不在 `crawl.quiet_hours` 里。
 4. 账号的每小时额度和每天的搜索额度都至少还剩 2 次（首页加搜索；这只是入口估算，真正的限制在每次访问前检查）。
 5. 距离这个账号上次运行结束，已经过了 `next_gap_seconds`。
-6. AI 任务至少有一个可用的 AI 服务商；分析标准不为空；今天的 AI 用量没到 `ai.daily_token_limit`（8.8）。
+6. AI 任务至少有一个可用的 AI 服务商；需求清单不为空；今天的 AI 用量没到 `ai.daily_token_limit`（8.8）。
 7. 有空闲的页面名额：全局不超过 `crawl.global_pages`，这个账号不超过 `crawl.pages_per_account`。没有名额时不记跳过，排队等。
 
 ### 4.2 取补处理队列
@@ -529,9 +582,8 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 1. 写入或更新 `listings`，更新 `last_seen_at`。
 2. 价格和这个商品最近一个价格点不同（或还没有价格点）时，追加 `price_points`；降价时写 `last_drop_amount` 和 `last_drop_at`，涨价时清空（第 10 节）。
 3. 写 `task_sightings`（今天的价格）。
-4. 计算本次的价格参考：有效价格不少于 3 个时，取最低价、中位数、最高价和样本数；少于 3 个时没有价格参考。
-5. 找出新商品：本任务 `seen_items` 里没有的商品 ID。是否见过只看 `seen_items`，不看发现，因为发现会按保留期清理。
-6. 把全部新商品写进 `seen_items`，包括下面第一层没通过的。
+4. 找出新商品：本任务 `seen_items` 里没有的商品 ID。是否见过只看 `seen_items`，不看发现，因为发现会按保留期清理。
+5. 把全部新商品写进 `seen_items`，包括下面第一层没通过的。
 
 ### 4.5 创建发现
 
@@ -539,7 +591,7 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 
 1. 商品被标记过不感兴趣 → `skipped`，原因「不感兴趣」。
 2. 商品的 `seller_id` 已知（之前打开过详情）且卖家被屏蔽 → `skipped`，原因「已屏蔽卖家」。
-3. 第一层（5.1）不通过 → `rejected`，`decided_layer = 1`，原因写哪一条没通过。
+3. 第一层（5.1）不通过 → `rejected`，`decided_layer = 1`，`reject_kind` 按 5.1 填，原因写哪一条没通过。
 4. 其余的是候选。
 
 然后分两种情况：
@@ -547,7 +599,7 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 - **基线运行**（`tasks.baseline_pending = 1`）：所有发现 `is_baseline = 1`、已读。开启了 `analyze_on_first_run` 时，候选里发布时间最新的 10 个为 `pending`，其余为 `skipped`，原因「基线」；关闭时候选全部 `skipped`。
 - **普通运行**：候选全部为 `pending`、未读。
 
-`pending` 的发现，AI 任务开了第二层时 `stage = title`，否则 `stage = detail`。
+`pending` 的发现，AI 任务 `stage = title`，关键词任务 `stage = detail`。
 
 ### 4.6 改了搜索条件
 
@@ -559,17 +611,22 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 
 改名称、间隔、判断规则、通知设置不重置基线。改了间隔时，`next_run_at` 重算为「保存时间 + 新间隔」。
 
-### 4.7 处理集合
+### 4.7 第二层：批量整理标题
 
-处理集合 P = Q 在前，本次新建的 `pending` 发现在后（按发布时间从新到旧），按发现 id 去重，总数不超过 `ai.max_items_per_run`。超出的保持 `pending`，下次进入 Q。
+只对 AI 任务做（5.2）。不打开任何闲鱼页面，可以在浏览器停在搜索页时进行。处理的商品：
 
-### 4.8 第二层：文字模型看标题
+- 本次运行的全部新商品（包括基线运行的），除了已经 `skipped` 的（不感兴趣、屏蔽卖家）和命中排除词的。第一层因价格、包邮、发布时间、地区没通过的也处理，只为比价抽规格，不改变它们的结论。
+- 补处理队列 Q 里 `stage = title` 的发现。
 
-只对 AI 任务、`title_screening = 1`、`stage = title` 的发现做（5.2）。不打开任何闲鱼页面，可以在浏览器停在搜索页时进行，最多 `ai.max_concurrent_requests` 个同时请求。
+结果写进 `task_item_specs`；`stage = title` 的发现按 5.2 得出结论：
 
 - 通过 → `stage = detail`，记 `title_screen_reason`。
-- 不通过 → `rejected`，`decided_layer = 2`。
-- 所有服务商都出错 → 按 8.5 记为 `failed` 或「等待分析」。不打开详情。
+- 不通过 → `rejected`，`decided_layer = 2`，`reject_kind` 为 `junk` 或 `unmatched`。
+- 所有服务商都出错 → 按 8.5 记为 `failed` 或「等待分析」。不打开详情。只为比价处理的商品出错就不再补，不影响结论。
+
+### 4.8 处理集合
+
+第二层做完以后，处理集合 P = Q 里 `stage = detail` 的在前，本次新建、`stage = detail` 的发现在后（按发布时间从新到旧），按发现 id 去重，总数不超过 `ai.max_items_per_run`。超出的保持 `pending`，下次进入 Q。
 
 ### 4.9 打开详情和判断
 
@@ -579,22 +636,23 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 1. 打开详情页**之前**，申请一次详情额度。申请不到，或本次的详情上限已用完：P 里剩下的都保持 `pending`，结束这一步，本次运行仍算成功。
 2. 等 `crawl.detail_pre_wait_seconds`，打开详情页，读详情。解析失败或加载失败只影响这一件：记为 `failed`、`retryable = 1`（第 3 次失败后为 0），继续下一件。风控、登录失效、取消不在这里处理，照常往外抛。
 3. 拿到 `seller_id` 后**再检查一次屏蔽列表**，命中就 `skipped`：不打开卖家主页、不判断、不通知。
-4. 用标题加描述再查一次排除词（第 9 节），命中就 `rejected`，`decided_layer = 1`，原因「描述命中排除词：xx」。
+4. 用标题加描述再查一次排除词（第 9 节），命中就 `rejected`，`decided_layer = 1`，`reject_kind = excluded`，原因「描述命中排除词：xx」。
 5. 关键词任务：按第 9 节判断，`decided_layer = 1`。
 6. AI 任务：
    - 卖家资料在缓存里且没过期 → 直接用。
    - 否则先申请一次详情额度并占用一个详情上限名额，再打开卖家主页。申请不到，或卖家主页的普通错误（不是风控、不是登录失效）：卖家资料留空继续判断，在运行记录的提示里写一句，同一次运行里去重。
-   - 第三层判断（5.3）。所有服务商都出错时按 8.5 记为 `failed` 或「等待分析」；记为等待分析的，这一次的 `attempts` 不加。判断可以和下一件的抓取同时进行，同时最多 `ai.max_concurrent_requests` 个；浏览器仍然一次只开一个页面。
+   - 第三层提取事实（5.3），再按 5.4 算分。所有服务商都出错时按 8.5 记为 `failed` 或「等待分析」；记为等待分析的，这一次的 `attempts` 不加。判断可以和下一件的抓取同时进行，同时最多 `ai.max_concurrent_requests` 个；浏览器仍然一次只开一个页面。
 7. 看完详情后停留 `crawl.detail_stay_seconds`。
 
-判断得出结论后：推荐时写 `recommended_price` 为当前价格。
+算完分后是否达到推送档位、什么时候写 `recommended_price`，见 13.2。
 
 ### 4.10 通知、记录和结束
 
-1. 按第 13 节发通知：本任务已判断完、还没通知过、符合通知策略、不是基线、商品没被标为不感兴趣、卖家没被屏蔽的发现；加上本次检测到的降价。发送失败的保持 `notified_at` 为空，下次运行再发，即使那时没再搜到这个商品。
-2. 写 `run_records`，更新任务的 `last_run_at`、`last_success_at`、`next_run_at`、`consecutive_failures`、`last_run_outcome`。基线运行成功后 `baseline_pending = 0`。
-3. 更新账号的 `last_run_ended_at`，抽好下一次的 `next_gap_seconds`。关闭这个账号的 Chrome。
-4. 成功时按 12.2 判断要不要生成 AI 行情解读，在后台进行，不占用调度。
+1. AI 任务先按 12.1 更新本任务各配置的合理价，再把本任务保留期内 `scored` 的发现按 5.4 重算分（只用已存的事实，不调 AI，不访问闲鱼）。
+2. 按第 13 节发通知：本任务已判断完、还没通知过、达到推送条件（13.2）、不是基线、商品没被标为不感兴趣、卖家没被屏蔽的发现；加上本次检测到的降价和降价后升档（第 10 节）。发送失败的保持 `notified_at` 为空，下次运行再发，即使那时没再搜到这个商品。
+3. 写 `run_records`，更新任务的 `last_run_at`、`last_success_at`、`next_run_at`、`consecutive_failures`、`last_run_outcome`。基线运行成功后 `baseline_pending = 0`。
+4. 更新账号的 `last_run_ended_at`，抽好下一次的 `next_gap_seconds`。关闭这个账号的 Chrome。
+5. 成功时按 12.2 判断要不要生成 AI 行情解读，在后台进行，不占用调度。
 
 整次运行（含判断）超过 `run_timeout_minutes` 就超时：停止抓取和判断，**已经保存的结果照常发通知**，本次记为失败（`timeout`）。
 
@@ -614,13 +672,16 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 
 ---
 
-## 5. 分层判断
+## 5. 分层判断和打分
 
-| 层 | 适用 | 输入 | 输出 | 通过条件 | 花费 |
-|---|---|---|---|---|---|
-| 第一层：硬条件和排除词 | 所有任务 | 搜索结果里的信息 | 通过，或没通过的原因 | 全部硬条件满足、标题不含排除词；关键词任务还要求标题命中匹配词（没填匹配词时不要求） | 免费 |
-| 第二层：文字模型看标题 | AI 任务，可关闭 | 分析标准和搜索结果里的信息 | `{"pass", "reason"}` | `pass = true` | 便宜 |
-| 第三层：多模态看图和描述 | AI 任务 | 分析标准、详情、卖家资料、商品图 | 匹配度、理由、风险、逐项结果等 | `match_score >= recommend_threshold` | 贵 |
+核心思路（`DECISIONS.md` 第 48–55 条）：AI 只读懂商品、提取事实、给出证据；分数由程序按规则算，再加上 AI 有上下限的综合判断。规则算出来的分数稳定、能解释、能排序；硬门槛由规则把守，AI 不能突破。
+
+| 层 | 适用 | 输入 | 输出 | 花费 |
+|---|---|---|---|---|
+| 第一层：硬条件和排除词 | 所有任务 | 搜索结果里的信息 | 通过，或没通过的原因 | 免费 |
+| 第二层：批量整理标题 | AI 任务，固定开启；关键词任务只用规则（第 9 节） | 需求清单、最多 20 件商品的搜索信息 | 每件的类型、规格、是否明显不符合 | 便宜 |
+| 第三层：看图和描述、提取事实 | AI 任务 | 需求清单、合理价、详情、卖家资料、商品图 | 规格、每条需求和检查项的结论及证据、卖家评价信号、AI 综合判断 | 贵 |
+| 算分 | AI 任务 | 第三层的事实、合理价（12.1）、卖家画像（5.8）、用户手动改的结论 | 值得分和档位 | 免费 |
 
 ### 5.1 第一层
 
@@ -635,36 +696,49 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 5. **排除词**：标题命中任一排除词 → 「命中排除词：xx」。
 6. **匹配词**（只对关键词任务，且填了匹配词）：标题没有命中任何匹配词 → 「标题没有命中匹配词」。
 
+`reject_kind`：第 1–4 条为 `filter`，第 5 条为 `excluded`，第 6 条为 `keyword_miss`。
+
 前四条是对页面筛选的二次确认：页面上的筛选有时没生效，本地再查一遍。「个人闲置」在本地判断不了，只靠页面筛选。
 
-### 5.2 第二层
+### 5.2 第二层：批量整理标题
 
-- 用服务商的 `text_model`，提示词是 8.6 的「标题初筛模板」。
+- 用服务商的 `text_model`，提示词是 8.6 的「标题整理模板」。一次最多 20 件，超过就分批。一批 20 个标题约 2000 token；基线运行 30–90 件是 2–5 次请求。
 - 用户消息：
 
   ````
-  ## 分析标准
-  <任务的 criteria>
-
-  ## 商品信息（搜索列表）
+  ## 需求清单
   ```json
-  <商品 JSON>
+  <清单 JSON>
+  ```
+
+  ## 商品（搜索列表）
+  ```json
+  <商品数组 JSON>
   ```
   ````
 
-  商品 JSON（键名英文、按键名排序、中文不转义）：`title`、`price`（元，数字）、`area`、`published_at`（ISO 8601）、`tags`、`want_count`、`price_reference{min,median,max,sample_size}`（没有价格参考时省略）。
-- 输出：`{"pass": true, "reason": "不超过 30 个字"}`。`pass` 不是布尔值时算解析失败。
-- 原则是「拿不准就放行」：只有标题或价格明确违反「必须满足」时才不通过。第二层只用来省掉明显不对的商品的详情访问和多模态费用，宁可多放过，也不能错杀。
+  清单 JSON：`specs[{name, options, values}]`、`musts[]`（文字）、`reject_checks[]`（态度为「不能接受」的检查项名称）、`allowed_kinds`。商品数组每件：`no`（本批序号，从 1 开始）、`title`、`price`（元）、`tags`。键名英文、按键名排序、中文不转义。
+- 输出见 8.2：每件给出 `kind`、`specs`、`brand_new`、`verdict`（`pass` / `unmatched`）和 `reason`。
+- 程序按顺序得出结论，结果写进 `task_item_specs`（`source = title`）：
+  1. `kind` 不是 `sale`、也不在清单的 `allowed_kinds` 里 → 垃圾，`reject_kind = junk`，原因写类型名：求购帖、配件或周边、回收广告、租赁、维修服务、空盒或包装、多款同链接、坏机或配件机、其他。
+  2. 某项规格的值在这项的 `options` 里、但不在 `values` 里（`values` 为空表示都行）→ `unmatched`，原因如「型号是 iPad mini 5，不在你选的范围里」。值不在 `options` 里的当作看不出，记 `null`。
+  3. `verdict = unmatched`（标题明确违反某条必须满足，或标题就能看出某个「不能接受」的检查项，如「有锁」「监管机」「卡贴」）→ `unmatched`，原因用 `reason`。
+  4. 其余通过。
+- 原则是「拿不准就放行」：标题看不出规格的记「规格不明」照样放行，打开详情后用描述和图片补全或纠正。第二层只用来省掉明显不对的商品的详情访问和多模态费用，宁可多放过，也不能错杀。
+- 回复里缺了某件、或某件格式不对：这件按通过处理，规格不明，写一条日志。
+- 垃圾和不符合的：不分析、不推送、不进行情；结果页默认隐藏，在「未推荐」筛选里能看到；照常记入「见过」，不会再变成新商品。
 
-### 5.3 第三层
+### 5.3 第三层：看图和描述、提取事实
 
-- 用服务商的 `vision_model`，提示词是 8.6 的「通用分析模板」。
+- 用服务商的 `vision_model`，提示词是 8.6 的「商品分析模板」。
 - 消息结构：一条 `system` 消息放提示词；一条 `user` 消息，`content` 是数组，先放图片，每张是 `{"type":"image_url","image_url":{"url":"data:image/jpeg;base64,..."}}`，最后放 `{"type":"text","text": ...}`。没有图片时 `content` 直接用字符串。
 - 用户消息文字：
 
   ````
-  ## 分析标准
-  <任务的 criteria>
+  ## 需求清单
+  ```json
+  <清单 JSON>
+  ```
 
   ## 商品信息
   ```json
@@ -673,35 +747,193 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
   ````
 
   没有图片时在末尾加一行：`补充说明：本次没有提供商品图片，请只根据文字信息判断，不要推测图片内容。`
-- 商品 JSON（键名英文、按键名排序、中文不转义）：`title`、`price`、`original_price`、`description`、`published_at`、`area`、`tags`、`want_count`、`browse_count`、`url`、`price_reference{min,median,max,sample_size}`，以及 `seller{nickname,registration,zhima_level,seller_credit,buyer_credit,item_count,on_sale_count,sold_count,rate_count,seller_good_rate,buyer_good_rate,recent_rates[],recent_items[]}`。`registration` 写成「来闲鱼 X 年 Y 个月」。没有的字段省略。
+- 清单 JSON：`specs[{name, options, values}]`；`musts[{no, text}]`、`bonuses[{no, text}]`（序号从 1 开始）；`checks[{key, name, hint}]`：任务的全部检查项（含「无所谓」的，用来显示），`key` 是字典编号或用户自定义项的 `c1`、`c2`……，`hint` 是字典里的判断说明（5.7）；`fair_price`：这件所在配置的合理价、样本数和依据（12.1），无法比价时为 `null`。
+- 商品 JSON（键名英文、按键名排序、中文不转义）：`title`、`price`、`original_price`、`description`、`published_at`、`area`、`tags`、`want_count`、`browse_count`、`url`，以及 `seller{nickname,registration,introduction,zhima_level,seller_credit,buyer_credit,item_count,on_sale_count,sold_count,rate_count,seller_good_rate,buyer_good_rate,recent_rates[],recent_items[]}`。`registration` 写成「来闲鱼 X 年 Y 个月」。没有的字段省略。
 - 图片：取详情图片的前 `ai.image_count` 张，同时最多下载 3 张，不带 Cookie，不走闲鱼账号的代理。最长边缩到 1024 像素，转成质量 80 的 JPEG，再编成 base64。下载或转换失败的图片直接跳过（包括 Go 解不了的格式）。不用搜索结果的缩略图代替。
-- 输出和解析见 8.4。结论：`match_score >= recommend_threshold` 为 `recommended`，否则 `rejected`。以匹配度为准，`is_recommended` 和匹配度不一致时不看 `is_recommended`。
+- AI 输出的是事实，不是分数（8.2）：
+  - `specs`：从标题、描述和图片读出的规格，`brand_new`。
+  - `musts`、`bonuses`：每条 `met` / `unmet` / `unknown` 和证据。
+  - `checks`：每个检查项 `ok` 没问题 / `risk` 有风险 / `suspect` 疑似 / `unknown` 没提到，附证据和证据来源（`text` 原文引用 / `image` 第几张图看到什么）。
+  - `seller_signals`：从卖家评价和简介里读出的 `desc_mismatch` 描述不符、`after_sale` 售后推诿、`slow_ship` 发货慢、`partial_refund` 作为买家被评到手刀或恶意退款、`dealer_words` 简介里的商家用语，各附原文。
+  - `price_note`：价格明显低于合理价时，卖家有没有给出可信的原因（如写明急出原因），附原文；没有就为 `null`。
+  - `adjust`：−15 到 +8 的综合判断和一句理由（5.4 第 5 条）。
+  - `summary`：一句话结论。
+- 解析和证据核对见 8.4。核对后存进 `analysis_json`，规格写进 `task_item_specs`（`source = detail`，用户改过的不覆盖），然后按 5.4 算分。
 
-### 5.4 匹配度分级
+### 5.4 算分
 
-| 匹配度 | 显示 |
+只用已存的事实，不调 AI、不访问闲鱼，所以随时可以重算。每次运行结束（4.10）、用户改需求清单、改某件商品的规格或检查项结论时，都重算受影响的发现。
+
+**1. 每个检查项的最终结论**：用户手动改过的（`user_overrides_json`）为准；否则用 AI 的结论（已经过 8.4 的证据核对）。卖家检查项（`seller_*`）的结论由 5.8 算出。只靠看图得出的 `risk` 叫「看图判断」，标黄，不当成有文字证据的风险。
+
+**2. 不符合需求**（不打分，`rejected`，`reject_kind = unmatched`，默认隐藏）：
+
+- 某项规格读出的值在 `options` 里、但不在 `values` 里；
+- 某条必须满足 `unmet`，且有文字证据。只靠看图的 `unmet` 按 `unknown` 处理。
+
+**3. 不建议**（`grade = avoid`，分数最高 39，原因写清楚，如「有 ID 锁（你设为不能接受）」）：
+
+- 态度为「不能接受」的检查项是 `risk`，且有文字证据；
+- 骗子组合：卖家是新号（5.8）+ 低得反常（下面第 4 条）+ `off_platform` 或 `deposit` 是 `risk` 或 `suspect`。
+
+**4. 基础分**：d =（合理价 − 价格）÷ 合理价，按段线性插值：
+
+| 比同配置合理价 | 基础分 |
 |---|---|
-| ≥ 85 | 强烈推荐（绿色） |
-| 推荐门槛到 84 | 可以考虑（黄色） |
-| 低于门槛 | 不推荐（红色） |
+| 贵 30% 以上（d ≤ −0.30） | 30 |
+| 贵 10–30%（−0.30 < d < −0.10） | 30 → 49 |
+| 上下 10% 以内（−0.10 ≤ d ≤ 0.10） | 50 → 69 |
+| 便宜 10–20%（0.10 < d ≤ 0.20） | 70 → 84 |
+| 便宜 20–35%（0.20 < d ≤ 0.35） | 85 → 94 |
+| 便宜 35% 以上（d > 0.35） | 84，标「低得反常，先确认」 |
 
-关键词任务没有匹配度，显示「关键词命中」。第一、二层得出的结论也没有匹配度，显示「标题初筛未通过」或第一层的原因。重新分析失败时，旧的匹配度不再显示，按「分析失败」显示。
+例：合理价 1,300、价格 1,000，d = 0.23，基础分 = 85 + (0.23 − 0.20) ÷ 0.15 × 9 ≈ 86.8。合理价按这件的配置取（12.1），所以不同配置的商品可以直接按分数比。
+
+**5. 加减分**：
+
+- 每条加分项 `met` +2，最多 +4。
+- 卖家是个人、卖家信用极好、最近 10 条评价没有差评：+2。
+- 态度为「介意」的检查项：`risk` 且有文字证据 −5；`suspect` 或看图判断 −2。
+- 态度为「不能接受」的检查项：`suspect` 或看图判断 −2（同时封顶，见第 7 条）。
+- 态度为「无所谓」的只显示，不影响分数。
+- 没有卖家资料时，卖家部分不加不减。
+- **AI 综合判断**：`adjust` 限在 −15 到 +8 之间，超出的截到边界；没写理由的按 0。AI 看完全部信息后可以在这个范围内调整，字典里没有的问题也写在这里。往下给的空间比往上大：帮用户挑出问题比把分数抬高更重要。
+
+**6. 合计**：基础分 + 加减分 + AI 综合判断，四舍五入，限在 0–100。
+
+**7. 封顶**（在 AI 综合判断之后执行，AI 不能突破）：
+
+- 态度为「不能接受」的检查项是 `unknown`、`suspect` 或看图判断：最高 89，提示「先问清楚」。
+- 低得反常：最高 84；`price_note` 给出了通过证据核对的原因时放宽到 94。
+- 不建议：最高 39。
+
+**8. 档位**：
+
+| 分数 | 档位 | 颜色 |
+|---|---|---|
+| 90 以上 | 捡漏 `steal` | 绿色，加重 |
+| 80–89 | 划算 `good` | 绿色 |
+| 65–79 | 价格合理 `fair` | 中性色 |
+| 50–64 | 偏贵或有顾虑 `pricey` | 黄色 |
+| 50 以下 | 不建议 `avoid` | 红色 |
+
+不设「100 分无脑买」。
+
+**9. 无法比价**（这件的配置算不出合理价，12.1）：没有基础分，`score` 为空，显示「无法比价」；命中不建议的照样是 `avoid`，否则 `grade` 为空。推送见 13.2。
+
+**10. 分数构成** `score_breakdown_json`：`base`（基础分、d、合理价、样本数、依据）、`items[]`（每项加减：名称、分值、来源是规则还是用户改的）、`ai`（调整值和理由）、`caps[]`（触发的封顶和原因）、`gates[]`（不建议的原因）。详情页照它写出分数怎么来的，规则部分和 AI 判断分开，如「基础 87（比合理价低 23%）· 电池 88% +2 · 个人信用极好 +2 · AI 判断 +3：带原装充电器和发票 · ID 锁没提到，最高 89」。
+
+**改需求清单以后**：改规格勾选、加分项、检查项态度、预算，马上重算，不花 AI 费用。原来第三层判为不符合的，放宽勾选后会回到算分；放宽勾选不会让第二层已经判为不符合的商品回来，界面提示「有 N 个商品之前因规格不符被排除，重新分析才能纳入」。新增一条必须满足、加分项或检查项时，已有商品没有这一条的结论，按 `unknown` 算，并提示「已有 N 个商品要重新分析才能判断这一条」，由用户决定要不要重新分析。
+
+**关键词任务**没有分数和档位，命中显示「关键词命中」。第一、二层得出的结论也没有分数，显示原因。重新分析失败时，旧的分数不再显示，按「分析失败」显示。
 
 ### 5.5 重新分析
 
 结果页的任意发现都可以「重新分析」（包括关键词判断、待处理和跳过的）：
 
-- 用任务当前的标准，从第二层（AI 任务开了第二层时）开始重走一遍。
+- 用任务当前的需求清单，从第二层（AI 任务）开始重走一遍。
 - 需要详情时：商品 `detail_fetched_at` 在 24 小时以内就用已有的详情，不打开闲鱼；否则作为一次手动运行排队（遵守第 6 节的全部限制），只处理这一件。
-- 重新分析不发「发现推荐」通知，结论变成推荐后，之后的降价照常通知。
+- 用户手动改过的规格和检查项结论保留。
+- 重新分析不发「发现推荐」通知；之后的降价和降价后升档照常通知（第 10 节）。
 
 ### 5.6 长期没有推荐的提示
 
-AI 任务最近 30 个第三层得出结论的发现（不含基线）里一个推荐都没有时，任务卡片和结果页顶部显示提示：
+AI 任务最近 30 个第三层得出结论的发现（不含基线）里没有一个达到「划算」时，任务卡片和结果页顶部显示提示：
 
-- 统计这 30 个发现 `criteria_results_json` 里 `status = fail` 的检查项，按 `name` 规整（NFKC、去首尾空白）后计数，取次数最多的 3 项。
-- 文案：「最近 30 个商品都没有推荐。最常见的不通过项：卖家信用极好（22 次）、成色九五新以上（9 次）。可能是分析标准太严。」后面是「编辑分析标准」按钮，打开 Prompt 页里这个任务的标准。
-- 只读已有数据，不调 AI、不访问闲鱼。改了分析标准、或出现新的推荐后提示消失；用户点「知道了」后，直到再积累 30 个都没推荐才再显示。
+- 从这 30 个发现的结论里数原因：不符合需求的那一条、不建议的原因、触发的封顶、−5 的扣分项，以及基础分低于 70（「价格不比合理价低」）。按原因计数，取次数最多的 3 项。
+- 文案：「最近 30 个商品都没到『划算』。最常见的原因：价格不比合理价低（18 件）、ID 锁没提到（9 件）、不符合『国行』（5 件）。」后面是「编辑需求清单」按钮。
+- 只读已有数据，不调 AI、不访问闲鱼。改了需求清单、或出现「划算」及以上的商品后提示消失；用户点「知道了」后，直到再积累 30 个都没到「划算」才再显示。
+
+### 5.7 风险字典和品类模板
+
+程序内置一份固定的风险字典（`DECISIONS.md` 第 51 条），AI 只能对任务清单里的检查项给结论；用户可以在任务里加自己写的检查项。字典随程序发布，界面上不能改，改动要发新版本。
+
+态度：`reject` 不能接受 / `mind` 介意 / `ignore` 无所谓。
+
+| 编号 | 名称 | 类 | 默认态度 | 判断说明（发给 AI 的 `hint`） | 问卖家的话 |
+|---|---|---|---|---|---|
+| fake | 假货高仿 | 真伪和来源 | reject | 高仿、复刻、A 货、仿品，或图文和正品明显不符 | 方便提供购买凭证或拍一下序列号吗？ |
+| refurbished | 翻新 | 真伪和来源 | mind | 翻新机、外壳或屏幕翻新 | 这台有没有翻新过？ |
+| official_replacement | 官换机 | 真伪和来源 | mind | 官换机、官方换新机、售后换新 | 是官换机吗？方便拍一下设置里的型号号码吗？ |
+| resource_device | 资源机 | 真伪和来源 | mind | 资源机、海外有锁机解锁、美版有锁 | 是国行还是资源机？ |
+| expanded | 扩容 | 真伪和来源 | reject | 扩容、改容量 | 存储有没有扩容过？ |
+| assembled | 拼装 | 真伪和来源 | reject | 组装机、拼装机、配件拼凑 | 是整机原装还是组装的？ |
+| unknown_source | 来路不明 | 真伪和来源 | mind | 无票无盒且说不清来源、公司发的、抵债来的 | 这台是怎么来的，有购买记录吗？ |
+| id_lock | ID 锁 | 锁和账号 | reject | Apple ID、小米账号、华为账号没退出，或有激活锁 | 方便拍一下设置里账号已退出的截图吗？ |
+| mdm | 监管机 | 锁和账号 | reject | 监管机、企业机、设备管理描述文件 | 是监管机或企业设备吗？设置里有没有设备管理？ |
+| carrier_lock | 网络锁 | 锁和账号 | reject | 卡贴机、有锁机、只能用某家运营商 | 是无锁机吗？插任何卡都能用吗？ |
+| account_bound | 账号绑定 | 锁和账号 | mind | 游戏账号、会员、序列号绑在卖家账号上，转手不能换绑 | 账号或授权能换绑到我名下吗？ |
+| console_banned | 游戏机被封 | 锁和账号 | reject | 主机或账号被封、不能联网 | 主机能正常联网吗？有没有被封过？ |
+| repaired | 维修或拆修 | 状态 | mind | 修过、拆过、换过主板或任何内部零件 | 有没有拆修过？ |
+| water_damage | 进水 | 状态 | reject | 进水、受潮、进水标变色 | 有没有进过水？ |
+| screen_replaced | 换屏 | 状态 | mind | 换过屏幕，原装屏或非原装屏 | 屏幕是原装的吗？ |
+| battery_replaced | 换电池 | 状态 | mind | 换过电池 | 电池换过吗？现在健康度多少？ |
+| cosmetic_damage | 磕碰划痕 | 状态 | mind | 磕碰、掉漆、明显划痕、裂痕 | 外观有没有磕碰？方便拍一下四个角吗？ |
+| malfunction | 功能故障 | 状态 | reject | 有功能坏了：不开机、触摸失灵、摄像头、面容、指纹、按键、接口等 | 所有功能都正常吗？ |
+| missing_parts | 缺配件 | 状态 | ignore | 缺原装充电器、线、盒子、说明书等 | 配件都有哪些？ |
+| stains | 脏污 | 状态 | mind | 污渍、发黄、霉点 | 有没有污渍？方便拍一下细节吗？ |
+| pilling | 起球 | 状态 | mind | 起球、磨损、勾丝 | 有没有起球或磨损？ |
+| odor | 异味 | 状态 | mind | 烟味、霉味、宠物味、香水味 | 有没有异味？家里有没有人抽烟或养宠物？ |
+| washed | 洗过 | 状态 | ignore | 洗过、干洗过 | 洗过吗？ |
+| mold | 发霉 | 状态 | mind | 发霉、镜头起雾、霉斑 | 镜头有没有霉、雾、灰？ |
+| mining | 矿卡 | 状态 | mind | 挖过矿、矿卡、长时间满载 | 显卡是自己玩游戏用的吗？挖过矿吗？ |
+| notes_marks | 笔记划线 | 状态 | ignore | 书里有笔记、划线、签名 | 书里有笔记或划线吗？ |
+| size_mismatch | 尺码不符 | 状态 | mind | 尺码和需求不符，或标的尺码和实际偏大偏小 | 实际尺码是多少？平铺量一下行吗？ |
+| photo_mismatch | 图文不一致 | 描述可信度 | mind | 图里的东西和标题、描述对不上 | 图片是这台实物吗？ |
+| stock_photo | 网图 | 描述可信度 | mind | 用官网图、网图、没有实物图 | 方便拍几张实物图吗？ |
+| vague | 关键信息含糊 | 描述可信度 | mind | 描述很短、关键状态避而不谈、前后矛盾 | 方便详细说一下成色和使用情况吗？ |
+| off_platform | 站外交易 | 交易方式 | reject | 要求加微信、QQ，或站外付款 | （不建议联系） |
+| deposit | 先付定金 | 交易方式 | reject | 要求先付定金、押金、诚意金 | （不建议联系） |
+| pickup_only | 只能自提 | 交易方式 | mind | 只能自提、只能面交 | 可以走闲鱼发货吗？ |
+| no_return | 不退不换 | 交易方式 | ignore | 写明不退不换、售出不退 | 收到后和描述不符可以退吗？ |
+| no_inspection | 拒绝验货宝 | 交易方式 | mind | 拒绝验货宝或官方验货 | 可以走验货宝吗？ |
+| seller_dealer | 疑似商家 | 卖家 | mind | 由程序判断（5.8） | 是自己用的吗？用了多久？ |
+| seller_new | 新号 | 卖家 | mind | 由程序判断（5.8） | — |
+| seller_bad_reviews | 差评里有描述不符或售后差 | 卖家 | mind | 由程序判断（5.8） | — |
+| seller_partial_refund | 被评到手刀 | 卖家 | mind | 由程序判断（5.8） | — |
+
+**品类模板**：任务的 `category` 决定生成清单时带出哪些检查项，带出后用户可以增删。每个品类都带「描述可信度」「交易方式」「卖家」三类的全部项，再加：
+
+| 品类 | `category` | 额外带出 |
+|---|---|---|
+| 手机平板 | `phone_tablet` | fake、refurbished、official_replacement、resource_device、expanded、id_lock、mdm、carrier_lock、repaired、water_damage、screen_replaced、battery_replaced、cosmetic_damage、malfunction、missing_parts |
+| 电脑 | `computer` | fake、refurbished、official_replacement、assembled、id_lock、mdm、repaired、water_damage、screen_replaced、battery_replaced、cosmetic_damage、malfunction、mining、missing_parts |
+| 相机镜头 | `camera` | fake、refurbished、resource_device、repaired、water_damage、mold、cosmetic_damage、malfunction、missing_parts |
+| 游戏机 | `console` | fake、refurbished、account_bound、console_banned、repaired、cosmetic_damage、malfunction、missing_parts |
+| 耳机音箱和配件 | `audio_accessory` | fake、refurbished、repaired、battery_replaced、cosmetic_damage、malfunction、missing_parts |
+| 家电 | `appliance` | refurbished、repaired、water_damage、cosmetic_damage、malfunction、missing_parts、stains |
+| 服装鞋包 | `apparel` | fake、stains、pilling、odor、washed、size_mismatch、cosmetic_damage |
+| 奢侈品 | `luxury` | fake、unknown_source、stains、cosmetic_damage、missing_parts、repaired |
+| 图书 | `book` | stains、notes_marks、missing_parts |
+| 其他 | `general` | fake、repaired、cosmetic_damage、malfunction、missing_parts |
+
+品类由生成清单时 AI 判断（8.6），用户可以在表单里改；没配 AI 时用户自己选，默认 `general`。
+
+**联系前问这几句**：结论为 `unknown` 或 `suspect`、态度不是「无所谓」的检查项，按态度（不能接受在前）列出字典里的话；用户自己写的检查项用「关于『xx』，方便说明一下吗？」。最多 5 句，一键复制，由用户自己去问。程序不向闲鱼发任何消息。
+
+### 5.8 卖家画像
+
+数据来自卖家主页缓存（`seller_profiles`，现有设计本来就会打开，`crawl.seller_cache_hours` 内复用，占详情额度）和详情里的注册天数、芝麻信用。
+
+**程序直接算**：
+
+- **新号**：注册不到 30 天 → `seller_new` 为 `risk`。
+- **信誉**：卖家信用文字、好评率，以及最近 10 条评价里作为卖家收到的差评数。展示时注明「只看了最近 10 条」。
+- **卖家类型** `seller_type`：
+  - `dealer_suspect` 疑似商家：最近 20 件里在售的、标题含任务关键词的有 3 件以上；或 AI 读出了 `dealer_words`。
+  - `dealer` 职业卖家：已售 100 件以上，并且有上面任一疑似商家的迹象。
+  - `personal` 个人：有卖家资料，且不属于上面两种。
+  - `unknown`：没有卖家资料。
+  - 前两种 → `seller_dealer` 为 `risk`。
+- **差评和到手刀**：AI 从评价文字读出、并通过原文核对的 `desc_mismatch`、`after_sale`、`slow_ship` → `seller_bad_reviews` 为 `risk`；`partial_refund` → `seller_partial_refund` 为 `risk`。
+
+**信用不一票否决**：信用好的只加分（5.4 第 5 条）。只有用户在必须满足里明确写了（如「卖家信用极好」），才按硬条件判断（#438）。「信用极好」按卖家信用文字判断，具体写法待用真实页面确认（`XIANYU.md` 第 9.4 节）。
+
+**骗子组合**：新号 + 低得反常 + 要求站外交易或先付定金，直接不建议（5.4 第 3 条）。
+
+**没有卖家资料**（额度用完、主页打不开）：卖家检查项都是 `unknown`、不进「问这几句」，卖家部分不加不减，显示「没有卖家资料，请自己看一下卖家主页」。
+
+**展示**：卡片一行，如「个人 · 来闲鱼 4 年 · 卖家信用极好 · 近 10 条评价无差评」；详情页列出依据（在售和已售数、同类在售几件、差评原文）和危险信号。
 
 ---
 
@@ -813,9 +1045,9 @@ next_run_at = 结束时间 + interval_minutes × (1 + 随机[0, interval_jitter_
 
 | 用途 | 模型 | temperature | max_tokens | 结构化输出 |
 |---|---|---|---|---|
-| 第二层 `title_screen` | text_model | 0.1 | 200 | 有，见 8.2 |
+| 第二层 `title_screen` | text_model | 0.1 | 3000（一批 20 件） | 有，见 8.2 |
 | 第三层 `analysis` | vision_model | 0.1，解析重试时 0.05 | 2000 | 有 |
-| 生成分析标准 `criteria` | text_model | 0.5 | 2000 | 不发 |
+| 生成需求清单 `profile` | text_model | 0.3 | 2000 | 有 |
 | 行情解读 `market` | text_model | 不发 | 400 | 不发 |
 | 试分析 `test` | 两步，见 8.7 | 同第二层、第三层 | 同第二层、第三层 | 同第二层、第三层 |
 | 第二天自动再试 `probe`（2.9） | text_model | 不发 | 5 | 不发 |
@@ -836,69 +1068,174 @@ next_run_at = 结束时间 + interval_minutes × (1 + 随机[0, interval_jitter_
 {
   "type": "object",
   "additionalProperties": false,
-  "required": ["pass", "reason"],
+  "required": ["items"],
   "properties": {
-    "pass": {"type": "boolean"},
-    "reason": {"type": "string"}
-  }
-}
-```
-
-**第三层的 JSON Schema**（`name: "listing_analysis"`）：严格模式要求所有字段都在 `required` 里，所以可选的字段写成可以为 `null`，解析时 `null` 当作缺失。
-
-```json
-{
-  "type": "object",
-  "additionalProperties": false,
-  "required": ["match_score", "is_recommended", "reason", "risk_tags", "seller_type", "criteria",
-               "specs", "seller_note", "trade_risk", "return_risk", "description_trust", "contact_tips"],
-  "properties": {
-    "match_score": {"type": "integer", "minimum": 0, "maximum": 100},
-    "is_recommended": {"type": "boolean"},
-    "reason": {"type": "string"},
-    "risk_tags": {"type": "array", "items": {"type": "string"}},
-    "seller_type": {"type": "string", "enum": ["personal", "dealer", "unknown"]},
-    "criteria": {
+    "items": {
       "type": "array",
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["name", "status", "comment"],
+        "required": ["no", "kind", "specs", "brand_new", "verdict", "reason"],
         "properties": {
-          "name": {"type": "string"},
-          "status": {"type": "string", "enum": ["pass", "fail", "unknown"]},
-          "comment": {"type": "string"}
+          "no": {"type": "integer"},
+          "kind": {"type": "string", "enum": ["sale", "wanted", "accessory", "recycle", "rental", "repair", "box", "multi", "broken", "other"]},
+          "specs": {"$ref": "#/$defs/specs"},
+          "brand_new": {"type": ["boolean", "null"]},
+          "verdict": {"type": "string", "enum": ["pass", "unmatched"]},
+          "reason": {"type": "string"}
         }
       }
-    },
+    }
+  },
+  "$defs": {
     "specs": {
-      "type": ["array", "null"],
+      "type": "array",
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["label", "value"],
-        "properties": {"label": {"type": "string"}, "value": {"type": "string"}}
-      }
-    },
-    "seller_note": {"type": ["string", "null"]},
-    "trade_risk": {"type": ["string", "null"], "enum": ["low", "medium", "high", null]},
-    "return_risk": {"anyOf": [{"$ref": "#/$defs/level"}, {"type": "null"}]},
-    "description_trust": {"anyOf": [{"$ref": "#/$defs/level"}, {"type": "null"}]},
-    "contact_tips": {"type": ["array", "null"], "items": {"type": "string"}}
-  },
-  "$defs": {
-    "level": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["level", "comment"],
-      "properties": {
-        "level": {"type": "string", "enum": ["low", "medium", "high"]},
-        "comment": {"type": "string"}
+        "required": ["name", "value"],
+        "properties": {"name": {"type": "string"}, "value": {"type": ["string", "null"]}}
       }
     }
   }
 }
 ```
+
+**第三层的 JSON Schema**（`name: "listing_facts"`）：严格模式要求所有字段都在 `required` 里，可以没有的写成可以为 `null`。
+
+```json
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["specs", "brand_new", "musts", "bonuses", "checks", "seller_signals", "price_note", "adjust", "summary"],
+  "properties": {
+    "specs": {"$ref": "#/$defs/specs"},
+    "brand_new": {"type": ["boolean", "null"]},
+    "musts": {"type": "array", "items": {"$ref": "#/$defs/req"}},
+    "bonuses": {"type": "array", "items": {"$ref": "#/$defs/req"}},
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["key", "status", "source", "evidence"],
+        "properties": {
+          "key": {"type": "string"},
+          "status": {"type": "string", "enum": ["ok", "risk", "suspect", "unknown"]},
+          "source": {"type": ["string", "null"], "enum": ["text", "image", null]},
+          "evidence": {"type": ["string", "null"]}
+        }
+      }
+    },
+    "seller_signals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["key", "evidence"],
+        "properties": {
+          "key": {"type": "string", "enum": ["desc_mismatch", "after_sale", "slow_ship", "partial_refund", "dealer_words"]},
+          "evidence": {"type": "string"}
+        }
+      }
+    },
+    "price_note": {"type": ["string", "null"]},
+    "adjust": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "reason"],
+      "properties": {"value": {"type": "integer"}, "reason": {"type": "string"}}
+    },
+    "summary": {"type": "string"}
+  },
+  "$defs": {
+    "specs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "value"],
+        "properties": {"name": {"type": "string"}, "value": {"type": ["string", "null"]}}
+      }
+    },
+    "req": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["no", "status", "source", "evidence"],
+      "properties": {
+        "no": {"type": "integer"},
+        "status": {"type": "string", "enum": ["met", "unmet", "unknown"]},
+        "source": {"type": ["string", "null"], "enum": ["text", "image", null]},
+        "evidence": {"type": ["string", "null"]}
+      }
+    }
+  }
+}
+```
+
+规格用 `[{name, value}]` 数组，不用以规格名为键的对象：严格模式不允许事先不知道的键名。
+
+**生成需求清单的 JSON Schema**（`name: "task_profile"`）：
+
+```json
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["summary", "category", "specs", "musts", "bonuses", "risks", "custom_checks", "allowed_kinds", "budget_min", "budget_max", "keyword", "exclude_words"],
+  "properties": {
+    "summary": {"type": "string"},
+    "category": {"type": "string", "enum": ["phone_tablet", "computer", "camera", "console", "audio_accessory", "appliance", "apparel", "luxury", "book", "general"]},
+    "specs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "options", "values", "source"],
+        "properties": {
+          "name": {"type": "string"},
+          "options": {"type": "array", "items": {"type": "string"}},
+          "values": {"type": "array", "items": {"type": "string"}},
+          "source": {"type": "string", "enum": ["user", "ai"]}
+        }
+      }
+    },
+    "musts": {"type": "array", "items": {"type": "string"}},
+    "bonuses": {"$ref": "#/$defs/items"},
+    "risks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "attitude", "source"],
+        "properties": {
+          "id": {"type": "string"},
+          "attitude": {"type": "string", "enum": ["reject", "mind", "ignore"]},
+          "source": {"type": "string", "enum": ["user", "ai"]}
+        }
+      }
+    },
+    "custom_checks": {"$ref": "#/$defs/items"},
+    "allowed_kinds": {"type": "array", "items": {"type": "string"}},
+    "budget_min": {"type": ["number", "null"]},
+    "budget_max": {"type": ["number", "null"]},
+    "keyword": {"type": ["string", "null"]},
+    "exclude_words": {"type": "array", "items": {"type": "string"}}
+  },
+  "$defs": {
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["text", "source"],
+        "properties": {"text": {"type": "string"}, "source": {"type": "string", "enum": ["user", "ai"]}}
+      }
+    }
+  }
+}
+```
+
+`musts` 只能是用户说过的，所以没有 `source`。`custom_checks` 是用户提到、字典里没有的检查项，默认态度「介意」。
 
 ### 8.3 其他兼容处理
 
@@ -909,19 +1246,22 @@ next_run_at = 结束时间 + interval_minutes × (1 + 随机[0, interval_jitter_
 - **回复被截断**：`finish_reason = "length"`（思考模型常见：推理也算在输出上限里，上游 #499 里 DeepSeek 4000 个输出 token 有 3849 个花在思考上）。不当成解析失败，也不换服务商：
   1. `max_tokens_floor` 为空或小于 8000 → 设为 8000，立刻重发。
   2. 已经是 8000 还截断 → 这个服务商写 `error_state`「回复被截断：这个模型思考太长，不适合」，新建 `ai_error` 事件并推送，换下一个服务商。
-  生成分析标准同样适用；它原来「没闭合的 `<think>`」的报错保留，作为没有 `finish_reason` 的服务商的兜底。
+  生成需求清单同样适用；它「没闭合的 `<think>`」的报错（8.6）保留，作为没有 `finish_reason` 的服务商的兜底。
 
 不做 Responses API 回退：Kakatta 只支持 Chat Completions 接口，设置页写明这一点。
 
-### 8.4 解析第三层的结果
+### 8.4 解析结果和核对证据
 
 1. 去掉 ```` ```json ```` 包裹；整段解析不了时，从第一个 `{` 开始找第一个能完整解析的 JSON 对象（上游 `src/services/ai_response_parser.py:47-53`、`100-118`）。
-2. 必须满足：`is_recommended` 是布尔值；`reason` 是非空字符串；`risk_tags` 是字符串数组；`criteria` 是数组，每项有 `name`、`status`（`pass` / `fail` / `unknown`）和 `comment`。不满足就算解析失败。
-3. `match_score` 缺失或不是 0–100 的数字（字符串、越界、布尔）时，按 `is_recommended` 推出：`true` → 75，`false` → 30，并写一条日志。小数四舍五入。
-4. `seller_type` 缺失或不认识时按 `unknown`。
-5. `specs`、`seller_note`、`trade_risk`、`return_risk`、`description_trust`、`contact_tips` 都是可选的：缺失、为 `null` 或格式不对时只丢掉那一项，不算解析失败。等级只认 `low` / `medium` / `high`，参数最多保留 6 项，建议最多保留 3 条。这几项存进 `insights_json`。用户自定义的提示词没要这些字段时，详情页对应部分不显示。
-
-第二层的解析：同样去掉包裹、找第一个对象，`pass` 必须是布尔值。
+2. **第三层必须满足**：`checks` 是数组，每项有 `key` 和合法的 `status`；`adjust` 有整数 `value`；`summary` 是字符串。不满足就算解析失败。其余字段缺失、为 `null` 或格式不对时只丢掉那一项：`specs` 丢掉当作都看不出，`musts`、`bonuses`、`checks` 缺的条目按 `unknown`，`seller_signals` 丢掉当作没有，`price_note` 丢掉当作没有。`adjust.value` 是小数就四舍五入。
+3. **第二层必须满足**：`items` 是数组。单件缺字段或 `kind` 不认识时只丢掉那一件，按 5.2 当作通过。
+4. **只认清单里有的**：`checks` 里不认识的 `key`、`musts` 和 `bonuses` 里越界的 `no`、`specs` 里清单没有的规格名，都丢掉并写一条日志。
+5. **证据核对**（防编造）：`source = text` 的证据，以及 `seller_signals`、`price_note`，都必须能在原文里找到。原文：商品的标题加描述；卖家信号用评价文字和卖家简介。核对方法：两边都做 NFKC 规整、去掉全部空白和常见标点（`，。、！？；：,.!?;:"'“”‘’「」（）()`）后，证据是原文的子串。找不到时：
+   - `risk` → `suspect`，`unmet` → `unknown`，`met`、`ok` → `unknown`；
+   - 卖家信号和 `price_note` 直接丢掉；
+   - 在详情页显示「AI 引用的原文没找到」，写一条日志。
+   AI 有时会把原文概括后再引用，所以证据是原文的一部分即可，太短（规整后不到 2 个字）的不算证据。
+6. `source = image` 的证据不核对，在 `risk` 上标「看图判断」（5.4 第 1 条）。
 
 ### 8.5 出错重试和换服务商
 
@@ -930,7 +1270,7 @@ next_run_at = 结束时间 + interval_minutes × (1 + 随机[0, interval_jitter_
 1. 候选：`enabled = 1`、`error_state` 为空的服务商，按 `sort_index` 从小到大。
 2. 对当前服务商：
    - 兼容调整（8.2、8.3）后重发，不算重试。
-   - 返回成功但解析失败：同一个服务商再试一次（第三层用 temperature 0.05）。还是失败就换下一个。
+   - 返回成功但解析失败：同一个服务商再试一次（第三层用 temperature 0.05）。还是失败就换下一个。第二层一批里所有发现共用这次判断的结果：整批失败时，批里每个 `stage = title` 的发现都按下面第 3、4 条处理。
    - 401、403、402、返回内容说余额不足、404 模型不存在、400 且内容说模型不支持图片：写 `error_state`，新建 `ai_error` 系统事件并推送，换下一个。
    - 429 且返回内容提到 `quota`、`额度`、`exceeded today`、`insufficient`、`balance`：当天额度用完，写 `error_state`「当天额度用完」（第二天自动再试，2.9），新建 `ai_error` 事件并推送，换下一个。
    - 其他 429、5xx、网络错误、超时：换下一个，不在同一个服务商上立刻重试。
@@ -939,92 +1279,127 @@ next_run_at = 结束时间 + interval_minutes × (1 + 随机[0, interval_jitter_
 4. 其他情况全部失败：发现记为 `failed`，`reason` 写最后一个错误的说明（遮掉 Key）。只要有一个服务商的失败属于临时错误（429、5xx、网络、超时），`retryable = 1`；否则为 0。`attempts` 达到 3 后不再自动重试，界面显示「分析失败（已放弃）」，仍可手动重新分析。
 5. 有任何一次请求成功，就解决这个服务商的 `ai_error` 事件。
 
-生成分析标准、行情解读、试分析不换服务商：生成标准和行情解读用第一个可用的服务商，试分析只测被点的那个。
+生成需求清单、行情解读、试分析不换服务商：生成清单和行情解读用第一个可用的服务商，试分析只测被点的那个。
 
 ### 8.6 提示词原文
 
-四份模板都可以在 Prompt 页编辑和还原（2.4）。每个 AI 任务的分析标准也在 Prompt 页列出，直接改 `tasks.criteria`。保存后下一次运行生效。
+四份模板都可以在 Prompt 页编辑和还原（2.4）。每个 AI 任务的需求清单在任务表单里改，不在 Prompt 页。保存后下一次运行生效。
 
-保存前检查：通用分析模板必须带着带引号的键名 `"match_score"`、`"is_recommended"`、`"reason"`、`"risk_tags"`、`"criteria"`；标题初筛模板必须带着 `"pass"`、`"reason"`。缺了就不能保存，并说明缺哪个。
+保存前检查：商品分析模板必须带着带引号的键名 `"checks"`、`"adjust"`、`"summary"`；标题整理模板必须带着 `"items"`、`"kind"`、`"verdict"`；需求清单模板必须带着 `"specs"`、`"risks"`。缺了就不能保存，并说明缺哪个。分数的算法不在提示词里，改提示词不能改变打分规则。
 
-**通用分析模板**（第三层的 system 消息）：
+**商品分析模板**（第三层的 system 消息）：
 
 ```
-你是一名谨慎的二手交易顾问，帮用户判断闲鱼上的一件商品值不值得联系购买。
-你会收到用户的「分析标准」、商品信息（JSON）以及若干商品图片。
+你是一名谨慎的二手交易顾问，帮用户核查闲鱼上的一件商品。你会收到用户的需求清单（JSON）、商品信息（JSON）以及若干商品图片。
+你的工作是读懂商品、提取事实、给出证据，不需要打分：分数由程序根据你提取的事实计算。
 
-判断规则：
-1. 严格按照分析标准逐条判断。「必须满足」中任何一条不满足，就不推荐。
-2. 信息缺失时，把对应检查项标为 unknown，不要猜测或编造。
-3. 结合图片核对标题和描述是否一致，例如成色、型号、配件。
-4. 特别留意这些风险：疑似商家或回收商（大量同类在售、话术模板化）、翻新或维修、描述含糊、价格明显低于本次搜索的中位数、要求站外交易或先付定金。
-5. 卖家信息只作参考，不要因为信息少就直接否定。
-6. match_score 是 0 到 100 的整数，表示商品符合分析标准的程度，要和逐项结果一致：必须满足项有 fail 时不超过 49；全部通过且没有危险信号时不低于 85。
-7. specs 从标题、描述和图片里提取最多 6 项买家最关心的参数（例如成色、配置、电池、购买时间、保修、配件），看不出来的不要写。
-8. seller_note 说明判断卖家类型的依据，例如在售和已售数量、品类是否分散、是否批量出售同款。
-9. trade_risk 是这笔交易的整体风险；return_risk 根据卖家的历史评价判断收货后压价、拒绝售后等纠纷的可能；description_trust 判断图文是否一致、描述是否坦诚。信息不足以判断的项省略。
-10. contact_tips 写最多 3 条联系卖家前值得确认或注意的事，没有就给空数组。
+规则：
+1. specs：按需求清单里的规格名，从标题、描述和图片读出这件商品的值。和某个 options 意思相同时，照抄那个 options 的写法（例如「256GB」写成清单里的「256G」）。看不出来就填 null，不要猜。brand_new 表示是否全新或未拆封，看不出来填 null。
+2. musts、bonuses：对清单里的每一条，按序号 no 给出 met（满足）、unmet（不满足）或 unknown（没提到、看不出来）。
+3. checks：对清单里的每个检查项，按 key 给出结论：
+   - ok：有明确证据说明没有这个问题，例如描述写「全原无拆修」；
+   - risk：有直接证据说明存在这个问题；
+   - suspect：只有间接迹象；
+   - unknown：卖家没提到，图里也看不出来。
+   每个检查项的 hint 说明了它指什么。
+4. 证据：met、unmet、ok、risk、suspect 都要给证据。source 为 text 时，evidence 必须原样摘抄标题或描述里的一小段文字，不要改写；source 为 image 时，evidence 写「第 N 张图：看到了什么」。unknown 的 source 和 evidence 填 null。
+5. 看图要谨慎：反光、贴膜、灰尘容易被误认成划痕或胶痕，拿不准就写 suspect。
+6. seller_signals：只从卖家的评价文字和简介里找，evidence 原样摘抄：
+   - desc_mismatch：作为卖家被评描述不符；
+   - after_sale：作为卖家被评售后推诿；
+   - slow_ship：作为卖家被评发货慢；
+   - partial_refund：作为买家被评收货后压价、到手刀、恶意退款；
+   - dealer_words：简介里有「工作室」「同行勿扰」「量大从优」这类商家用语。
+   没有就给空数组。卖家信用、注册时长、在售数量由程序计算，你不用判断。
+7. price_note：如果价格明显低于清单里的 fair_price，卖家有没有在描述里给出可信的原因（例如写明急出的原因），有就原样摘抄，没有填 null。
+8. adjust：看完全部信息后的综合判断，-15 到 8 之间的整数，reason 用一句话写明依据。用来表达清单没覆盖到的情况，例如「+5：配件齐全、有购买发票」「-8：描述前后矛盾，先说自用后说帮朋友卖」。没有特别的就给 0。往下调可以大胆一些，往上调要谨慎。
+9. summary：一句话结论，不超过 60 个字，说清这件商品最值得注意的地方。
 
 只输出一个 JSON 对象，不要输出任何其他文字，格式如下：
 {
-  "match_score": 85,
-  "is_recommended": true,
-  "reason": "一句话结论，不超过 60 个字",
-  "risk_tags": ["不超过 8 个字的风险标签"],
-  "seller_type": "personal 或 dealer 或 unknown",
-  "criteria": [
-    {"name": "检查项名称，不超过 10 个字", "status": "pass 或 fail 或 unknown", "comment": "不超过 40 个字的说明"}
-  ],
-  "specs": [{"label": "参数名，不超过 6 个字", "value": "不超过 20 个字"}],
-  "seller_note": "不超过 50 个字",
-  "trade_risk": "low 或 medium 或 high",
-  "return_risk": {"level": "low 或 medium 或 high", "comment": "不超过 50 个字"},
-  "description_trust": {"level": "low 或 medium 或 high", "comment": "不超过 50 个字"},
-  "contact_tips": ["不超过 30 个字"]
+  "specs": [{"name": "规格名", "value": "值或 null"}],
+  "brand_new": false,
+  "musts": [{"no": 1, "status": "met 或 unmet 或 unknown", "source": "text 或 image 或 null", "evidence": "原文摘抄或 null"}],
+  "bonuses": [{"no": 1, "status": "met 或 unmet 或 unknown", "source": "text 或 image 或 null", "evidence": "原文摘抄或 null"}],
+  "checks": [{"key": "检查项 key", "status": "ok 或 risk 或 suspect 或 unknown", "source": "text 或 image 或 null", "evidence": "原文摘抄或 null"}],
+  "seller_signals": [{"key": "desc_mismatch", "evidence": "评价原文摘抄"}],
+  "price_note": null,
+  "adjust": {"value": 0, "reason": "一句话依据"},
+  "summary": "一句话结论"
 }
 ```
 
-第 9 条「信息不足以判断的项省略」在 JSON Schema 模式下就是填 `null`。
-
-**标题初筛模板**（第二层的 system 消息）：
+**标题整理模板**（第二层的 system 消息）：
 
 ```
-你是一名二手交易顾问，帮用户在闲鱼搜索结果里做第一轮粗筛。
-你会收到用户的「分析标准」和一件商品在搜索列表里的信息（JSON）：只有标题、价格、地区、发布时间和标签，没有描述和图片。
+你是一名二手交易顾问，帮用户整理闲鱼的搜索结果。你会收到用户的需求清单（JSON）和一批商品（JSON 数组）：只有标题、价格和标签，没有描述和图片。
+对每件商品，按它的序号 no 做三件事：
 
-判断规则：
-1. 只有当标题或价格已经明确违反「必须满足」中的某一条时，才判为不通过。例如要求 NVMe 而标题写着 SATA，要求 16G 内存而标题写着 8G。
-2. 标题没有提到的条件，一律当作还不知道，判为通过，留到下一轮看详情和图片时再判断。
-3. 不要因为价格偏低、标题简短或信息少就判为不通过。
-4. 拿不准时判为通过。
+1. kind：判断这条是什么。
+   sale 正常出售这件东西；wanted 求购；accessory 配件或周边（壳、膜、充电器、包装以外的附属品）；recycle 回收或收购广告；rental 出租或租赁；repair 维修服务；box 空盒或包装；multi 一个链接挂多个款式或配置，价格只对应其中一款；broken 坏机、配件机、拆机件；other 其他和需求无关的。
+   拿不准时判为 sale。
+2. specs：按需求清单里的规格名，从标题读出这件商品的值。和某个 options 意思相同时照抄那个 options 的写法。标题看不出来就填 null，不要猜。brand_new 表示标题是否说明全新或未拆封，看不出来填 null。
+3. verdict：只有标题已经明确违反 musts 中的某一条，或标题直接说明存在 reject_checks 中的某个问题（例如「有锁」「监管机」「卡贴」），才判为 unmatched，否则判为 pass。标题没提到的一律当作还不知道。不要因为价格偏低、标题简短或信息少就判为 unmatched。规格是否在用户选的范围里由程序判断，你不用管。
 
-只输出一个 JSON 对象，不要输出任何其他文字，格式如下：
-{"pass": true, "reason": "一句话说明，不超过 30 个字"}
+reason 用一句话说明判断依据，不超过 20 个字。
+每件商品都要输出，不要漏掉。只输出一个 JSON 对象，不要输出任何其他文字，格式如下：
+{"items": [{"no": 1, "kind": "sale", "specs": [{"name": "规格名", "value": "值或 null"}], "brand_new": null, "verdict": "pass", "reason": "一句话依据"}]}
 ```
 
-**生成标准模板**（生成分析标准的 system 消息）：
+**需求清单模板**（生成需求清单的 system 消息）：
 
 ```
-你是一名二手交易顾问。用户会用大白话描述想在闲鱼上买什么，请把它整理成一份「分析标准」，之后会用它逐个判断商品。
+你是一名二手交易顾问。用户会用大白话描述想在闲鱼上买什么，请把它整理成一份需求清单，之后程序会用它逐个核查商品、比价和打分。
+你会收到用户的描述、可选的检查项字典（JSON），以及用户已经手动改过、必须原样保留的条目。
 
 要求：
-1. 使用简体中文纯文本，不要使用 Markdown 代码块，不要寒暄。
-2. 分成三部分，每部分逐条列出，每条一行，以「- 」开头：
-   【必须满足】硬性条件，任何一条不满足就不推荐。
-   【加分项】让商品更值得买的特征。
-   【危险信号】需要警惕的情况，例如疑似商家、翻新、描述含糊、价格异常、要求站外交易。
-3. 每一条都要具体，并且能从商品标题、描述、图片或卖家信息中判断出来。
-4. 用户没有提到、但这类商品常见的关键检查项（例如电子产品的成色、电池、维修史、配件），也要补充进去。
-5. 总长度不超过 800 字。
+1. category：判断商品属于哪个品类。
+2. specs：影响价格的关键规格，例如型号、存储、尺寸、版本，按对价格的影响从大到小排，最多 4 项。options 列出这项常见的取值，values 是用户可以接受的值：用户说「都行」「都可以」就都放进去，没说就留空数组表示都行。
+3. musts：只放用户明确说过的硬性要求，并且不是规格。用户没说过的条件绝对不能放进 musts。
+4. bonuses：让商品更值得买的特征，例如「电池 85% 以上」「在保」。
+5. risks：从检查项字典里挑出和这类商品相关的项，attitude 用字典里的默认值；用户明确说不能接受的改成 reject，说无所谓的改成 ignore。custom_checks 放用户提到、但字典里没有的检查项。
+6. source：用户说过的写 user，你补充的写 ai。
+7. allowed_kinds：只有用户本来就想要配件、坏机、空盒这类东西时才填，否则给空数组。
+8. budget_min、budget_max：用户说的大概预算，单位是元；「两三千左右」写成 2000 和 3000；没说填 null。
+9. keyword：建议的闲鱼搜索词，简短、常用的叫法。exclude_words：建议的排除词，例如「壳 膜 求购 回收」拆成单个词。
+10. summary：一句大白话总结，以「会帮你找：」开头，不超过 60 个字。
+11. 已经被用户改过的条目必须原样保留，不要删除或改写。
+
+只输出一个 JSON 对象，不要输出任何其他文字。
 ```
 
-用户消息：`我想买：<keyword>\n我的要求：<requirement>`。返回后去掉闭合的 `<think>…</think>`；还有没闭合的 `<think>`，或去掉后没有正文，就报「生成被思考过程截断，请换一个模型或重试」。界面可以取消生成，15 秒后显示「仍在生成…」。编辑任务时改了「要求」，提示「需求已修改，是否重新生成分析标准？」，选项是「重新生成」「保留当前标准」。
+用户消息：
+
+````
+我想买：<keyword>
+我的要求：<requirement>
+
+## 检查项字典
+```json
+<字典里的 id、名称、类、默认态度>
+```
+
+## 必须保留的条目
+```json
+<当前清单里 edited = true 的条目，没有时为 []>
+```
+````
+
+返回后去掉闭合的 `<think>…</think>`；还有没闭合的 `<think>`，或去掉后没有正文，就报「生成被思考过程截断，请换一个模型或重试」。界面可以取消生成，15 秒后显示「仍在生成…」。
+
+生成结果的处理：
+
+- 和当前清单合并：`edited = true` 的条目保留原样；其余按新结果替换。所以改了需求文字重新生成，只会更新用户没动过的条目。
+- `musts` 一律记 `source = user`；`risks` 里字典没有的 `id` 丢掉；`custom_checks` 转成 `{"custom": 文字, "attitude": "mind"}`。
+- 搜索词、排除词、预算不直接改表单，在清单下方显示成建议，点一下才填进去。预算填进去时，表单的价格上限同时建议填成预算上限 × 1.2（取整到 10 元），避免卡掉贵一点但很值的商品。
+- 编辑任务时改了「我的要求」，提示「需求已修改，是否重新生成清单？没改过的条目会更新，你改过的保留」，选项是「重新生成」「保持现在的清单」。
+- 没配 AI 时不显示「生成」，清单由用户自己加条目、选品类。
 
 **行情解读模板**（12.2）：
 
 ```
-你是一名二手市场分析师。你会收到某个闲鱼搜索任务近 14 天的价格统计（JSON）。
-请用简体中文写一段不超过 120 字的行情解读：说明价格走势、最集中的价格带，以及什么价位和条件的商品值得优先联系。
+你是一名二手市场分析师。你会收到某个闲鱼搜索任务近 14 天按配置分组的价格统计（JSON）。
+请用简体中文写一段不超过 120 字的行情解读：说明各配置的价格走势、最集中的价格带、配置之间差价是否合理，以及什么价位的商品值得优先联系。
 只输出这段话，不要标题、列表、Markdown 或寒暄。
 ```
 
@@ -1032,10 +1407,10 @@ next_run_at = 结束时间 + interval_minutes × (1 + 随机[0, interval_jitter_
 
 代替「测试连接」。上游的测试只让模型回一个 OK，真实分析带结构化输出、更长的输出和多张大图，所以 20 多条 issue 是「测试成功、实际全失败」（#200、#252、#287、#499）。
 
-- **样例**：程序自带一件虚构的样例商品（标题、价格、描述、卖家资料），一份固定的分析标准，一张正常尺寸的商品照片（最长边 1024 像素的 JPEG，打包进程序）。
+- **样例**：程序自带一件虚构的样例商品（标题、价格、描述、卖家资料），一份固定的需求清单，一张正常尺寸的商品照片（最长边 1024 像素的 JPEG，打包进程序）。
 - **两步**，都按真实用途的参数发（8.1 的表、8.2 和 8.3 的兼容处理照常进行，结果写进 `ai_compat`，所以试分析之后第一次真实运行就不用再摸索）：
-  1. `text_model` 按第二层发一次（标题初筛模板）。`text_model` 为空时用 `vision_model`。
-  2. `vision_model` 按第三层发一次（通用分析模板，带那张图）。
+  1. `text_model` 按第二层发一次（标题整理模板，样例商品加 4 个虚构标题凑成一批）。`text_model` 为空时用 `vision_model`。
+  2. `vision_model` 按第三层发一次（商品分析模板，带那张图）。
 - **通过**：两步都返回 2xx、没有被截断、按 8.4 能解析出合法结果。
 - **结果逐项显示**：
   - 文字模型：通过 / 失败及原因。
@@ -1062,7 +1437,7 @@ next_run_at = 结束时间 + interval_minutes × (1 + 随机[0, interval_jitter_
 ### 8.8 用量和每日上限
 
 - **用量**：当天用量 = `general.timezone` 今天 0 点以来 `ai_calls` 的 `input_tokens + output_tokens` 之和，所有服务商和用途合计；没返回 `usage` 的请求按 0 算，并在 AI 设置页注明「部分服务商不返回用量，实际可能更多」。
-- **显示**：AI 设置页显示今天、近 7 天、近 30 天的用量，按任务和用途（标题初筛、看图分析、生成标准、行情解读、试分析）分开；概览的 AI 小卡显示合计（第 16 节）。
+- **显示**：AI 设置页显示今天、近 7 天、近 30 天的用量，按任务和用途（整理标题、看图分析、生成清单、行情解读、试分析）分开；概览的 AI 小卡显示合计（第 16 节）。
 - **每日上限** `ai.daily_token_limit`（0 = 不限）：
   - 发每个 AI 请求之前检查，到了就不发（试分析除外）。请求已经发出去的照常完成，所以实际用量可能略超上限。
   - 到了上限：新建 `ai_budget` 系统事件并推送「今天的 AI 用量已到上限 N，AI 任务暂停到明天 0 点；关键词任务照常运行」；AI 任务在前置检查里跳过（4.1），已经在跑的运行把剩下的商品记为「等待分析」（8.5）。
@@ -1079,9 +1454,10 @@ next_run_at = 结束时间 + interval_minutes × (1 + 随机[0, interval_jitter_
 - **匹配方式**：只由 `[a-z0-9 ]` 组成的词按完整单词匹配，正则 `(?<![a-z0-9])词(?![a-z0-9])`，避免 `q1` 命中 `q1r5`（上游 `keyword_rule_engine.py:61-69`）；其他词按子串匹配。
 - **匹配的文本**：第一层只有标题；打开详情后是标题加描述。不包括卖家的其他商品和评价，避免误命中（上游会把卖家信息也算进去，`keyword_rule_engine.py:37-46`）。
 - **结论**（打开详情后的最终判断）：
-  1. 命中任一排除词 → `rejected`，原因「命中排除词：xx」。排除词优先于匹配词。
-  2. 否则命中任一匹配词 → `recommended`，原因「命中 N 个关键词：a、b」。
-  3. 没填匹配词、也没被排除 → `recommended`，原因「没有排除词命中」（上游这种情况判为不推荐）。
+  1. 命中任一排除词 → `rejected`，`reject_kind = excluded`，原因「命中排除词：xx」。排除词优先于匹配词。
+  2. 否则命中任一匹配词 → `matched`，原因「命中 N 个关键词：a、b」。
+  3. 没填匹配词、也没被排除 → `matched`，原因「没有排除词命中」（上游这种情况判为不推荐）。
+- **最明显的垃圾**（第二层的规则版，不调 AI，`DECISIONS.md` 第 49 条）：在第一层之后、打开详情之前，规整后的标题以「求购」或「收」开头 → `wanted`；含「回收」→ `recycle`；含「出租」或「租赁」→ `rental`。命中的 `rejected`，`decided_layer = 2`，`reject_kind = junk`，不打开详情，`task_item_specs.kind` 记下类型，不算进行情。
 - 结果卡片和详情显示命中了哪些词（`matched_keywords_json`）。
 
 ---
@@ -1093,14 +1469,16 @@ next_run_at = 结束时间 + interval_minutes × (1 + 随机[0, interval_jitter_
 - **追加价格点**：每次搜到商品，有价格并且和最近一个价格点不同（或还没有价格点）时追加。比较的是最近的价格点，不是可能已被别的任务更新过的商品快照。
 - **降价标签**：新价格低于上一个价格点时，`last_drop_amount = 上一个价格 − 新价格`，商品打「降价」标签并显示降了多少。之后价格不变时保留标签；涨价时清空。
 - **降价通知**（唯一规则）：同时满足下面几条才通知：
-  - 发现的 `decision = recommended`（包括基线发现被分析成推荐的）；
-  - 任务开了 `notify_price_drop`，通知策略不是 `none`；
+  - 发现的 `recommended_price` 不为空，即曾经达到推送条件（13.2，包括基线发现）；
+  - 任务开了 `notify_price_drop`，推送档位不是 `none`；
   - 商品没被标为不感兴趣，卖家没被屏蔽；
   - 当前价格低于基准价。基准价是 `last_drop_notified_price`，为空时取 `recommended_price`。
 
   发送成功后把 `last_drop_notified_price` 更新为当前价格，记 `drop_notified_at`。不要求这一轮一定新写了降价点：别的任务可能已经记下了同样的现价。
 
   例子：推荐时 ¥100 → ¥90 通知 → ¥110 不通知 → ¥95 不通知 → ¥85 通知。另一个例子：推荐时 ¥100 → ¥120 → ¥110 不通知（110 不低于基准 100）。
+
+- **降价后升档**（只对 AI 任务）：`recommended_price` 为空、`decision = scored` 的发现，这次运行检测到降价，4.10 重算后达到推送条件（13.2）→ 按推荐推送一次，标题写「降价后 + 档位」（13.1），写 `recommended_price` 为当前价格。之后再降价按上面的降价通知走。推送档位是 `none`、或任务没开 `notify_price_drop` 时不发，但照样写 `recommended_price`。基线发现也适用：降价是基线之后的新变化。
 - **降价金额**：通知标题里的金额 = 基准价 − 当前价格。
 
 ---
@@ -1117,7 +1495,7 @@ next_run_at = 结束时间 + interval_minutes × (1 + 随机[0, interval_jitter_
   - 批量重新分析按 5.5 逐个排队。其中需要重新打开详情的（`detail_fetched_at` 超过 24 小时），确认框里写明「其中 N 个需要重新打开详情，会占用详情额度，按访问限制排队，可能要分几次运行才处理完」。
   - 结果页的「分析失败」筛选下有「重新分析全部失败的」，等于全选后批量重新分析。
 - **新加的排除词补判已有结果**：保存任务时排除词有新增，统计这个任务现有的发现里，商品标题（打开过详情的加上描述）命中新增排除词、没收藏、结论不是 `rejected` 的有几条。有的话在保存后提示「已有 N 条结果命中新的排除词，要不要一起隐藏？」，选项「隐藏」「保留」：
-  - 隐藏：这些发现改为 `rejected`，`decided_layer = 1`，原因「命中排除词：xx（后来添加）」，从默认列表里隐藏，可以在「未推荐」筛选里看到。记录保留，`seen_items` 不动，不会被当成新商品重新分析；已经发过的通知不撤回。
+  - 隐藏：这些发现改为 `rejected`，`decided_layer = 1`，`reject_kind = excluded`，原因「命中排除词：xx（后来添加）」，从默认列表里隐藏，可以在「未推荐」筛选里看到。记录保留，`seen_items` 不动，不会被当成新商品重新分析；已经发过的通知不撤回。
   - 保留：什么都不改，只对之后的新商品生效。
 - **已读**：打开详情就标为已读，可以手动标为未读。基线发现创建时就是已读。
 
@@ -1125,23 +1503,57 @@ next_run_at = 结束时间 + interval_minutes × (1 + 随机[0, interval_jitter_
 
 ## 12. 市场行情
 
-### 12.1 统计口径
+### 12.1 合理价和统计口径
 
-输入：本任务 `task_sightings` 里近 14 天的记录（每个商品每天一个价格，就是当天最后一次看到的价格），包括没推荐、第一层没通过的；但不包括标题命中任务**当前**排除词的商品（按 `listings.title` 现算，改了排除词立刻生效）和标为不感兴趣的商品，避免无关型号拉偏行情（上游 #479）。
+按配置分组比价（`DECISIONS.md` 第 50 条）。只读数据库，不调 AI、不访问闲鱼；每次运行结束（4.10）和第三层分析前（要发给 AI，5.3）各算一次，同一次运行里复用。
+
+**样本**：本任务 `task_sightings` 近 14 天的记录，连上 `task_item_specs` 拿到配置。去掉：
+
+- 第二层认成垃圾的（`kind` 不是 `sale`，也不在清单的 `allowed_kinds` 里）；
+- 标题命中任务**当前**排除词的（按 `listings.title` 现算，改了排除词立刻生效，上游 #479）；
+- 标为不感兴趣的；
+- 规格不明的（`config_key` 为空）。
+
+第一层因价格、包邮等没通过的照样算进来：它们是同配置的真实挂牌价。
+
+**合理价**：对每个「配置 + 全新或二手」组（`brand_new = 1` 是全新组，其余是二手组）：
+
+1. 每件商品只算一次，取它在窗口内最近一天的价格。
+2. 同一卖家在同一组里挂了多件只算一件，取最低价（免得商家一次挂十几件同款把中位数拉向他的定价）。还不知道卖家的商品各算各的。
+3. 样本不少于 4 个时去掉离群价格：低于 P25 − 1.5×(P75 − P25) 或高于 P75 + 1.5×(P75 − P25)。分位数用线性插值。
+4. 剩下不少于 5 个：合理价 = 中位数，依据「同配置 · 近 14 天」。
+5. 不够时逐级放宽：
+   1. 窗口放宽到 30 天，依据「同配置 · 近 30 天」；
+   2. 还不够就去掉清单里最后一项规格（最次要的），在 30 天窗口里按剩下的规格分组，依据「放宽到 30 天 · 不分网络」（写出去掉的规格名）；清单只有一项规格时没有这一步；
+   3. 还不够：无法比价，显示「无法比价（同配置只有 N 个）」。
+6. 不拿预算顶替合理价：预算是用户愿意出多少，不是市场价。
+
+页面上写清依据，如「合理价 ¥1,900（同配置在售 23 个，近 14 天，挂牌价，实际成交通常更低）」，点开是这些商品的列表（详情页的「同配置对比表」，按价格排）。
+
+**各配置行情一览**（结果页顶部）：清单勾选范围内、有样本的每个组一行：
+
+| 列 | 算法 |
+|---|---|
+| 配置 | 如「iPad mini 6 / 256G」，全新组后面加「全新」 |
+| 合理价 | 上面的结果和依据；无法比价时写样本数 |
+| 价格带 | 当前窗口样本的 P25–P75 |
+| 现在最便宜 | 最近一次运行里还搜得到、不是垃圾的最低价那件，可以点开 |
+| 较 14 天前 | 窗口内最早有样本那天和最近有样本那天的中位数相比，两天都不少于 3 个样本时才显示 |
+
+**相邻配置差价**：详情页对只差一项规格的相邻配置给一句「升级划算度」：「比 256G 的合理价只多 ¥100，平时要多 ¥600」。前者是这件的价格减去低一档配置的合理价，后者是两个配置合理价之差；任一个无法比价时不显示。低一档 = 这项规格在 `options` 里排在前面一个的值。
+
+**其他统计**：
 
 | 指标 | 算法 |
 |---|---|
-| 当前均价 | 「当前那一天」样本的均价。当前那一天 = 今天；今天没有样本就取最近有样本的一天 |
-| 较 14 天前涨跌 | 和窗口内最早有样本那一天的均价比，写百分比 |
-| 中位数 | 当前那一天的样本，附样本数 |
-| 主流价格带 | 当前那一天样本的 P25–P75，线性插值 |
-| 历史最低、最高 | 14 天内所有样本的最低和最高，附日期；那个商品 7 天没再被任何任务搜到时注明「已售出」 |
-| 每日走势 | 每天的均价和中位数 |
-| 今日新增、今日推荐 | 今天创建的发现数、其中推荐的数 |
+| 每日走势 | 每个配置每天的中位数，样本按上面的规则去重去离群 |
+| 今日新增、今日推荐 | 今天创建的发现数、其中推荐的数（推荐的口径见第 1 节） |
 | 个人卖家占比 | 近 14 天有 `seller_type` 的发现里 `personal` 的比例 |
 | 快照时间 | 最近一次 sighting 的时间 |
 
-概览「任务表现」里的近 7 天走势用同一套算法的最近 7 个自然日，没有样本的日子不拿更早的数据凑。
+**关键词任务**没有需求清单，不分配置：全部样本（去掉规则认出的求购、回收、租赁和上面另外三种）算一组，只显示价格带、中位数和每日走势，不用于打分。
+
+概览「任务表现」里的近 7 天走势用样本最多的那一组的最近 7 个自然日的中位数，没有样本的日子不拿更早的数据凑。
 
 ### 12.2 AI 行情解读
 
@@ -1151,7 +1563,7 @@ next_run_at = 结束时间 + interval_minutes × (1 + 随机[0, interval_jitter_
 - 今天的样本数不少于 10；
 - 距离这个任务上次生成至少 6 小时。
 
-请求：text_model，system 是行情解读模板，user 是 12.1 的统计 JSON，不带图片。成功写进 `market_insights`；失败只写日志，旧的解读保留。没配置 AI 时结果页不显示这一块。
+请求：text_model，system 是行情解读模板，user 是 12.1 各配置行情一览和每日走势的 JSON，不带图片。成功写进 `market_insights`；失败只写日志，旧的解读保留。没配置 AI 时结果页不显示这一块。
 
 ---
 
@@ -1161,30 +1573,64 @@ next_run_at = 结束时间 + interval_minutes × (1 + 随机[0, interval_jitter_
 
 | 字段 | 内容 |
 |---|---|
-| title | `[任务名] 发现推荐`；`all_new` 策略下的非推荐为 `[任务名] 新商品`；降价为 `[任务名] 降价 ¥xx` |
+| title | 见下面的表 |
 | item_title | 商品标题前 40 字 |
-| body | `¥价格 · 理由`（理由是 AI 的一句话结论、关键词命中说明或标题初筛理由） |
+| body | 见下面的表 |
 | desktop_url | 网页版链接 |
 | mobile_url | `https://pages.goofish.com/sharexy?loadingVisible=false&bft=item&bfs=idlepc.item&spm=a21ybx.item.0.0&bfp=` 加上 URL 编码后的 `{"id":<商品 ID>}`（上游 `src/utils.py:105-114`） |
 | link | 按 `notify.link_target` 选 `mobile_url` 或 `desktop_url`；选中的为空时用另一个 |
 | image_url | 商品主图 |
 | kakatta_url | `general.public_url` 不为空时，指向 Kakatta 里这条发现的地址 |
+| urgent | 捡漏为真，其余为假（13.6 按渠道换成紧急级别） |
+
+| 类型 | title | body |
+|---|---|---|
+| AI 任务的推荐 | `[任务名] 捡漏 91 · mini 6 256G ¥1,000` | `比同配置低 23% · 个人信用极好 · 1 项待确认（ID 锁）`，换行后是 AI 的一句话结论 |
+| AI 任务、无法比价 | `[任务名] 无法比价 · mini 6 256G ¥1,000` | `同配置只有 3 个，没法比价 · ……`，同上 |
+| 降价后升档（第 10 节） | `[任务名] 降价后划算 84 · mini 6 256G ¥1,150` | `从 ¥1,300 降到 ¥1,150 · 比同配置低 15% · ……`，同上 |
+| 关键词任务的推荐 | `[任务名] 发现推荐 ¥价格` | 关键词命中说明 |
+| `all_new` 下的其他新商品 | `[任务名] 新商品 ¥价格` | 档位和分数（有的话）· 一句话原因 |
+| 降价 | `[任务名] 降价 ¥xx` | `¥原价 → ¥现价` · 档位和分数（有的话） |
+
+- 标题里的规格是 `config_key` 去掉分隔符的简写，规格不明时省略；超过渠道的标题长度时先截规格。
+- body 的第一行按顺序拼：比合理价低或高多少；卖家一句（个人信用极好 / 疑似商家 / 新号 / 没有卖家资料）；待确认项的数量和前两项名称；超出预算时不会推送，所以不写预算。
 
 价格显示成 `¥6,850`，整数不显示小数。
 
 ### 13.2 发哪些
 
-- `recommended`：通知推荐的发现。
-- `all_new`：通知所有判断完的新发现（推荐和不推荐，包括第一、二层没通过的）；`skipped` 和 `failed` 不通知。
-- `none`：不通知，降价也不通知。
-- 基线发现永远不发「发现推荐」和「新商品」通知，即使它们因为额度不足留到之后的运行才分析；但基线发现被分析成推荐后，之后的降价照常通知。
-- 「分析失败」不通知。
+**AI 任务**按推送档位（`notify_policy`）：
+
+| 档位 | 推送 | 门槛分 T |
+|---|---|---|
+| `steal` 只推捡漏 | 分数 ≥ 90 | 90 |
+| `good` 划算及以上（默认） | 分数 ≥ 80，以及无法比价的 | 80 |
+| `fair` 价格合理及以上 | 分数 ≥ 65，以及无法比价的 | 65 |
+| `all_new` 所有新商品 | 达到 80 的按推荐发；其余判断完的新发现按「新商品」发，第二层认成垃圾的不发 | 80 |
+| `none` 不推送 | 不发，降价也不发 | 80 |
+
+一个发现**达到推送条件**，要同时满足：
+
+- `decision = scored`，分数 ≥ T；或分数为空、`grade` 为空（无法比价、没有不建议），且档位是 `good`、`fair` 或 `all_new`；
+- 不是不建议（有红色风险的都已经是不建议，5.4 第 3 条）；
+- 设置了预算上限时，价格不超过 `budget_max`；超出的记为「超出预算」不推送，结果里照常显示并标「超出预算」；
+- 商品没被标为不感兴趣，卖家没被屏蔽。
+
+第一次算分时达到推送条件，就写 `recommended_price` 为当前价格并推送一次。之后行情变化让分数升降，不再因此推送，也不清空 `recommended_price`；只有降价后升档另外推送一次（第 10 节）。用户改需求清单、改规格、改检查项结论引起的重算也不推送。
+
+**关键词任务**：`recommended` 通知命中的（`decision = matched`，命中时写 `recommended_price`）；`all_new` 通知所有判断完的新发现；`none` 不通知，降价也不通知。
+
+**两种任务都一样**：
+
+- 基线发现永远不发「发现推荐」和「新商品」通知，即使它们因为额度不足留到之后的运行才分析；但基线发现达到推送条件后会写 `recommended_price`，之后的降价和降价后升档照常通知。
+- 「分析失败」和 `skipped` 不通知。
+- 捡漏按紧急发送（13.6）。
 
 ### 13.3 合并发送
 
 - 同一个任务一次运行最多发 `notify.max_per_run` 条（默认 5）。
-- 排序：推荐按匹配度从高到低（关键词任务按发布时间从新到旧），然后是降价按降幅从大到小，最后是 `all_new` 的非推荐。
-- 超出时发前 `max_per_run − 1` 条，再加一条合并消息，合计不超过上限：标题 `[任务名] 还有 N 个推荐`（被合并的里面有降价或非推荐时写「还有 N 条提醒」），正文列出被合并商品的标题（每个一行，最多 10 行），链接用 `kakatta_url` 指向这个任务的结果页，没设置 `public_url` 时用被合并的第一个商品的链接。合并消息发送成功后，被合并的发现都记为已通知。
+- 排序：推荐和降价后升档在前，AI 任务按分数从高到低（无法比价的排在有分数的后面），关键词任务按发布时间从新到旧；然后是降价，按降幅从大到小；最后是 `all_new` 的其他新商品。
+- 超出时发前 `max_per_run − 1` 条，再加一条合并消息，合计不超过上限：标题 `[任务名] 还有 N 个推荐`（被合并的里面有降价或其他新商品时写「还有 N 条提醒」），正文列出被合并商品的档位、分数和标题（每个一行，最多 10 行），链接用 `kakatta_url` 指向这个任务的结果页，没设置 `public_url` 时用被合并的第一个商品的链接。合并消息发送成功后，被合并的发现都记为已通知。被合并的里面有捡漏时，合并消息也按紧急发送。
 
 ### 13.4 发送规则
 
@@ -1214,16 +1660,18 @@ next_run_at = 结束时间 + interval_minutes × (1 + 随机[0, interval_jitter_
 
 下文「正文」指 `item_title + 换行 + body`。超时除注明的外都是 10 秒。
 
+**紧急级别**：`urgent` 为真的消息（捡漏，13.1）和系统事件（13.5，都要用户去处理）按下面各渠道写的紧急级别发，其余按普通级别发，避免每条都打扰用户（`DECISIONS.md` 第 55 条）。没写级别的渠道两者一样。
+
 **Bark**（照上游 `notification_clients/bark_client.py`；官方文档：<https://bark.day.app/#/tutorial>）
 
 - 配置：推送地址，如 `https://api.day.app/<key>`（加密保存）。
 - 请求：`POST` 到推送地址，`Content-Type: application/json; charset=utf-8`：
 
   ```json
-  {"title": "<title>", "body": "<正文>", "url": "<link>", "group": "Kakatta", "icon": "<image_url>", "level": "timeSensitive"}
+  {"title": "<title>", "body": "<正文>", "url": "<link>", "group": "Kakatta", "icon": "<image_url>", "level": "active"}
   ```
 
-  没有图片时不带 `icon`。
+  没有图片时不带 `icon`。紧急时 `level` 为 `timeSensitive`（上游一律用它）。
 - 成功：2xx，并且返回里有 `code` 字段时 `code == 200`。
 
 **Telegram**（参考上游 `notification_clients/telegram_client.py`；官方文档：<https://core.telegram.org/bots/api#sendmessage>、<https://core.telegram.org/bots/api#sendphoto>）
@@ -1248,7 +1696,7 @@ next_run_at = 结束时间 + interval_minutes × (1 + 随机[0, interval_jitter_
 - 配置：Topic 地址（如 `https://ntfy.sh/<topic>`，加密）、访问令牌（可选，加密）。
 - 请求：`POST` 到 Topic 地址，请求体是纯文本正文（UTF-8），请求头：
   - `Title: <title>`：含中文时按 RFC 2047 编成 `=?UTF-8?B?…?=`，每段不超过 75 字符、不拆开一个字。官方文档说明 ntfy 支持这种编码；上游直接把 UTF-8 字节放进请求头，有的 HTTP 库会把它变成问号。
-  - `Priority: urgent`（和上游一致）、`Tags: bell`、`Click: <link>`；有图片时 `Attach: <image_url>`；填了访问令牌时 `Authorization: Bearer <token>`。
+  - `Priority: default`，紧急时 `urgent`（上游一律 `urgent`）、`Tags: bell`、`Click: <link>`；有图片时 `Attach: <image_url>`；填了访问令牌时 `Authorization: Bearer <token>`。
 - 成功：2xx。
 
 **Gotify**（参考上游 `notification_clients/gotify_client.py`；官方文档：<https://gotify.net/docs/pushmsg>、<https://gotify.net/docs/msgextras>）
@@ -1265,7 +1713,7 @@ next_run_at = 结束时间 + interval_minutes × (1 + 随机[0, interval_jitter_
   }
   ```
 
-  没有图片时不带 `bigImageUrl`。和上游不同：Token 放请求头，不放 `?token=`，避免出现在访问日志和代理记录里；请求体用 JSON，不用表单。
+  没有图片时不带 `bigImageUrl`。紧急时 `priority` 为 8。和上游不同：Token 放请求头，不放 `?token=`，避免出现在访问日志和代理记录里；请求体用 JSON，不用表单。
 - 成功：2xx。
 
 **企业微信群机器人**（上游 `notification_clients/wecom_bot_client.py` 用 markdown；官方文档：<https://developer.work.weixin.qq.com/document/path/91770>）
@@ -1376,11 +1824,14 @@ next_run_at = 结束时间 + interval_minutes × (1 + 随机[0, interval_jitter_
 
 - **判断完、确定不发通知时**写 `findings.notify_skip_reason`，取第一条符合的：
   1. 基线发现：「首次运行只记录，不提醒」。
-  2. 任务的通知策略是 `none`：「这个任务设置了不通知」。
-  3. 策略是 `recommended` 而发现不是推荐：「没被推荐，任务只通知推荐的商品」。
-  4. 商品标为不感兴趣，或卖家被屏蔽：「已标为不感兴趣」或「卖家已屏蔽」。
-  5. 任务没有勾选启用的渠道：「这个任务没有选推送渠道」。
-  6. 重新分析才变成推荐：「重新分析的结果不发推荐通知」。
+  2. 任务的推送档位是 `none`：「这个任务设置了不推送」。
+  3. 商品标为不感兴趣，或卖家被屏蔽：「已标为不感兴趣」或「卖家已屏蔽」。
+  4. 不建议：「不建议：有 ID 锁（你设为不能接受）」。
+  5. 超出预算：「超出预算：¥3,400，预算上限 ¥3,000」。
+  6. AI 任务低于推送档位：「价格合理 72，任务只推划算及以上」；无法比价而档位是只推捡漏：「无法比价，任务只推捡漏」；`all_new` 下第二层认成垃圾的：「求购帖不推送」（写类型名）。
+  7. 关键词任务的推送档位是 `recommended` 而没命中：「没命中，任务只通知命中的商品」。
+  8. 任务没有勾选启用的渠道：「这个任务没有选推送渠道」。
+  9. 重新分析才达到推送条件：「重新分析的结果不发推荐通知」。
   分析失败、跳过、还在等待的不写，界面按结论显示。
 - **卡片和详情页显示**：
   - 有 `delivery_items`：每个渠道最近一次的结果，例如「已推送 · Bark、Telegram · 14:32」；合并发送的写「合并在一条『还有 N 个推荐』里」；某个渠道失败时写「Telegram 发送失败：返回 401」，并说明「下次运行会再发」。
@@ -1401,6 +1852,7 @@ next_run_at = 结束时间 + interval_minutes × (1 + 随机[0, interval_jitter_
 | 发现 | 超过 `retention.findings_days` 天的删除（0 = 永久）；商品被收藏的发现不删 |
 | 商品 | 没有发现引用、没收藏、`last_seen_at` 超过 `retention.orphan_listing_days` 天的删除，价格点一并删除 |
 | 行情明细 `task_sightings` | 超过 `retention.stats_days` 天的删除 |
+| 规格 `task_item_specs` | 这个任务既没有这件商品的发现、`task_sightings` 里也没有它的记录时删除；`source = user` 的同样删除（商品已经不在保留期里） |
 | 行情解读 `market_insights` | 超过 `retention.stats_days` 天的删除，每个任务至少保留最新一条 |
 | 运行记录、AI 调用、推送记录 | 超过 `retention.stats_days` 天的删除 |
 | 逐步日志 `run_steps` | 超过 `retention.run_steps_days` 天的删除 |
@@ -1443,14 +1895,15 @@ next_run_at = 结束时间 + interval_minutes × (1 + 随机[0, interval_jitter_
       "interval_minutes": 30,
       "crawl_overrides": {},
       "judge_mode": "ai",
-      "requirement": "M3 芯片，16G 内存，电池健康 90% 以上，个人卖家，不要维修过的",
-      "criteria": "【必须满足】\n- ...",
-      "title_screening": true,
-      "recommend_threshold": 70,
+      "requirement": "M3 芯片，16G 或 24G 内存，电池健康 90% 以上，不要维修过的，预算五六千",
+      "category": "computer",
+      "profile": {"summary": "会帮你找：……", "specs": [], "musts": [], "bonuses": [], "risks": [], "allowed_kinds": []},
+      "budget_min": 5000,
+      "budget_max": 6000,
       "match_keywords": [],
       "exclude_keywords": ["回收", "维修机"],
       "analyze_on_first_run": true,
-      "notify_policy": "recommended",
+      "notify_policy": "good",
       "notify_price_drop": true,
       "channels": [{"type": "telegram", "name": "Telegram · 家人群"}]
     }
@@ -1458,7 +1911,7 @@ next_run_at = 结束时间 + interval_minutes × (1 + 随机[0, interval_jitter_
 }
 ```
 
-- 价格的单位是元（可以有小数）。导出时分页读完全部任务，不漏。
+- 价格和预算的单位是元（可以有小数）。`profile` 就是 2.6 的 `profile_json`，原样导出。导出时分页读完全部任务，不漏。
 - 不导出：闲鱼账号（换了机器账号不同）、运行状态、搜索代次、发现。
 
 导入规则：
@@ -1467,7 +1920,7 @@ next_run_at = 结束时间 + interval_minutes × (1 + 随机[0, interval_jitter_
 2. 每个任务单独解码和校验，一个任务出错不影响其他任务。
 3. 每个字段都可以省略，按新建表单的默认值补齐。
 4. 逐个**跳过**（写明原因）：关键词为空或超过 50 字；最低价高于最高价或为负数；发布时间不是认识的值；地区在地区数据里选不到；运行间隔不是正整数；字段类型不对。
-5. 自动**修正**（写明改了什么）：名称为空用关键词，超过 30 字截断；翻页数限制到 1–3；推荐门槛取最近的一档（50 / 60 / 70 / 80 / 90）；`crawl_overrides` 里不认识的键去掉、明显无效的值（0、负数、下限大于上限）去掉；渠道按「类型 + 名称」匹配本机已有的渠道，匹配不上的去掉（写了空列表就是不推送，没写这个字段就用默认：不推送）；AI 任务没有分析标准或要求不到 10 个字时改成关键词判断。
+5. 自动**修正**（写明改了什么）：名称为空用关键词，超过 30 字截断；翻页数限制到 1–3；推送档位不认识时按任务类型取默认（AI 任务 `good`，关键词任务 `recommended`），AI 任务写了 `recommended` 改成 `good`；需求清单里不认识的检查项编号、规格名为空的规格、不认识的态度和 `allowed_kinds` 去掉，`source = ai` 的必须满足移到加分项（2.6）；预算下限高于上限时两个都去掉；品类不认识时用 `general`；`crawl_overrides` 里不认识的键去掉、明显无效的值（0、负数、下限大于上限）去掉；渠道按「类型 + 名称」匹配本机已有的渠道，匹配不上的去掉（写了空列表就是不推送，没写这个字段就用默认：不推送）；AI 任务的需求清单一项规格和必须满足都没有时改成关键词判断。
 6. 运行间隔、等待时间这类数值超出推荐范围时照样导入，在结果里提示，和表单的处理一样（`DECISIONS.md` 第 17 条）。
 7. 本机没有可用 AI 服务商时，AI 任务照样导入，运行时记跳过「没有配置 AI」，结果里提示。
 8. 导入的任务和表单新建的一样：自动分配账号、`baseline_pending = 1`、立即进入调度。
@@ -1476,7 +1929,7 @@ next_run_at = 结束时间 + interval_minutes × (1 + 随机[0, interval_jitter_
 ### 15.2 导出 CSV
 
 - 导出当前任务、当前筛选下的全部发现，分批读取，不受界面分页影响。
-- 列：标题、价格、匹配度、结论、理由、卖家、地区、发现时间、链接。价格写成不带货币符号的数字；链接用网页版地址。
+- 列：标题、价格、配置、合理价、分数、档位、结论、主要风险、理由、卖家、地区、发现时间、链接。配置、合理价、分数、档位在关键词任务和没算分的发现里为空；主要风险是有风险和待确认的检查项名称，用「、」连起来；结论写「推荐」「不符合需求」「求购帖」这类中文。价格写成不带货币符号的数字；链接用网页版地址。
 - UTF-8 带 BOM（方便 Excel 打开），按 RFC 4180 转义，CRLF 换行。默认文件名「任务名-日期.csv」。
 
 ### 15.3 导出运行日志
@@ -1502,11 +1955,11 @@ next_run_at = 结束时间 + interval_minutes × (1 + 随机[0, interval_jitter_
 监控概览可以切换今天 / 近 7 天 / 近 30 天。
 
 - **比较**：今天对比昨天 0 点到昨天此刻；近 7 天对比再往前 7 天；近 30 天超出保存期，不显示比较。前一段少于 50 时写差值，否则写百分比。
-- **统计卡**：扫描商品（`run_records.scanned_count` 之和）、新上架（`new_count` 之和）、推荐（推荐发现数，按 AI 和关键词拆分，有 `analysis_model` 的算 AI）、降价提醒（发出的降价通知数，按 `drop_notified_at`）。
+- **统计卡**：扫描商品（`run_records.scanned_count` 之和）、新上架（`new_count` 之和）、推荐（推荐发现数，口径见第 1 节：AI 任务是「划算」及以上、没超预算，关键词任务是命中；按 AI 和关键词拆分）、降价提醒（发出的降价通知数，按 `drop_notified_at`）。
 - **检查活动**：按小时（今天）或按天的新上架和已见过数量。「今天」按实际小时数分桶，夏令时那天是 23 或 25 根柱子。
 - **任务状态**：监控中（启用、在排队或等下次）、检查中、出错（最近一次失败或失败暂停）、已暂停（停用，或账号需要验证、已失效、被拒绝）。附检查成功率、平均每轮耗时、下次检查时间。
 - **任务表现**：每个任务的扫描数、推荐数、推荐率、当前最低价、近 7 天均价走势（12.1）。
-- **AI 匹配度分布**：有匹配度的发现按商品去重（同一商品被几个任务分析过只算最近一次），重新分析失败的不算。
+- **AI 档位分布**：捡漏、划算、价格合理、偏贵或有顾虑、不建议、无法比价、不符合需求、垃圾各多少件；有分数的发现按商品去重（同一商品被几个任务分析过只算最近一次），重新分析失败的不算。
 - **四张小卡**：闲鱼账号（N 个中 M 个可用）、AI 调用（次数、成功率、平均耗时、token）、推送（条数、成功率）、异常（未解决的系统事件，风控和网络两类失败次数）。
 - **运行日志概览**：过去 24 小时的成功率（不算跳过）、运行次数、失败次数、平均耗时；每小时一根柱子，分成功、跳过、失败。
 
@@ -1523,7 +1976,9 @@ next_run_at = 结束时间 + interval_minutes × (1 + 随机[0, interval_jitter_
 | 两次运行的间隔 | 任意两个任务之间至少 90 秒 | 同一账号两次运行之间至少 3 分钟加随机 0–60 秒；不同账号之间不限 | 同上 |
 | 并发 | 全应用一个页面，所有任务串行 | 全局同时打开的页面数可配（默认 1），同一账号同时只开一个 | 多账号；`DECISIONS.md` 第 16 条 |
 | 打开详情 | 每个新商品都打开详情再判断，每次最多 10 个（可调到 20） | 先用搜索结果本地筛选，只给通过前两层的打开，每次默认最多 5 个（详情页和卖家主页合计） | `CRAWL-POLICY.md` 第一、三节 |
-| 判断 | 一次多模态判断 | 三层：硬条件和排除词 → 文字模型看标题 → 多模态 | `DECISIONS.md` 第 20 条 |
+| 判断 | 一次多模态判断，给 0–100 匹配度 | 三层：硬条件和排除词 → 文字模型批量整理标题、清掉垃圾 → 多模态提取事实；分数由程序按同配置合理价、风险和卖家算，AI 只能在 −15 到 +8 之间调整 | `DECISIONS.md` 第 48–55 条 |
+| 需求 | AI 生成一段分析标准文字 | AI 整理成可编辑的清单：多选规格、必须满足、加分项、带三档态度的风险检查项、大概预算 | `DECISIONS.md` 第 48 条 |
+| 推送 | 达到推荐门槛就推 | 按档位推送（默认划算及以上），超出预算不推，捡漏按紧急发送 | `DECISIONS.md` 第 55 条 |
 | 排除词 | 只在关键词任务里，作用于标题加描述 | 所有任务都有，第一层查标题，打开详情后再查描述 | `PRODUCT.md` 第 4 节 |
 | 关键词任务的匹配词 | 在标题加描述里找 | 第一层要求标题命中，打开详情后结论按标题加描述 | 只给可能匹配的商品打开详情，省详情额度 |
 | 遇到人机验证 | 暂停全部任务，冷却固定 30 分钟 | 只暂停这个账号，冷却 2 小时起逐次加倍，最长 24 小时 | `CRAWL-POLICY.md` 第四节 |
