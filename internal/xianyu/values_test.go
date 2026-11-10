@@ -154,12 +154,16 @@ func TestAsInt(t *testing.T) {
 		in   any
 		want int64
 	}{
-		"json 数字":  {json.Number("12"), 12},
-		"数字字符串":    {" 12 ", 12},
-		"浮点整数":     {float64(12), 12},
-		"带零小数的字符串": {"12.0", 12},
-		"负数":       {json.Number("-1"), -1},
-		"大整数不丢精度":  {json.Number("2200000000000000123"), 2200000000000000123},
+		"json 数字":       {json.Number("12"), 12},
+		"数字字符串":         {" 12 ", 12},
+		"浮点整数":          {float64(12), 12},
+		"带零小数的字符串":      {"12.0", 12},
+		"负数":            {json.Number("-1"), -1},
+		"大整数不丢精度":       {json.Number("2200000000000000123"), 2200000000000000123},
+		"带小数的大整数不丢精度":   {json.Number("2200000000000000123.0"), 2200000000000000123},
+		"带小数的数字字符串不丢精度": {"9007199254740993.0", 9007199254740993},
+		"指数形式不丢精度":      {json.Number("9007199254740993e0"), 9007199254740993},
+		"最大整数带小数":       {"9223372036854775807.0", 9223372036854775807},
 	}
 	for name, c := range ok {
 		got, known := asInt(c.in)
@@ -167,7 +171,7 @@ func TestAsInt(t *testing.T) {
 			t.Errorf("%s：asInt(%#v) = %d, %v，期望 %d", name, c.in, got, known, c.want)
 		}
 	}
-	for _, v := range []any{nil, "", "abc", "1.5", float64(1.5), true, []any{}, "NaN", "Inf", json.Number("1e30")} {
+	for _, v := range []any{nil, "", "abc", "1.5", float64(1.5), true, []any{}, "NaN", "Inf", json.Number("1e30"), "9007199254740993.1", "9223372036854775808.0", "12/1"} {
 		if got, known := asInt(v); known {
 			t.Errorf("asInt(%#v) = %d，期望转换失败", v, got)
 		}

@@ -1,6 +1,7 @@
 package xianyu
 
 import (
+	"errors"
 	"reflect"
 	"testing"
 	"time"
@@ -15,7 +16,7 @@ func TestParseSearch(t *testing.T) {
 	want := []SearchItem{
 		{
 			ID: "880000000001", Title: "富士 X100V 银色 箱说全", PriceText: "¥1,299",
-			PriceCents: 129900, PriceKnown: true, OriPriceCents: 1699900, OriPriceKnown: true,
+			PriceCents: 129900, PriceKnown: true, OriPriceCents: 1699900, OriPriceKnown: true, OriPriceText: "¥16999",
 			Image: "https://img.alicdn.com/bao/uploaded/x100v.jpg", Area: "上海", SellerNick: "卖家一号",
 			WebURL:      "https://www.goofish.com/item?id=880000000001",
 			AppURL:      "https://pages.goofish.com/sharexy?loadingVisible=false&bft=item&bfs=idlepc.item&spm=a21ybx.item.0.0&bfp=%7B%22id%22%3A880000000001%7D",
@@ -37,7 +38,7 @@ func TestParseSearch(t *testing.T) {
 			AppURL: "https://pages.goofish.com/sharexy?loadingVisible=false&bft=item&bfs=idlepc.item&spm=a21ybx.item.0.0&bfp=%7B%22id%22%3A880000000003%7D",
 		},
 		{
-			ID: "880000000004", Title: "面议", PriceText: "面议",
+			ID: "880000000004", Title: "面议", PriceText: "面议", OriPriceText: "暂无",
 			AppURL: "https://pages.goofish.com/sharexy?loadingVisible=false&bft=item&bfs=idlepc.item&spm=a21ybx.item.0.0&bfp=%7B%22id%22%3A880000000004%7D",
 		},
 		{
@@ -98,9 +99,10 @@ func TestParseSearchEdges(t *testing.T) {
 		count   int
 		wantErr bool
 	}{
-		{"没有 resultList", `{"ret":["SUCCESS"],"data":{}}`, 0, false},
-		{"resultList 不是数组", `{"ret":["SUCCESS"],"data":{"resultList":{}}}`, 0, false},
-		{"根是数组", `[]`, 0, false},
+		{"没有 resultList", `{"ret":["SUCCESS"],"data":{}}`, 0, true},
+		{"resultList 不是数组", `{"ret":["SUCCESS"],"data":{"resultList":{}}}`, 0, true},
+		{"根是数组", `[]`, 0, true},
+		{"正常空列表", `{"ret":["SUCCESS"],"data":{"resultList":[]}}`, 0, false},
 		{"不是 JSON", `not json`, 0, true},
 		{"非数字 ID 用网页链接当 App 链接", `{"data":{"resultList":[{"data":{"item":{"main":{"exContent":{"itemId":"abc"},"targetUrl":"fleamarket://item?id=abc"}}}}]}}`, 1, false},
 	}
@@ -117,5 +119,13 @@ func TestParseSearchEdges(t *testing.T) {
 				t.Errorf("AppURL = %q，期望和 WebURL 相同", items[0].AppURL)
 			}
 		})
+	}
+}
+
+func TestParseSearchReportsChangedStructure(t *testing.T) {
+	for _, body := range []string{`{}`, `[]`, `{"data":{"resultList":null}}`, `{"data":{"resultList":{}}}`} {
+		if _, err := ParseSearch([]byte(body)); !errors.Is(err, ErrSearchStructure) {
+			t.Errorf("%s 应返回商品列表结构错误，实际：%v", body, err)
+		}
 	}
 }

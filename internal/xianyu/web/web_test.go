@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -37,6 +38,9 @@ func fastPace() Pace {
 
 func startRunner(t *testing.T, f *fake.Xianyu) (*Runner, *countingBudget, context.Context) {
 	t.Helper()
+	if os.Getenv("KAKATTA_BROWSER_TESTS") != "1" {
+		t.Skip("浏览器集成测试需设置 KAKATTA_BROWSER_TESTS=1，并在隔离的容器中运行")
+	}
 	if _, err := browser.FindChrome(); err != nil {
 		t.Skip("本机没有 Chrome：", err)
 	}
@@ -153,6 +157,20 @@ func TestSearchStopsOnVisibleMask(t *testing.T) {
 	}
 }
 
+func TestSearchStopsOnRiskBeforeNavigation(t *testing.T) {
+	f := newFake(t)
+	f.SetSearchRiskWithoutNavigation(true)
+	r, _, ctx := startRunner(t, f)
+	if err := r.OpenHome(ctx); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	_, err := r.Search(ctx, "相机")
+	if !errors.Is(err, ErrNeedVerify) || time.Since(start) > 5*time.Second {
+		t.Fatalf("没有跳转也必须即时处理后台风控：%v，用时 %s", err, time.Since(start))
+	}
+}
+
 // 登录判断只看本地状态：没有登录 Cookie 时为假，有了以后为真。
 func TestLoggedInChecksCookieOnly(t *testing.T) {
 	f := newFake(t)
@@ -168,6 +186,25 @@ func TestLoggedInChecksCookieOnly(t *testing.T) {
 	}
 	if err := r.WaitForLogin(ctx, 5*time.Second); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestLoginSuccessClearsHandledRiskBoundary(t *testing.T) {
+	f := newFake(t)
+	f.SetDetailRet("FAIL_SYS_USER_VALIDATE::需要验证")
+	r, _, ctx := startRunner(t, f)
+	if _, err := r.OpenDetail(ctx, xianyu.WebLink("fleamarket://item?id=101")); !errors.Is(err, ErrNeedVerify) {
+		t.Fatalf("应先出现验证：%v", err)
+	}
+	// 本地页面模拟用户完成验证和扫码后的浏览器状态。
+	if err := r.S.Navigate(f.LoginURL(), 15*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.WaitForLogin(ctx, 5*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if head, err := r.OwnProfile(ctx); err != nil || head.Nick != "测试号" {
+		t.Fatalf("人工处理后不能重放旧风控：%+v %v", head, err)
 	}
 }
 
@@ -228,6 +265,153 @@ func TestFilterFailsWhenFinalResponseFails(t *testing.T) {
 	resp, err := r.SelectPublished(ctx, 0)
 	if err == nil || IsStop(err) {
 		t.Fatalf("应该返回普通失败，实际：%v %v", resp, err)
+	}
+	if got := len(f.SearchQueries()); got != 3 {
+		t.Fatalf("业务失败不能再次筛选：实际发出 %d 个搜索请求", got)
+	}
+}
+
+func TestPublishedWindowKeepsLatestOrder(t *testing.T) {
+	f := newFake(t)
+	r, _, ctx := startRunner(t, f)
+	if err := r.OpenHome(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Search(ctx, "相机"); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := r.SelectPublished(ctx, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(resp.URL, "publish=%E6%9C%80%E6%96%B0") {
+		t.Fatalf("7 天窗口也必须点最新：%s", resp.URL)
+	}
+}
+
+func TestFilterWaitsForLastInFlightResponse(t *testing.T) {
+	f := newFake(t)
+	f.SetFinalFilterDelay(1800 * time.Millisecond)
+	r, _, ctx := startRunner(t, f)
+	if err := r.OpenHome(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Search(ctx, "相机"); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := r.SelectPublished(ctx, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(resp.URL, "final=1") {
+		t.Fatalf("最后一个请求仍在途中时不能用旧响应：%s", resp.URL)
+	}
+}
+
+func TestMissingUnconfirmedCookieOnlyWarns(t *testing.T) {
+	f := newFake(t)
+	r, _, ctx := startRunner(t, f)
+	warned := false
+	r.Log = func(event string, fields map[string]any) {
+		if event == "本地登录预检警告" {
+			warned = true
+		}
+	}
+	if err := r.OpenHome(ctx); err != nil {
+		t.Fatalf("尚未确认的 Cookie 缺失不能拦住首页：%v", err)
+	}
+	if !warned {
+		t.Fatal("应记录本地预检警告")
+	}
+	if err := r.CheckLogin(ctx); err != nil {
+		t.Fatalf("首页正常、没有 Cookie 不能标记登录失效：%v", err)
+	}
+}
+
+func TestMainDocumentPunishmentHeaderStops(t *testing.T) {
+	f := newFake(t)
+	r, _, ctx := startRunner(t, f)
+	if err := r.S.Navigate(f.Home()+"document-block", 15*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.check(ctx, "主文档响应"); !errors.Is(err, ErrNeedVerify) {
+		t.Fatalf("主文档 bxpunish 也必须停止：%v", err)
+	}
+}
+
+func TestHiddenTextAndScriptsAreNotRisk(t *testing.T) {
+	f := newFake(t)
+	r, _, ctx := startRunner(t, f)
+	if err := r.S.Navigate(f.Home()+"hidden-risk", 15*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.check(ctx, "正常页面"); err != nil {
+		t.Fatalf("脚本、样式、隐藏元素不能触发风控：%v", err)
+	}
+}
+
+func TestRiskInterruptsDetailStay(t *testing.T) {
+	f := newFake(t)
+	r, _, ctx := startRunner(t, f)
+	if err := r.OpenHome(ctx); err != nil {
+		t.Fatal(err)
+	}
+	js := `setTimeout(() => fetch('` + strings.TrimSuffix(f.Home(), "/") + `/h5/mtop.fake.risk/1.0/'), 300); true`
+	if _, err := chromedp.Run(r.S.Context(), chromedp.Evaluate[bool](js)); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	err := r.wait(ctx, "详情停留", pacer.Between(10*time.Second, 10*time.Second))
+	if !errors.Is(err, ErrNeedVerify) || time.Since(start) > 3*time.Second {
+		t.Fatalf("风控应打断停留，实际 %v，用时 %s", err, time.Since(start))
+	}
+}
+
+func TestRiskInterruptionJoinsSlowCaptureWait(t *testing.T) {
+	f := newFake(t)
+	r, _, ctx := startRunner(t, f)
+	if err := r.OpenHome(ctx); err != nil {
+		t.Fatal(err)
+	}
+	mark := r.S.Capture.Mark()
+	js := `setTimeout(() => fetch('` + strings.TrimSuffix(f.Home(), "/") + `/h5/mtop.fake.risk/1.0/'), 300); true`
+	if _, err := chromedp.Run(r.S.Context(), chromedp.Evaluate[bool](js)); err != nil {
+		t.Fatal(err)
+	}
+	workerFinished := false
+	var captured *browser.Response
+	err := r.watch(ctx, "等待慢接口", func(waitCtx context.Context) error {
+		resp, err := r.S.Capture.WaitAfter(waitCtx, mark, browser.Match{URL: "/h5/mtop.never/"}, 30*time.Second)
+		// 让取消后的退出有一个明确的尾部，外层必须等它结束才能读闭包写入的结果。
+		time.Sleep(40 * time.Millisecond)
+		captured = resp
+		workerFinished = true
+		return err
+	})
+	if !errors.Is(err, ErrNeedVerify) {
+		t.Fatalf("应由风控打断慢接口等待：%v", err)
+	}
+	if !workerFinished || captured != nil {
+		t.Fatalf("返回前必须回收等待协程：finished=%v，response=%v", workerFinished, captured)
+	}
+}
+
+func TestCancelledFilterDoesNotRetry(t *testing.T) {
+	f := newFake(t)
+	r, _, ctx := startRunner(t, f)
+	if err := r.OpenHome(ctx); err != nil {
+		t.Fatal(err)
+	}
+	stepCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	calls := 0
+	_, err := r.filterStep(stepCtx, "取消筛选", true, func() error {
+		calls++
+		cancel()
+		return nil
+	})
+	if !errors.Is(err, context.Canceled) || calls != 1 {
+		t.Fatalf("取消必须直接退出，不能重做筛选：err=%v，动作次数=%d", err, calls)
 	}
 }
 

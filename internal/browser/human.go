@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"runtime"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -36,84 +36,288 @@ func NewHuman(s *Session, p *pacer.Pacer, keyDelay pacer.Range) *Human {
 	return &Human{s: s, p: p, keyDelay: keyDelay, x: 200, y: 200}
 }
 
-// Find 在 timeout 内找出所有匹配的元素，找不到返回 ErrNotFound。
-// sel 是 CSS 选择器；以 "//" 开头时按 XPath 找。
+// Find 等到至少一个匹配的节点，查询只走 DOM 命令。
 func (h *Human) Find(ctx context.Context, sel string, timeout time.Duration) ([]*chromedp.Node, error) {
-	tctx, cancel := context.WithTimeout(h.s.ctx, timeout)
+	tctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	stop := context.AfterFunc(ctx, cancel)
-	defer stop()
-
-	var nodes []*chromedp.Node
-	var err error
-	if len(sel) >= 2 && sel[:2] == "//" {
-		nodes, err = chromedp.Run(tctx, chromedp.Nodes(chromedp.Search(sel)))
-	} else {
-		nodes, err = chromedp.Run(tctx, chromedp.Nodes(chromedp.CSSAll(sel)))
-	}
-	if err != nil {
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
+	for {
+		nodes, err := h.FindNow(tctx, sel)
+		if err != nil {
+			return nil, err
 		}
-		return nil, fmt.Errorf("%w：%s", ErrNotFound, sel)
+		if len(nodes) > 0 {
+			return nodes, nil
+		}
+		if err := h.p.Wait(tctx, pacer.Between(50*time.Millisecond, 50*time.Millisecond)); err != nil {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			return nil, fmt.Errorf("%w：%s", ErrNotFound, sel)
+		}
 	}
-	return nodes, nil
 }
 
-// FindNow 立即查一次，不等待；没有匹配时返回空列表。用来做风控检查这类「有就报、没有就过」的判断。
+// FindNow 每次重新取文档根节点，不使用上次页面的节点编号。
 func (h *Human) FindNow(ctx context.Context, sel string) ([]*chromedp.Node, error) {
+	var nodes []*chromedp.Node
+	var err error
+	for range 3 {
+		nodes, err = h.findNow(ctx, sel)
+		if err == nil || !strings.Contains(err.Error(), "Could not find node with given id") {
+			return nodes, err
+		}
+	}
+	return nil, err
+}
+
+func (h *Human) findNow(ctx context.Context, sel string) ([]*chromedp.Node, error) {
 	tctx, cancel := context.WithTimeout(h.s.ctx, 5*time.Second)
 	defer cancel()
 	stop := context.AfterFunc(ctx, cancel)
 	defer stop()
-	if len(sel) >= 2 && sel[:2] == "//" {
-		return chromedp.Run(tctx, chromedp.Nodes(chromedp.Search(sel), chromedp.AtLeast(0)))
-	}
-	return chromedp.Run(tctx, chromedp.Nodes(chromedp.CSSAll(sel), chromedp.AtLeast(0)))
-}
-
-// Box 返回元素在页面上的位置和大小，找不到位置时返回错误。
-func (h *Human) Box(n *chromedp.Node) (x, y, w, ht float64, err error) { return h.box(n) }
-
-// Visible 判断元素当前是否显示在页面上：有位置、宽高大于 0，并且自身没有被隐藏或设为完全透明。
-// 只看元素自身的样式；父元素透明的情况交给具体流程按需要再查。
-func (h *Human) Visible(n *chromedp.Node) bool {
-	_, _, w, ht, err := h.box(n)
-	if err != nil || w <= 0 || ht <= 0 {
-		return false
-	}
-	res, err := chromedp.Call(h.s.ctx, css.GetComputedStyleForNode, css.GetComputedStyleForNodeParams{NodeID: n.NodeID})
-	if err != nil {
-		return false
-	}
-	for _, p := range res.ComputedStyle {
-		switch {
-		case p.Name == "display" && p.Value == "none",
-			p.Name == "visibility" && (p.Value == "hidden" || p.Value == "collapse"),
-			p.Name == "opacity" && p.Value == "0":
-			return false
-		}
-	}
-	return true
-}
-
-// FirstVisible 返回第一个可见的匹配元素。
-func (h *Human) FirstVisible(ctx context.Context, sel string, timeout time.Duration) (*chromedp.Node, error) {
-	nodes, err := h.Find(ctx, sel, timeout)
+	depth := int64(-1)
+	root, err := chromedp.Call(tctx, dom.GetDocument, dom.GetDocumentParams{Depth: &depth})
 	if err != nil {
 		return nil, err
 	}
-	for _, n := range nodes {
-		if h.Visible(n) {
-			return n, nil
+	snapshot := nodeSnapshot(root.Root)
+	var ids []cdp.NodeID
+	if strings.HasPrefix(sel, "//") {
+		res, err := chromedp.Call(tctx, dom.PerformSearch, dom.PerformSearchParams{Query: sel})
+		if err != nil {
+			return nil, err
+		}
+		defer chromedp.Call(tctx, dom.DiscardSearchResults, dom.DiscardSearchResultsParams{SearchID: res.SearchID})
+		if res.ResultCount == 0 {
+			return nil, nil
+		}
+		hits, err := chromedp.Call(tctx, dom.GetSearchResults, dom.GetSearchResultsParams{SearchID: res.SearchID, FromIndex: 0, ToIndex: res.ResultCount})
+		if err != nil {
+			return nil, err
+		}
+		ids = hits.NodeIDs
+	} else {
+		res, err := chromedp.Call(tctx, dom.QuerySelectorAll, dom.QuerySelectorAllParams{NodeID: root.Root.NodeID, Selector: sel})
+		if err != nil {
+			return nil, err
+		}
+		ids = res.NodeIDs
+	}
+	out := make([]*chromedp.Node, 0, len(ids))
+	byBackend := map[cdp.BackendNodeID]*chromedp.Node{}
+	for _, n := range snapshot {
+		byBackend[n.BackendNodeID] = n
+	}
+	for _, id := range ids {
+		res, err := chromedp.Call(tctx, dom.DescribeNode, dom.DescribeNodeParams{NodeID: id})
+		if err != nil {
+			return nil, err
+		}
+		if n := byBackend[res.Node.BackendNodeID]; n != nil {
+			out = append(out, n)
+		} else {
+			res.Node.NodeID = id
+			out = append(out, &chromedp.Node{Node: res.Node, Parent: snapshot[res.Node.ParentID]})
 		}
 	}
-	return nil, fmt.Errorf("%w（不可见）：%s", ErrNotFound, sel)
+	return out, nil
+}
+
+func (h *Human) Box(n *chromedp.Node) (x, y, w, ht float64, err error) { return h.box(n) }
+
+// VisibleChecked 把真正不可见和读取失败分开，风控检查不能在读取失败时放行。
+func (h *Human) VisibleChecked(n *chromedp.Node) (bool, error) {
+	res, err := chromedp.Call(h.s.ctx, dom.GetBoxModel, dom.GetBoxModelParams{BackendNodeID: n.BackendNodeID})
+	if err != nil {
+		if strings.Contains(err.Error(), "Could not compute box model") {
+			return false, nil
+		}
+		return false, fmt.Errorf("读元素位置 %d：%w", n.BackendNodeID, err)
+	}
+	if res.Model == nil || res.Model.Width <= 0 || res.Model.Height <= 0 {
+		return false, nil
+	}
+	for current := n; current != nil && current.NodeType == 1; current = current.Parent {
+		id, err := h.currentNodeID(current)
+		if err != nil {
+			return false, fmt.Errorf("刷新元素编号 %d：%w", current.BackendNodeID, err)
+		}
+		style, err := chromedp.Call(h.s.ctx, css.GetComputedStyleForNode, css.GetComputedStyleForNodeParams{NodeID: id})
+		if err != nil {
+			return false, fmt.Errorf("读元素样式 %d：%w", id, err)
+		}
+		for _, p := range style.ComputedStyle {
+			if p.Name == "display" && p.Value == "none" || p.Name == "opacity" && p.Value == "0" ||
+				current == n && p.Name == "visibility" && (p.Value == "hidden" || p.Value == "collapse") {
+				return false, nil
+			}
+		}
+	}
+	return true, nil
+}
+
+func (h *Human) currentNodeID(n *chromedp.Node) (cdp.NodeID, error) {
+	res, err := chromedp.Call(h.s.ctx, dom.PushNodesByBackendIDsToFrontend, dom.PushNodesByBackendIDsToFrontendParams{BackendNodeIDs: []cdp.BackendNodeID{n.BackendNodeID}})
+	if err != nil {
+		return 0, err
+	}
+	if len(res.NodeIDs) != 1 || res.NodeIDs[0] == 0 {
+		return 0, fmt.Errorf("元素已不在当前页面里")
+	}
+	return res.NodeIDs[0], nil
+}
+
+// SearchText 只用 DOM 搜索可见文字，不把脚本或样式里的内容当作页面提示。
+func (h *Human) SearchText(ctx context.Context, text string) ([]*chromedp.Node, error) {
+	tctx, cancel := context.WithTimeout(h.s.ctx, 5*time.Second)
+	defer cancel()
+	stop := context.AfterFunc(ctx, cancel)
+	defer stop()
+	depth := int64(-1)
+	root, err := chromedp.Call(tctx, dom.GetDocument, dom.GetDocumentParams{Depth: &depth})
+	if err != nil {
+		return nil, err
+	}
+	nodes := nodeSnapshot(root.Root)
+	search := func(query string) ([]cdp.NodeID, error) {
+		found, err := chromedp.Call(tctx, dom.PerformSearch, dom.PerformSearchParams{Query: query})
+		if err != nil {
+			return nil, err
+		}
+		defer chromedp.Call(tctx, dom.DiscardSearchResults, dom.DiscardSearchResultsParams{SearchID: found.SearchID})
+		if found.ResultCount == 0 {
+			return nil, nil
+		}
+		hits, err := chromedp.Call(tctx, dom.GetSearchResults, dom.GetSearchResultsParams{SearchID: found.SearchID, ToIndex: found.ResultCount})
+		return hits.NodeIDs, err
+	}
+	ids, err := search(text)
+	if err != nil {
+		return nil, err
+	}
+	// 普通文字搜索找不到跨标签的提示，补查最深的文本容器，再核对它真正显示的文字。
+	literal := "'" + text + "'"
+	if strings.Contains(text, "'") {
+		literal = "concat('" + strings.Join(strings.Split(text, "'"), "',\"'\",'") + "')"
+	}
+	extra, err := search("//*[contains(string(.)," + literal + ") and not(.//*[contains(string(.)," + literal + ")])]")
+	if err != nil {
+		return nil, err
+	}
+	ids = append(ids, extra...)
+	out := []*chromedp.Node{}
+	seen := map[cdp.NodeID]bool{}
+	var visibleText func(*chromedp.Node) (string, error)
+	visibleText = func(n *chromedp.Node) (string, error) {
+		if strings.EqualFold(n.NodeName, "script") || strings.EqualFold(n.NodeName, "style") {
+			return "", nil
+		}
+		if n.NodeType == 3 {
+			return n.NodeValue, nil
+		}
+		if n.NodeType == 1 {
+			visible, err := h.VisibleChecked(n)
+			if err != nil || !visible {
+				return "", err
+			}
+		}
+		var text strings.Builder
+		for _, child := range n.Children {
+			part, err := visibleText(child)
+			if err != nil {
+				return "", err
+			}
+			text.WriteString(part)
+		}
+		return text.String(), nil
+	}
+	byBackend := map[cdp.BackendNodeID]*chromedp.Node{}
+	for _, n := range nodes {
+		byBackend[n.BackendNodeID] = n
+	}
+	for _, id := range ids {
+		described, err := chromedp.Call(tctx, dom.DescribeNode, dom.DescribeNodeParams{NodeID: id})
+		if err != nil {
+			return nil, err
+		}
+		n := byBackend[described.Node.BackendNodeID]
+		if n != nil && n.NodeType == 3 {
+			n = n.Parent
+		}
+		if n == nil || seen[n.NodeID] || n.NodeType != 1 {
+			continue
+		}
+		seen[n.NodeID] = true
+		excluded := false
+		for ancestor := n; ancestor != nil; ancestor = ancestor.Parent {
+			if strings.EqualFold(ancestor.NodeName, "script") || strings.EqualFold(ancestor.NodeName, "style") {
+				excluded = true
+				break
+			}
+		}
+		if excluded {
+			continue
+		}
+		shown, err := visibleText(n)
+		if err != nil {
+			return nil, err
+		}
+		if strings.Contains(shown, text) {
+			out = append(out, n)
+		}
+	}
+	return out, nil
+}
+
+func nodeSnapshot(root *cdp.Node) map[cdp.NodeID]*chromedp.Node {
+	out := map[cdp.NodeID]*chromedp.Node{}
+	var build func(*cdp.Node, *chromedp.Node) *chromedp.Node
+	build = func(raw *cdp.Node, parent *chromedp.Node) *chromedp.Node {
+		n := &chromedp.Node{Node: raw, Parent: parent}
+		out[raw.NodeID] = n
+		for _, child := range raw.Children {
+			n.Children = append(n.Children, build(child, n))
+		}
+		return n
+	}
+	build(root, nil)
+	return out
+}
+
+func (h *Human) Visible(n *chromedp.Node) bool {
+	visible, _ := h.VisibleChecked(n)
+	return visible
+}
+
+func (h *Human) FirstVisible(ctx context.Context, sel string, timeout time.Duration) (*chromedp.Node, error) {
+	tctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	for {
+		nodes, err := h.FindNow(tctx, sel)
+		if err != nil {
+			return nil, err
+		}
+		for _, n := range nodes {
+			visible, err := h.VisibleChecked(n)
+			if err != nil {
+				return nil, err
+			}
+			if visible {
+				return n, nil
+			}
+		}
+		if err := h.p.Wait(tctx, pacer.Between(50*time.Millisecond, 50*time.Millisecond)); err != nil {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			return nil, fmt.Errorf("%w：%s", ErrNotFound, sel)
+		}
+	}
 }
 
 // Click 把鼠标移到元素上并点一下。元素不在可视区域时先滚过去。
 func (h *Human) Click(ctx context.Context, n *chromedp.Node) error {
-	if _, err := chromedp.Call(h.s.ctx, dom.ScrollIntoViewIfNeeded, dom.ScrollIntoViewIfNeededParams{NodeID: n.NodeID}); err != nil {
+	if _, err := chromedp.Call(h.s.ctx, dom.ScrollIntoViewIfNeeded, dom.ScrollIntoViewIfNeededParams{BackendNodeID: n.BackendNodeID}); err != nil {
 		return fmt.Errorf("滚动到元素失败：%w", err)
 	}
 	if err := h.p.Wait(ctx, pacer.Between(150*time.Millisecond, 400*time.Millisecond)); err != nil {
@@ -164,7 +368,7 @@ func (h *Human) Scroll(ctx context.Context, dy float64) error {
 	return nil
 }
 
-// Type 逐字输入。英文和数字用按键事件；中文等用输入法提交的方式（Input.insertText），和真人用输入法打字时页面收到的事件一致。
+// Type 逐字输入。英文和数字用按键事件，中文用输入法提交；不伪造组合输入事件。
 func (h *Human) Type(ctx context.Context, text string) error {
 	for _, r := range text {
 		var err error
@@ -252,7 +456,7 @@ func (h *Human) key(p input.DispatchKeyEventParams) error {
 
 // box 返回元素内容区在页面上的位置和大小。
 func (h *Human) box(n *chromedp.Node) (x, y, w, ht float64, err error) {
-	res, err := chromedp.Call(h.s.ctx, dom.GetBoxModel, dom.GetBoxModelParams{NodeID: n.NodeID})
+	res, err := chromedp.Call(h.s.ctx, dom.GetBoxModel, dom.GetBoxModelParams{BackendNodeID: n.BackendNodeID})
 	if err != nil || res.Model == nil || len(res.Model.Content) < 8 {
 		return 0, 0, 0, 0, fmt.Errorf("%w（没有位置）", ErrNotFound)
 	}
@@ -286,21 +490,16 @@ func (h *Human) Value(n *chromedp.Node) (string, error) {
 	return "", nil
 }
 
-// Clear 清空当前获得焦点的输入框：全选再按退格（XIANYU.md 3.3 节）。
-// macOS 上 Cmd+A 是由系统菜单处理的，按键事件本身不会触发全选，所以同时带上 selectAll 编辑命令，和真按 Cmd+A 的效果一样。
+// Clear 容器里用 Ctrl+A 全选，再按退格。
 func (h *Human) Clear(ctx context.Context) error {
-	mod, cmds := int64(2), []string(nil) // Ctrl
-	if runtime.GOOS == "darwin" {
-		mod, cmds = 4, []string{"selectAll"} // Cmd
-	}
-	a := input.DispatchKeyEventParams{Type: input.DispatchKeyEventTypeRawKeyDown, Key: "a", Code: "KeyA", WindowsVirtualKeyCode: 65, NativeVirtualKeyCode: 65, Modifiers: mod, Commands: cmds}
+	a := input.DispatchKeyEventParams{Type: input.DispatchKeyEventTypeRawKeyDown, Key: "a", Code: "KeyA", WindowsVirtualKeyCode: 65, NativeVirtualKeyCode: 65, Modifiers: 2}
 	if err := h.key(a); err != nil {
 		return err
 	}
-	if err := h.key(input.DispatchKeyEventParams{Type: input.DispatchKeyEventTypeKeyUp, Key: "a", Code: "KeyA", WindowsVirtualKeyCode: 65, NativeVirtualKeyCode: 65, Modifiers: mod}); err != nil {
+	if err := h.p.Wait(ctx, pacer.Between(50*time.Millisecond, 120*time.Millisecond)); err != nil {
 		return err
 	}
-	if err := h.p.Wait(ctx, pacer.Between(80*time.Millisecond, 200*time.Millisecond)); err != nil {
+	if err := h.key(input.DispatchKeyEventParams{Type: input.DispatchKeyEventTypeKeyUp, Key: "a", Code: "KeyA", WindowsVirtualKeyCode: 65, NativeVirtualKeyCode: 65, Modifiers: 2}); err != nil {
 		return err
 	}
 	return h.Press(ctx, "Backspace")

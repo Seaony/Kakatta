@@ -1,6 +1,7 @@
 package xianyu
 
 import (
+	"errors"
 	"strings"
 	"time"
 )
@@ -12,6 +13,7 @@ type SearchItem struct {
 	PriceKnown           bool
 	OriPriceCents        int64
 	OriPriceKnown        bool
+	OriPriceText         string
 	Image, Area          string
 	SellerNick           string
 	WebURL, AppURL       string
@@ -22,17 +24,24 @@ type SearchItem struct {
 	FreeShip, Inspected  bool // 包邮、验货宝
 }
 
+// ErrSearchStructure 表示搜索响应没有合法的商品列表，调用方应提示页面结构可能变了。
+var ErrSearchStructure = errors.New("搜索响应缺少有效的 resultList 列表")
+
 // ParseSearch 解析搜索接口正文里的 data.resultList（parsers.py:12-66）。
 // 按项解析：一项坏了只跳过这一项，缺商品 ID 的跳过，同一个 ID 只留第一次出现的。
-// 只有正文不是 JSON 时才返回 error；没有 resultList 时和上游一样当作没有结果。
+// 列表缺失或类型错误和正常空列表分开，避免页面改版时误报没有商品。
 func ParseSearch(body []byte) ([]SearchItem, error) {
 	root, err := decodeJSON(body)
 	if err != nil {
 		return nil, err
 	}
+	list, ok := pathGet(root, "data", "resultList").([]any)
+	if !ok {
+		return nil, ErrSearchStructure
+	}
 	var items []SearchItem
 	seen := map[string]bool{}
-	for _, raw := range asSlice(pathGet(root, "data", "resultList")) {
+	for _, raw := range list {
 		it, ok := parseSearchItem(raw)
 		if !ok || seen[it.ID] {
 			continue
@@ -57,7 +66,8 @@ func parseSearchItem(raw any) (SearchItem, bool) {
 	it.Title = asText(ex["title"])
 	it.PriceText = searchPriceText(ex["price"])
 	it.PriceCents, it.PriceKnown = ParsePriceCents(it.PriceText)
-	it.OriPriceCents, it.OriPriceKnown = ParsePriceCents(asText(ex["oriPrice"]))
+	it.OriPriceText = asText(ex["oriPrice"])
+	it.OriPriceCents, it.OriPriceKnown = ParsePriceCents(it.OriPriceText)
 	it.Image = FixImageURL(asText(ex["picUrl"]))
 	it.Area = asText(ex["area"])
 	it.SellerNick = asText(ex["userNickName"])

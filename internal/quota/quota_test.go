@@ -37,8 +37,23 @@ func TestDailyCountsOnlySameKindToday(t *testing.T) {
 
 func TestPruneKeepsRecent(t *testing.T) {
 	now := at(12, 0)
-	v := []Visit{{now.Add(-26 * time.Hour), Search}, {now.Add(-time.Hour), Search}}
-	if got := Prune(v, now); len(got) != 1 || !got[0].At.Equal(now.Add(-time.Hour)) {
+	v := []Visit{{now.Add(-48 * time.Hour), Search}, {now.Add(-47 * time.Hour), Detail}, {now.Add(-26 * time.Hour), Search}, {now.Add(-time.Hour), Search}, {now.Add(time.Hour), Detail}}
+	if got := Prune(v, now); len(got) != 4 || !got[0].At.Equal(now.Add(-47*time.Hour)) || !got[3].At.Equal(now.Add(time.Hour)) {
 		t.Fatalf("Prune 结果不对：%v", got)
+	}
+}
+
+func TestDailyUsesConfiguredTimezoneAcrossDaylightSaving(t *testing.T) {
+	loc, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 11, 1, 23, 30, 0, 0, loc)
+	visits := []Visit{{time.Date(2026, 11, 1, 0, 30, 0, 0, loc), Detail}, {time.Date(2026, 11, 1, 3, 0, 0, 0, loc), Detail}}
+	if err := Check(visits, now, Detail, limits); err == nil {
+		t.Fatal("夏令时结束的25小时自然日里，今天的两次访问仍应计入每日额度")
+	}
+	if err := Check(visits, now.In(time.UTC), Detail, limits); err != nil {
+		t.Fatalf("传入UTC时已是下一自然日，不应仍算前一天：%v", err)
 	}
 }

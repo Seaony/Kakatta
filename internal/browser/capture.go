@@ -3,89 +3,119 @@ package browser
 import (
 	"context"
 	"errors"
+	"maps"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/network"
+	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 )
 
-// Response 是页面自己发出的一次接口请求，以及它的结果。
+// Response 是页面自己发出的请求及结果，返回给调用方的都是独立副本。
 type Response struct {
-	Seq     uint64 // 请求发出时的编号，越大越晚发出
-	Method  string
-	URL     string
-	Status  int64
-	Headers map[string]string // 响应头，键统一小写
-	Body    []byte
-	Err     error // 请求失败或取不到正文时的原因
-	done    bool  // 正文已经取到，或者请求已经失败
+	Seq          uint64
+	Method       string
+	URL          string
+	Status       int64
+	Headers      map[string]string
+	Body         []byte
+	Err          error
+	MainDocument bool
+	done         bool
+	updatedAt    time.Time
 }
 
-// Match 描述要等的是哪一种请求。Method 为空时不限请求方法。
 type Match struct {
-	URL    string // 网址里要含的片段
-	Method string // 比如 "POST"
+	URL    string
+	Method string
 }
 
 func (m Match) matches(r *Response) bool {
 	return strings.Contains(r.URL, m.URL) && (m.Method == "" || strings.EqualFold(r.Method, m.Method))
 }
 
-// ErrResponseTimeout 表示在规定时间内没有等到想要的接口响应。
-var ErrResponseTimeout = errors.New("等待接口响应超时")
+var (
+	ErrResponseTimeout = errors.New("等待接口响应超时")
+	ErrCaptureOverflow = errors.New("在途请求太多，不能可靠判断操作对应的响应")
+)
 
-// maxKept 是最多保留多少条请求记录，够一次运行用，又不会一直占内存。
+type requestStart struct {
+	seq  uint64
+	main bool
+}
+
 const maxKept = 200
 
-// Capture 通过 CDP 网络事件读取页面自己请求到的数据，不往页面里注入脚本。
-// 编号在请求发出时分配：操作之前就发出、操作之后才返回的旧请求，不会被当成这次操作的结果。
+// Capture 只记录需要的接口和主文档，不注入脚本，不保存到磁盘。
 type Capture struct {
-	ctx    context.Context
-	mu     sync.Mutex
-	watch  []string // 只关心网址里含这些片段的请求
-	byID   map[network.RequestID]*Response
-	all    []*Response // 按发出顺序排列
-	seq    uint64
-	notify chan struct{} // 有请求完成时关闭并换一个新的，用来唤醒等待者
+	ctx       context.Context
+	mu        sync.Mutex
+	watch     []string
+	byID      map[network.RequestID]*Response
+	all       []*Response
+	seq       uint64
+	mainFrame cdp.FrameID
+	requests  map[network.RequestID]requestStart
+	err       error
+	notify    chan struct{}
 }
 
 func newCapture(ctx context.Context) *Capture {
-	return &Capture{ctx: ctx, byID: map[network.RequestID]*Response{}, notify: make(chan struct{})}
+	return &Capture{ctx: ctx, byID: map[network.RequestID]*Response{}, requests: map[network.RequestID]requestStart{}, notify: make(chan struct{})}
 }
 
-// Watch 设置要关心的接口网址片段，比如 "mtop.taobao.idlemtopsearch.pc.search"。
 func (c *Capture) Watch(fragments ...string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.watch = append(c.watch, fragments...)
 }
 
-// Mark 返回当前的编号。之后只认这个编号之后才发出的请求。
 func (c *Capture) Mark() uint64 {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.seq
 }
 
+// Changes 在下一次请求、响应头或正文到达时唤醒等待者。
+func (c *Capture) Changes() <-chan struct{} {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.notify
+}
+
+func (c *Capture) setMainFrame(id cdp.FrameID) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.mainFrame = id
+}
+
 func (c *Capture) listen() error {
-	// 回调在读取浏览器消息的循环里执行，不能阻塞，也不能在里面发命令；取正文放到单独的 goroutine。
+	// 读正文另起协程，不能堵住协议事件回调。
 	return chromedp.Listen(c.ctx, func(ev any) {
 		switch e := ev.(type) {
+		case *page.EventFrameNavigated:
+			if e.Frame != nil && e.Frame.ParentID == "" {
+				c.setMainFrame(e.Frame.ID)
+			}
 		case *network.EventRequestWillBeSent:
 			if e.Request != nil {
-				c.sent(e.RequestID, e.Request)
+				c.sentRequest(e.RequestID, e.Request, e.Type, e.FrameID, e.RedirectResponse != nil)
 			}
 		case *network.EventResponseReceived:
 			if e.Response != nil {
 				c.received(e.RequestID, e.Response)
 			}
 		case *network.EventLoadingFinished:
+			c.forgetStart(e.RequestID)
 			if r := c.unfinished(e.RequestID); r != nil {
 				go c.fetchBody(e.RequestID, r)
 			}
 		case *network.EventLoadingFailed:
+			c.forgetStart(e.RequestID)
 			if r := c.unfinished(e.RequestID); r != nil {
 				c.finish(e.RequestID, r, nil, errors.New(e.ErrorText))
 			}
@@ -94,33 +124,75 @@ func (c *Capture) listen() error {
 }
 
 func (c *Capture) sent(id network.RequestID, req *network.Request) {
+	c.sentRequest(id, req, "", "", false)
+}
+
+func (c *Capture) sentRequest(id network.RequestID, req *network.Request, typ network.ResourceType, frame cdp.FrameID, redirected bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	watched := false
-	for _, f := range c.watch {
-		if strings.Contains(req.URL, f) {
-			watched = true
-			break
+	start, known := c.requests[id]
+	if !known {
+		if redirected || len(c.requests) >= maxKept {
+			c.err = ErrCaptureOverflow
+			c.changed()
+			return
 		}
+		c.seq++
+		start = requestStart{seq: c.seq, main: typ == network.ResourceTypeDocument && frame == c.mainFrame}
+		c.requests[id] = start
+	}
+	// 跳转仍是同一次请求，不能把操作前发出的请求变成新请求。
+	if r := c.byID[id]; r != nil {
+		r.URL, r.Method, r.updatedAt = req.URL, req.Method, time.Now()
+		c.changed()
+		return
+	}
+	main := start.main
+	watched := main
+	for _, f := range c.watch {
+		watched = watched || strings.Contains(req.URL, f)
 	}
 	if !watched {
 		return
 	}
-	c.seq++
-	r := &Response{Seq: c.seq, Method: req.Method, URL: req.URL}
+	r := &Response{Seq: start.seq, Method: req.Method, URL: req.URL, MainDocument: main, updatedAt: time.Now()}
 	c.byID[id] = r
 	c.all = append(c.all, r)
+	slices.SortFunc(c.all, func(a, b *Response) int {
+		if a.Seq < b.Seq {
+			return -1
+		}
+		if a.Seq > b.Seq {
+			return 1
+		}
+		return 0
+	})
 	if len(c.all) > maxKept {
-		c.all = c.all[len(c.all)-maxKept:]
+		old := c.all[0]
+		for id, pending := range c.byID {
+			if pending == old {
+				c.err = ErrCaptureOverflow
+				delete(c.byID, id)
+				break
+			}
+		}
+		copy(c.all, c.all[1:])
+		c.all = c.all[:maxKept]
 	}
+	c.changed()
 }
 
 func (c *Capture) received(id network.RequestID, resp *network.Response) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if r := c.byID[id]; r != nil {
-		r.Status = resp.Status
-		r.Headers = lowerHeaders(resp.Headers)
+		r.URL, r.Status, r.Headers = resp.URL, resp.Status, lowerHeaders(resp.Headers)
+		if r.MainDocument {
+			// 主文档只检查响应头，收到处罚头时不必等正文。
+			r.done = true
+			delete(c.byID, id)
+		}
+		c.changed()
 	}
 }
 
@@ -133,23 +205,50 @@ func (c *Capture) unfinished(id network.RequestID) *Response {
 	return nil
 }
 
-// fetchBody 在响应加载完成之后再取正文；页面跳转后资源会被丢弃，所以要尽快取。
 func (c *Capture) fetchBody(id network.RequestID, r *Response) {
 	res, err := chromedp.Call(c.ctx, network.GetResponseBody, network.GetResponseBodyParams{RequestID: id})
+	// 当前协议库会在解码时处理 base64Encoded。
 	c.finish(id, r, res.Body, err)
 }
 
 func (c *Capture) finish(id network.RequestID, r *Response, body []byte, err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	r.Body, r.Err, r.done = body, err, true
+	if c.byID[id] != r {
+		return
+	}
+	r.Body, r.Err, r.done, r.updatedAt = slices.Clone(body), err, true, time.Now()
 	delete(c.byID, id)
+	delete(c.requests, id)
+	c.changed()
+}
+
+func (c *Capture) forgetStart(id network.RequestID) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.requests, id)
+}
+
+func (c *Capture) Err() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.err
+}
+
+func (c *Capture) changed() {
 	close(c.notify)
 	c.notify = make(chan struct{})
 }
 
-// SentAfter 判断 mark 之后有没有发出过符合条件的请求（不管有没有返回）。
-// 筛选或翻页超时时用它判断：请求已经发出就不要再点一次，否则可能多翻一页，或者把刚开的筛选又取消掉。
+func responseCopy(r *Response) *Response {
+	if r == nil {
+		return nil
+	}
+	copy := *r
+	copy.Headers, copy.Body = maps.Clone(r.Headers), slices.Clone(r.Body)
+	return &copy
+}
+
 func (c *Capture) SentAfter(mark uint64, m Match) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -161,56 +260,121 @@ func (c *Capture) SentAfter(mark uint64, m Match) bool {
 	return false
 }
 
-// WaitAfter 等 mark 之后发出、符合条件、已经完成的第一条请求，最多等 timeout。
 func (c *Capture) WaitAfter(ctx context.Context, mark uint64, m Match, timeout time.Duration) (*Response, error) {
 	deadline := time.NewTimer(timeout)
 	defer deadline.Stop()
 	for {
 		c.mu.Lock()
+		if c.err != nil {
+			err := c.err
+			c.mu.Unlock()
+			return nil, err
+		}
 		for _, r := range c.all {
 			if r.Seq > mark && r.done && m.matches(r) {
+				out := responseCopy(r)
 				c.mu.Unlock()
-				return r, nil
+				return out, nil
 			}
 		}
 		wake := c.notify
 		c.mu.Unlock()
-
 		select {
 		case <-wake:
 		case <-deadline.C:
 			return nil, ErrResponseTimeout
 		case <-ctx.Done():
 			return nil, ctx.Err()
+		case <-c.ctx.Done():
+			return nil, c.ctx.Err()
 		}
 	}
 }
 
-// LastAfter 返回 mark 之后发出、符合条件、已经完成的最后一条请求；没有就返回 nil。
-// 筛选时页面可能连发几次请求，只有最后一次才是筛选完成后的结果。
+// WaitLastAfter 等在途请求都结束，再等 quiet 没有新请求，返回最后发出的那条。
+func (c *Capture) WaitLastAfter(ctx context.Context, mark uint64, m Match, quiet, timeout time.Duration) (*Response, error) {
+	deadline := time.Now().Add(timeout)
+	for {
+		c.mu.Lock()
+		if c.err != nil {
+			err := c.err
+			c.mu.Unlock()
+			return nil, err
+		}
+		var last *Response
+		var activity time.Time
+		pending := false
+		for _, r := range c.all {
+			if r.Seq <= mark || !m.matches(r) {
+				continue
+			}
+			last = r
+			pending = pending || !r.done
+			if r.updatedAt.After(activity) {
+				activity = r.updatedAt
+			}
+		}
+		if last != nil && !pending && time.Since(activity) >= quiet {
+			out := responseCopy(last)
+			c.mu.Unlock()
+			return out, nil
+		}
+		wake := c.notify
+		wait := time.Until(deadline)
+		if last != nil && !pending {
+			wait = min(wait, time.Until(activity.Add(quiet)))
+		}
+		c.mu.Unlock()
+		if time.Now().After(deadline) {
+			return nil, ErrResponseTimeout
+		}
+		timer := time.NewTimer(max(wait, time.Nanosecond))
+		select {
+		case <-wake:
+		case <-timer.C:
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, ctx.Err()
+		case <-c.ctx.Done():
+			timer.Stop()
+			return nil, c.ctx.Err()
+		}
+		timer.Stop()
+	}
+}
+
 func (c *Capture) LastAfter(mark uint64, m Match) *Response {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for i := len(c.all) - 1; i >= 0; i-- {
 		r := c.all[i]
-		if r.Seq <= mark {
-			break
-		}
-		if r.done && m.matches(r) {
-			return r
+		if r.Seq > mark && r.done && m.matches(r) {
+			return responseCopy(r)
 		}
 	}
 	return nil
 }
 
-// DoneAfter 返回 mark 之后发出、符合条件、已经完成的全部请求，按发出顺序排列。用来对一段操作期间的所有接口做风控检查。
+// HeadersAfter 包括正文还没收完的响应，处罚头一到就能停止操作。
+func (c *Capture) HeadersAfter(mark uint64, m Match) []*Response {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var out []*Response
+	for _, r := range c.all {
+		if r.Seq > mark && r.Headers != nil && m.matches(r) {
+			out = append(out, responseCopy(r))
+		}
+	}
+	return out
+}
+
 func (c *Capture) DoneAfter(mark uint64, m Match) []*Response {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	var out []*Response
 	for _, r := range c.all {
 		if r.Seq > mark && r.done && m.matches(r) {
-			out = append(out, r)
+			out = append(out, responseCopy(r))
 		}
 	}
 	return out

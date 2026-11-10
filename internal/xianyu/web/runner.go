@@ -107,9 +107,43 @@ func (r *Runner) acquire(kind quota.Kind, what string) error {
 // wait 按区间随机等待，并记下这一步实际等了多久。
 func (r *Runner) wait(ctx context.Context, what string, rg pacer.Range) error {
 	start := time.Now()
-	err := r.P.Wait(ctx, rg)
+	err := r.watch(ctx, what, func(waitCtx context.Context) error { return r.P.Wait(waitCtx, rg) })
 	r.Log("等待", map[string]any{"步骤": what, "毫秒": time.Since(start).Milliseconds()})
 	return err
+}
+
+// 等待期间接口仍可能返回风控，检查和后续页面操作在同一个调用里串行执行。
+func (r *Runner) watch(ctx context.Context, where string, wait func(context.Context) error) error {
+	if err := r.check(ctx, where); err != nil {
+		return err
+	}
+	waitCtx, cancel := context.WithCancel(ctx)
+	completed := make(chan error, 1)
+	workerDone := make(chan struct{})
+	go func() {
+		defer close(workerDone)
+		completed <- wait(waitCtx)
+	}()
+	defer func() {
+		cancel()
+		<-workerDone
+	}()
+	for {
+		changed := r.S.Capture.Changes()
+		if err := r.check(ctx, where); err != nil {
+			return err
+		}
+		select {
+		case err := <-completed:
+			if err != nil {
+				return err
+			}
+			return r.check(ctx, where)
+		case <-changed:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 }
 
 func seconds(n int) time.Duration { return time.Duration(n) * time.Second }

@@ -5,6 +5,10 @@ package fake
 import (
 	"encoding/json"
 	"fmt"
+	"html"
+	"image"
+	"image/color"
+	"image/jpeg"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -19,7 +23,10 @@ const fakeHome = `<!doctype html><meta charset="utf-8"><title>首页</title>
 <div style="height:3000px">首页内容</div>
 <script>
 document.querySelector('input[placeholder="搜索闲鱼"]').addEventListener('keydown', e => {
-  if (e.key === 'Enter') location.href = '/search?q=' + encodeURIComponent(e.target.value);
+  if (e.key === 'Enter') {
+    if (STAYRISK) { fetch('/h5/mtop.fake.risk/1.0/'); return; }
+    location.href = '/search?q=' + encodeURIComponent(e.target.value);
+  }
 });
 </script>`
 
@@ -62,21 +69,24 @@ load(1);
 
 // Xianyu 是一个本地的假闲鱼网站。
 type Xianyu struct {
-	srv          *httptest.Server
-	mu           sync.Mutex
-	maskOnSearch bool   // 搜索结果页显示验证遮罩
-	detailRet    string // 详情接口第一次返回的 ret，空表示成功
-	prefill      string // 首页搜索框里预填的文字
-	finalFails   bool   // 筛选后的最后一条搜索响应返回业务失败
-	detailHits   int    // 详情接口被请求的次数
-	searchBodies []string
+	srv                   *httptest.Server
+	mu                    sync.Mutex
+	maskOnSearch          bool   // 搜索结果页显示验证遮罩
+	detailRet             string // 详情接口第一次返回的 ret，空表示成功
+	prefill               string // 首页搜索框里预填的文字
+	finalFails            bool   // 筛选后的最后一条搜索响应返回业务失败
+	finalDelay            time.Duration
+	detailHits            int // 详情接口被请求的次数
+	searchBodies          []string
+	searchQueries         []string
+	riskWithoutNavigation bool
 }
 
 // Start 在本机随机端口启动假闲鱼，用完调用 Close。
 func Start() *Xianyu {
 	f := &Xianyu{}
 	mux := http.NewServeMux()
-	page := func(html string) http.HandlerFunc {
+	page := func(source string) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
 			f.mu.Lock()
 			mask := "display:none"
@@ -84,10 +94,13 @@ func Start() *Xianyu {
 				mask = "display:block"
 			}
 			prefill := f.prefill
+			stayRisk := f.riskWithoutNavigation
 			f.mu.Unlock()
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			out := strings.ReplaceAll(html, "MASKSTYLE", mask)
-			out = strings.ReplaceAll(out, "PREFILL", prefill)
+			w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'")
+			out := strings.ReplaceAll(source, "MASKSTYLE", mask)
+			out = strings.ReplaceAll(out, "PREFILL", html.EscapeString(prefill))
+			out = strings.ReplaceAll(out, "STAYRISK", fmt.Sprint(stayRisk))
 			out = strings.Replace(out, "<script>", "<script>const API = '"+f.srv.URL+"';", 1)
 			fmt.Fprint(w, out)
 		}
@@ -97,6 +110,23 @@ func Start() *Xianyu {
 	mux.HandleFunc("/item", page(fakeItem))
 	mux.HandleFunc("/personal", page(fakePersonal))
 	mux.HandleFunc("/blocked", page(`<!doctype html><meta charset="utf-8"><div>非法访问，请使用正常浏览器访问</div>`))
+	mux.HandleFunc("/hidden-risk", page(`<!doctype html><meta charset="utf-8"><script>const message = '非法访问';</script><style>body::before { content: '请使用正常浏览器访问'; display: none; }</style><div style="display:none">非法访问</div><div class="baxia-dialog-mask" style="display:none">验证</div><div data-message="非法访问">正常页面</div>`))
+	mux.HandleFunc("/document-block", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("bxpunish", "1")
+		fmt.Fprint(w, "<!doctype html><div>需要处理</div>")
+	})
+	mux.HandleFunc("/punish", page(`<!doctype html><div>需要处理</div>`))
+	mux.HandleFunc("/_____tmd_____", page(`<!doctype html><div>需要处理</div>`))
+	mux.HandleFunc("/images/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/jpeg")
+		img := image.NewRGBA(image.Rect(0, 0, 16, 16))
+		for y := range 16 {
+			for x := range 16 {
+				img.Set(x, y, color.RGBA{R: 90, G: 140, B: 170, A: 255})
+			}
+		}
+		jpeg.Encode(w, img, &jpeg.Options{Quality: 80})
+	})
 	mux.HandleFunc("/h5/mtop.idle.web.user.page.head/1.0/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{"ret": []string{"SUCCESS::调用成功"}, "data": map[string]any{"module": map[string]any{"base": map[string]any{"displayName": "测试号"}}}})
@@ -115,14 +145,23 @@ func Start() *Xianyu {
 		body, _ := io.ReadAll(r.Body)
 		f.mu.Lock()
 		f.searchBodies = append(f.searchBodies, string(body))
+		f.searchQueries = append(f.searchQueries, r.URL.RawQuery)
 		finalFails := f.finalFails
+		finalDelay := f.finalDelay
 		f.mu.Unlock()
+		if finalDelay > 0 && r.URL.Query().Get("final") == "1" {
+			select {
+			case <-time.After(finalDelay):
+			case <-r.Context().Done():
+				return
+			}
+		}
 		w.Header().Set("Content-Type", "application/json")
 		if finalFails && r.URL.Query().Get("final") == "1" {
 			json.NewEncoder(w).Encode(map[string]any{"ret": []string{"FAIL_BIZ_SEARCH::搜索失败"}, "data": map[string]any{}})
 			return
 		}
-		json.NewEncoder(w).Encode(searchJSON(r.URL.Query().Get("page") == "2"))
+		json.NewEncoder(w).Encode(searchJSON(f.srv.URL, r.URL.Query().Get("page") == "2"))
 	})
 	mux.HandleFunc("/h5/mtop.taobao.idle.pc.detail/1.0/", func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
@@ -137,7 +176,7 @@ func Start() *Xianyu {
 		json.NewEncoder(w).Encode(map[string]any{
 			"ret": []string{"SUCCESS::调用成功"},
 			"data": map[string]any{
-				"itemDO":   map[string]any{"imageInfos": []any{map[string]any{"url": "//img.example.com/1.jpg"}}, "wantCnt": 3, "browseCnt": 50, "desc": "电池 92%，无拆修"},
+				"itemDO":   map[string]any{"imageInfos": []any{map[string]any{"url": f.srv.URL + "/images/1.jpg"}}, "wantCnt": 3, "browseCnt": 50, "desc": "电池 92%，无拆修"},
 				"sellerDO": map[string]any{"sellerId": "998", "userRegDay": 800, "zhimaLevelInfo": map[string]any{"levelName": "信用极好"}},
 			},
 		})
@@ -186,6 +225,20 @@ func (f *Xianyu) SetFinalFilterFails(on bool) {
 	f.finalFails = on
 }
 
+// SetFinalFilterDelay 模拟最后一条筛选请求还在途中，不能提早用前一条响应。
+func (f *Xianyu) SetFinalFilterDelay(delay time.Duration) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.finalDelay = delay
+}
+
+// SetSearchRiskWithoutNavigation 模拟提交后没有跳转，但后台接口要求验证。
+func (f *Xianyu) SetSearchRiskWithoutNavigation(on bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.riskWithoutNavigation = on
+}
+
 // DetailHits 返回详情接口被请求的次数。
 func (f *Xianyu) DetailHits() int {
 	f.mu.Lock()
@@ -203,11 +256,18 @@ func (f *Xianyu) SearchBodies() []string {
 	return append([]string(nil), f.searchBodies...)
 }
 
+// SearchQueries 返回页面自己发出的搜索请求参数。
+func (f *Xianyu) SearchQueries() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.searchQueries...)
+}
+
 // searchJSON 构造一页搜索结果。第 2 页和第 1 页有一个商品重复，和真实翻页时新商品把列表往后挤的情况一样。
-func searchJSON(page2 bool) map[string]any {
+func searchJSON(baseURL string, page2 bool) map[string]any {
 	item := func(id, title, price string, age time.Duration) map[string]any {
 		return map[string]any{"data": map[string]any{"item": map[string]any{"main": map[string]any{
-			"exContent":  map[string]any{"itemId": id, "title": title, "price": []any{map[string]any{"text": "¥"}, map[string]any{"text": price}}, "area": "上海", "userNickName": "卖家" + id, "picUrl": "//img.example.com/" + id + ".jpg"},
+			"exContent":  map[string]any{"itemId": id, "title": title, "price": []any{map[string]any{"text": "¥"}, map[string]any{"text": price}}, "area": "上海", "userNickName": "卖家" + id, "picUrl": baseURL + "/images/" + id + ".jpg"},
 			"clickParam": map[string]any{"args": map[string]any{"publishTime": fmt.Sprint(time.Now().Add(-age).UnixMilli()), "wantNum": 2}},
 			"targetUrl":  "fleamarket://item?id=" + id,
 		}}}}

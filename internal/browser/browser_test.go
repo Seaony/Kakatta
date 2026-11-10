@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -36,8 +38,32 @@ document.getElementById('slow').addEventListener('click', () => fetch('/h5/mtop.
 document.getElementById('go').addEventListener('click', e => { window.trusted.click = e.isTrusted; search(); });
 </script>`
 
-func startTestServer(t *testing.T) (*httptest.Server, *[]string) {
-	var queries []string
+type queryLog struct {
+	sync.Mutex
+	queries []string
+}
+
+func (q *queryLog) append(value string) {
+	q.Lock()
+	defer q.Unlock()
+	q.queries = append(q.queries, value)
+}
+
+func (q *queryLog) all() []string {
+	q.Lock()
+	defer q.Unlock()
+	return append([]string(nil), q.queries...)
+}
+
+func requireBrowser(t *testing.T) {
+	t.Helper()
+	if os.Getenv("KAKATTA_BROWSER_TESTS") != "1" {
+		t.Skip("设置 KAKATTA_BROWSER_TESTS=1 才运行本地浏览器测试")
+	}
+}
+
+func startTestServer(t *testing.T) (*httptest.Server, *queryLog) {
+	queries := &queryLog{}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -47,7 +73,7 @@ func startTestServer(t *testing.T) (*httptest.Server, *[]string) {
 		if r.URL.Query().Get("slow") == "1" {
 			time.Sleep(300 * time.Millisecond) // 在下一次操作之后才返回
 		} else {
-			queries = append(queries, r.URL.Query().Get("q"))
+			queries.append(r.URL.Query().Get("q"))
 		}
 		if r.URL.Query().Get("q") == "late" {
 			time.Sleep(time.Second)
@@ -57,13 +83,14 @@ func startTestServer(t *testing.T) (*httptest.Server, *[]string) {
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
-	return srv, &queries
+	return srv, queries
 }
 
 var searchAPI = Match{URL: "idlemtopsearch.pc.search", Method: "GET"}
 
 // 需要本机装有 Chrome；没有就跳过。只访问本机的测试服务器。
 func TestSessionAgainstLocalPage(t *testing.T) {
+	requireBrowser(t)
 	if _, err := FindChrome(); err != nil {
 		t.Skip("本机没有 Chrome：", err)
 	}
@@ -128,8 +155,8 @@ func TestSessionAgainstLocalPage(t *testing.T) {
 	if body.Data.Count != 30 || resp.Status != 200 {
 		t.Fatalf("响应不对：状态 %d，正文 %s", resp.Status, resp.Body)
 	}
-	if len(*queries) != 1 || (*queries)[0] != "MacBook 苹果" {
-		t.Fatalf("页面收到的关键词不对：%q", *queries)
+	if got := queries.all(); len(got) != 1 || got[0] != "MacBook 苹果" {
+		t.Fatalf("页面收到的关键词不对：%q", got)
 	}
 
 	// 点按钮再搜一次：新的响应必须排在 mark 之后，旧的不能被当成新的。
@@ -159,6 +186,7 @@ func TestSessionAgainstLocalPage(t *testing.T) {
 }
 
 func TestFindReportsMissingElement(t *testing.T) {
+	requireBrowser(t)
 	if _, err := FindChrome(); err != nil {
 		t.Skip("本机没有 Chrome：", err)
 	}
@@ -182,6 +210,7 @@ func TestFindReportsMissingElement(t *testing.T) {
 // 对照：用 chromedp 默认的 pipe 方式连接时，浏览器会把自己标记为被自动化控制。
 // 这条测试证明上面「webdriver 不是 true」的检查确实能分辨两种连接方式。
 func TestPipeModeIsMarkedAsAutomation(t *testing.T) {
+	requireBrowser(t)
 	execPath, err := FindChrome()
 	if err != nil {
 		t.Skip("本机没有 Chrome：", err)
@@ -211,6 +240,7 @@ func TestPipeModeIsMarkedAsAutomation(t *testing.T) {
 
 // 操作之前就发出、操作之后才返回的旧请求，不能被当成这次操作的结果；请求方法不对的也不能算。
 func TestCaptureIgnoresRequestsSentBeforeMark(t *testing.T) {
+	requireBrowser(t)
 	if _, err := FindChrome(); err != nil {
 		t.Skip("本机没有 Chrome：", err)
 	}
@@ -279,6 +309,7 @@ func TestCaptureIgnoresRequestsSentBeforeMark(t *testing.T) {
 
 // 完全透明的元素不算可见，避免把透明遮罩当成风控弹层。
 func TestTransparentElementIsNotVisible(t *testing.T) {
+	requireBrowser(t)
 	if _, err := FindChrome(); err != nil {
 		t.Skip("本机没有 Chrome：", err)
 	}
@@ -319,6 +350,7 @@ func TestSumTreeCountsDescendantsOnly(t *testing.T) {
 
 // 外层上下文结束（超时、Ctrl+C）时也要正常关闭浏览器，刚写入的登录 Cookie 不能丢。
 func TestCookieSurvivesParentCancel(t *testing.T) {
+	requireBrowser(t)
 	if _, err := FindChrome(); err != nil {
 		t.Skip("本机没有 Chrome：", err)
 	}
@@ -352,6 +384,7 @@ func TestCookieSurvivesParentCancel(t *testing.T) {
 
 // 搜索框里预填了文字时要能读出来并清空，再输入关键词不会和旧文字拼在一起。
 func TestClearPrefilledInput(t *testing.T) {
+	requireBrowser(t)
 	if _, err := FindChrome(); err != nil {
 		t.Skip("本机没有 Chrome：", err)
 	}
@@ -388,5 +421,80 @@ func TestClearPrefilledInput(t *testing.T) {
 	}
 	if v, _ := h.Value(n); v != "相机" {
 		t.Fatalf("清空后再输入应该只有新关键词：%q", v)
+	}
+}
+
+func TestFoundElementSurvivesFurtherDOMQueries(t *testing.T) {
+	requireBrowser(t)
+	srv, _ := startTestServer(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	s, err := Start(ctx, Options{ProfileDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err := s.Navigate(srv.URL, 5*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	h := NewHuman(s, pacer.New(nil), pacer.Between(0, 0))
+	input, err := h.FirstVisible(ctx, "#q", time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.FindNow(ctx, "button"); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Click(ctx, input); err != nil {
+		t.Fatal("查询风控元素后不能再点先前找到的搜索框：", err)
+	}
+	if err := h.Type(ctx, "仍然有效"); err != nil {
+		t.Fatal(err)
+	}
+	if value, err := h.Value(input); err != nil || value != "仍然有效" {
+		t.Fatalf("节点没有持续指向原来的输入框：%s %v", value, err)
+	}
+}
+
+func TestSearchTextAndVisibilityIgnoreHiddenOrAttributeMessages(t *testing.T) {
+	requireBrowser(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `<!doctype html><meta charset="utf-8">
+<script>const note="非法访问";</script><style>/* 非法访问 */</style>
+<div data-message="非法访问">正常页面</div>
+<div style="opacity:0"><div class="baxia-dialog-mask" style="width:100px;height:100px">非法访问</div></div>
+<div id="visible">请使用正常浏览器访问</div><div id="split">非法<span>访问</span></div>`)
+	}))
+	defer srv.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	s, err := Start(ctx, Options{ProfileDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err := s.Navigate(srv.URL, time.Second*5); err != nil {
+		t.Fatal(err)
+	}
+	h := NewHuman(s, pacer.New(nil), pacer.Between(0, 0))
+	for _, text := range []string{"非法访问", "请使用正常浏览器访问"} {
+		nodes, err := h.SearchText(ctx, text)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var count int
+		for _, node := range nodes {
+			visible, err := h.VisibleChecked(node)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if visible {
+				count++
+			}
+		}
+		want := 1
+		if count != want {
+			t.Fatalf("文字 %s 可见数量 %d，应为 %d", text, count, want)
+		}
 	}
 }

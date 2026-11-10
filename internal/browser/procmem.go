@@ -1,9 +1,5 @@
 package browser
 
-import (
-	"github.com/chromedp/chromedp"
-)
-
 // proc 是一个进程的父进程号和常驻内存（字节）。
 type proc struct {
 	pid, ppid int
@@ -12,11 +8,10 @@ type proc struct {
 
 // PID 返回浏览器主进程的进程号，拿不到时返回 0。
 func (s *Session) PID() int {
-	c := chromedp.FromContext(s.ctx)
-	if c == nil || c.Browser == nil || c.Browser.Process() == nil {
+	if s.cmd == nil || s.cmd.Process == nil {
 		return 0
 	}
-	return c.Browser.Process().Pid
+	return s.cmd.Process.Pid
 }
 
 // TreeMemory 返回进程 root 和它所有子孙进程的常驻内存之和（字节）。Chrome 的渲染、GPU 等进程都是主进程的子进程。

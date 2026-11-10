@@ -3,6 +3,7 @@ package xianyu
 import (
 	"encoding/json"
 	"math"
+	"math/big"
 	"net/url"
 	"strconv"
 	"strings"
@@ -198,11 +199,15 @@ func textToInt(s string) (int64, bool) {
 	if n, err := strconv.ParseInt(s, 10, 64); err == nil {
 		return n, true
 	}
-	f, err := strconv.ParseFloat(s, 64)
-	if err != nil {
+	if _, err := strconv.ParseFloat(s, 64); err != nil {
 		return 0, false
 	}
-	return floatToInt(f)
+	// 带小数或指数的整数也按十进制精确换算，不能先转浮点丢掉低位。
+	n, ok := new(big.Rat).SetString(s)
+	if !ok || !n.IsInt() || !n.Num().IsInt64() {
+		return 0, false
+	}
+	return n.Num().Int64(), true
 }
 
 func floatToInt(f float64) (int64, bool) {

@@ -28,8 +28,8 @@ type Visit struct {
 	Kind Kind      `json:"kind"`
 }
 
-// Keep 是判断时需要保留的记录时长：最近 60 分钟和今天，最长不超过 24 小时，再留一点余量。
-const Keep = 25 * time.Hour
+// Keep 和数据库额度记录的保留期一致，重启后仍能查到最近两天的访问。
+const Keep = 48 * time.Hour
 
 // Check 判断现在还能不能再访问一次 kind 类的页面。不能时返回说明原因的错误。
 // 「今天」按 now 所在的时区算。

@@ -2,10 +2,15 @@ package browser
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,28 +21,32 @@ import (
 	"github.com/chromedp/chromedp/remote"
 )
 
-// Options 是启动一次浏览器需要的设置。
 type Options struct {
-	ExecPath   string   // Chrome 或 Edge 的路径，空时自动查找
-	ProfileDir string   // 这个闲鱼账号自己的浏览器配置目录，长期保留
-	Proxy      string   // 这个账号绑定的代理，空表示直连
-	Env        []string // 额外的环境变量，比如 Xvfb 的 DISPLAY
-	Width      int      // 窗口宽度，0 表示用浏览器默认值
+	ExecPath   string
+	ProfileDir string
+	AccountID  int
+	Proxy      string
+	Env        []string
+	TimeZone   string
+	CacheMB    int
+	Width      int
 	Height     int
 }
 
-// Session 是一个正在运行的浏览器，以及它的第一个标签页。
 type Session struct {
 	ctx         context.Context
 	cancelTab   context.CancelFunc
 	cancelAlloc context.CancelFunc
+	watchMu     sync.Mutex
 	stopWatch   func() bool
 	closeOnce   sync.Once
+	cmd         *exec.Cmd
+	navigation  *navigationState
 	Capture     *Capture
 }
 
-// keptFlags 是 chromedp 默认参数里页面读不到、只影响浏览器自身杂事的那部分。
-// headless、enable-automation、disable-extensions 等会改变行为或本身就是自动化特征的参数一律不加（CRAWL-POLICY 第二节）。
+var startMu sync.Mutex
+
 var keptFlags = []chromedp.ExecAllocatorOption{
 	chromedp.NoFirstRun,
 	chromedp.NoDefaultBrowserCheck,
@@ -52,131 +61,274 @@ var keptFlags = []chromedp.ExecAllocatorOption{
 	chromedp.Flag("use-mock-keychain", true),
 	chromedp.Flag("disable-hang-monitor", true),
 	chromedp.Flag("disable-prompt-on-repost", true),
-	chromedp.Flag("disable-dev-shm-usage", true),
+	// 分配器在 root 下会自动关沙盒，必须显式阻止。
+	chromedp.Flag("no-sandbox", false),
+	chromedp.Flag("lang", "zh-CN"),
+	chromedp.Flag("hide-crash-restore-bubble", true),
+	chromedp.Flag("window-position", "0,0"),
 }
 
-// Start 启动浏览器并连上它的第一个标签页。
-// 用固定端口、只绑定 127.0.0.1 连接，不用 pipe 也不用端口 0：
-// Chromium 只在这两种方式下把 navigator.webdriver 置为 true（content/child/runtime_features.cc）。
+// Start 用账号固定的端口启动有界面浏览器，整个配置目录只允许一个进程使用。
 func Start(parent context.Context, o Options) (*Session, error) {
-	if o.ProfileDir == "" {
-		return nil, fmt.Errorf("没有指定浏览器配置目录")
+	startMu.Lock()
+	defer startMu.Unlock()
+	if err := parent.Err(); err != nil {
+		return nil, err
 	}
-	execPath := o.ExecPath
-	if execPath == "" {
-		p, err := FindChrome()
+	if err := normalizeOptions(&o); err != nil {
+		return nil, err
+	}
+	if err := prepareProfile(o.ProfileDir); err != nil {
+		return nil, err
+	}
+	port := 20000 + o.AccountID
+	l, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(port))
+	if err != nil {
+		return nil, fmt.Errorf("账号的调试端口 %d 已被占用：%w", port, err)
+	}
+	l.Close()
+	if o.ExecPath == "" {
+		o.ExecPath, err = FindChrome()
 		if err != nil {
 			return nil, err
 		}
-		execPath = p
 	}
-	port, err := freePort()
-	if err != nil {
-		return nil, fmt.Errorf("找不到可用的本机端口：%w", err)
+	home := filepath.Join(o.ProfileDir, ".runtime")
+	crash := filepath.Join(home, "crash")
+	if err := os.RemoveAll(crash); err != nil {
+		return nil, fmt.Errorf("清理浏览器崩溃目录：%w", err)
 	}
-
+	for _, dir := range []string{home, crash, filepath.Join(home, "config")} {
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			return nil, fmt.Errorf("创建浏览器运行目录：%w", err)
+		}
+	}
 	opts := slices.Clone(keptFlags)
+	s := &Session{}
 	opts = append(opts,
-		chromedp.ExecPath(execPath),
+		chromedp.ExecPath(o.ExecPath),
 		chromedp.UserDataDir(o.ProfileDir),
 		chromedp.Flag("remote-debugging-port", strconv.Itoa(port)),
 		chromedp.Flag("remote-debugging-address", "127.0.0.1"),
+		chromedp.Flag("disk-cache-size", strconv.FormatInt(int64(o.CacheMB)<<20, 10)),
+		chromedp.Flag("crash-dumps-dir", crash),
+		chromedp.WindowSize(o.Width, o.Height),
+		chromedp.Env(append(o.Env, "HOME="+home, "XDG_CONFIG_HOME="+filepath.Join(home, "config"), "TZ="+o.TimeZone)...),
+		chromedp.ModifyCmdFunc(func(cmd *exec.Cmd) {
+			configureProcessGroup(cmd)
+			s.cmd = cmd
+		}),
 		remote.WebSocket,
 	)
 	if o.Proxy != "" {
 		opts = append(opts, chromedp.ProxyServer(o.Proxy))
 	}
-	if len(o.Env) > 0 {
-		opts = append(opts, chromedp.Env(o.Env...))
-	}
-	if o.Width > 0 && o.Height > 0 {
-		opts = append(opts, chromedp.WindowSize(o.Width, o.Height))
-	}
-
-	// 浏览器不直接挂在 parent 上：parent 结束时（超时、Ctrl+C）chromedp 会直接杀掉进程，Cookie 来不及写盘。
-	// 改成 parent 结束时走 Close 正常关闭。
-	allocCtx, cancelAlloc := chromedp.NewExecAllocator(context.WithoutCancel(parent), opts...)
+	// 运行超时要先正常关闭，不能让父上下文直接杀掉浏览器。
+	baseCtx, cancelBase := context.WithCancel(context.WithoutCancel(parent))
+	allocCtx, cancelAlloc := chromedp.NewExecAllocator(baseCtx, opts...)
 	tabCtx, cancelTab := chromedp.NewContext(allocCtx)
-	s := &Session{ctx: tabCtx, cancelTab: cancelTab, cancelAlloc: cancelAlloc}
-	s.stopWatch = context.AfterFunc(parent, s.Close)
-
-	// 先挂上响应监听，再真正启动浏览器，保证第一个请求的响应也能收到。
+	s.ctx, s.cancelTab = tabCtx, cancelTab
+	s.cancelAlloc = func() { cancelBase(); cancelAlloc() }
+	// 这里只取消上下文，等初始化返回后再等分配器退出，避免和它的启动计数竞争。
+	stopStartup := context.AfterFunc(parent, cancelBase)
+	defer stopStartup()
+	s.navigation = newNavigationState()
+	if err := chromedp.Listen(tabCtx, s.navigation.event); err != nil {
+		s.Close()
+		return nil, err
+	}
 	s.Capture = newCapture(tabCtx)
 	if err := s.Capture.listen(); err != nil {
 		s.Close()
 		return nil, err
 	}
-	if err := chromedp.Do(tabCtx); err != nil {
+	err = chromedp.Do(tabCtx)
+	if err == nil {
+		_, err = chromedp.Call(tabCtx, page.SetLifecycleEventsEnabled, page.SetLifecycleEventsEnabledParams{Enabled: true})
+	}
+	if err == nil {
+		var tree page.GetFrameTreeResult
+		tree, err = chromedp.Call(tabCtx, page.GetFrameTree, cdp.Empty{})
+		if err == nil && tree.FrameTree != nil && tree.FrameTree.Frame != nil {
+			s.Capture.setMainFrame(tree.FrameTree.Frame.ID)
+		}
+	}
+	if err != nil {
 		s.Close()
 		return nil, fmt.Errorf("启动浏览器失败：%w", err)
 	}
+	s.watchMu.Lock()
+	s.stopWatch = context.AfterFunc(parent, s.Close)
+	s.watchMu.Unlock()
 	return s, nil
 }
 
-// Context 返回标签页的上下文，给流程代码调用 chromedp 用。
+func normalizeOptions(o *Options) error {
+	if o.ProfileDir == "" {
+		return fmt.Errorf("没有指定浏览器配置目录")
+	}
+	if o.AccountID == 0 {
+		o.AccountID = 1
+	}
+	if o.AccountID < 1 || o.AccountID > 12767 {
+		return fmt.Errorf("账号编号超出调试端口范围")
+	}
+	var err error
+	o.ProfileDir, err = filepath.Abs(o.ProfileDir)
+	if err != nil {
+		return err
+	}
+	if o.TimeZone == "" {
+		o.TimeZone = "Asia/Shanghai"
+	}
+	if _, err := time.LoadLocation(o.TimeZone); err != nil {
+		return fmt.Errorf("浏览器时区无效：%w", err)
+	}
+	if o.CacheMB == 0 {
+		o.CacheMB = 256
+	}
+	if o.CacheMB < 1 {
+		return fmt.Errorf("浏览器缓存大小必须为正数")
+	}
+	if o.Width == 0 {
+		o.Width = 1920
+	}
+	if o.Height == 0 {
+		o.Height = 1080
+	}
+	if o.Width < 1 || o.Height < 1 {
+		return fmt.Errorf("浏览器窗口大小必须为正数")
+	}
+	return nil
+}
+
+func prepareProfile(dir string) error {
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return err
+	}
+	active, err := profileInUse(dir)
+	if err != nil {
+		return fmt.Errorf("检查浏览器配置目录是否占用：%w", err)
+	}
+	if active {
+		return fmt.Errorf("这个账号的浏览器还在运行")
+	}
+	for _, name := range []string{"SingletonLock", "SingletonSocket", "SingletonCookie"} {
+		if err := os.Remove(filepath.Join(dir, name)); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("清理浏览器旧锁：%w", err)
+		}
+	}
+	return nil
+}
+
 func (s *Session) Context() context.Context { return s.ctx }
 
-// Close 关闭浏览器。先用 Browser.close 正常关闭，让 Chrome 把 Cookie 和配置写回配置目录，下次启动登录状态还在；
-// 直接取消上下文会强制结束进程，最近写入的 Cookie 可能丢失。10 秒内关不掉再强制结束。
-// 可以重复调用。
+// Close 先让浏览器写回登录状态，再清理整个进程组里的残留进程。
 func (s *Session) Close() {
 	s.closeOnce.Do(func() {
+		s.watchMu.Lock()
 		if s.stopWatch != nil {
 			s.stopWatch()
 		}
+		s.watchMu.Unlock()
+		pid := s.PID()
 		ctx, cancel := context.WithTimeout(s.ctx, 10*time.Second)
 		chromedp.Cancel(ctx)
 		cancel()
+		terminateProcessGroup(pid)
 		s.cancelTab()
 		s.cancelAlloc()
 	})
 }
 
-// Navigate 在当前标签页打开网址，等到 DOMContentLoaded 就返回（和上游一样，不等图片等资源全部加载完）。
+// Navigate 只接受这次主框架加载的 DOMContentLoaded，忽略旧页面和 iframe 的事件。
 func (s *Session) Navigate(url string, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(s.ctx, timeout)
 	defer cancel()
-	var navErr string
-	open := func(ctx context.Context, t *chromedp.Target) (page.NavigateResult, error) {
+	_, err := chromedp.Run(ctx, func(ctx context.Context, t *chromedp.Target) (cdp.Empty, error) {
+		events, stop := t.Subscribe(page.LifecycleEvent.Method)
+		defer stop()
 		res, err := cdp.Call(ctx, t, page.Navigate, page.NavigateParams{URL: url})
-		navErr = res.ErrorText
-		return res, err
-	}
-	_, err := chromedp.Run(ctx, chromedp.WaitEvent(page.DomContentEventFired,
-		func(page.EventDomContentEventFired) bool { return true }, open))
-	if navErr != "" {
-		return fmt.Errorf("打开页面失败：%s", navErr)
-	}
+		if err != nil {
+			return cdp.Empty{}, err
+		}
+		if res.ErrorText != "" {
+			return cdp.Empty{}, fmt.Errorf("%s", res.ErrorText)
+		}
+		if res.IsDownload {
+			return cdp.Empty{}, fmt.Errorf("页面跳转成了下载")
+		}
+		if res.LoaderID == "" {
+			return cdp.Empty{}, nil
+		}
+		for {
+			select {
+			case raw, ok := <-events:
+				if !ok {
+					return cdp.Empty{}, fmt.Errorf("页面事件连接已关闭")
+				}
+				var event page.EventLifecycleEvent
+				if err := json.Unmarshal(raw, &event); err != nil {
+					return cdp.Empty{}, err
+				}
+				if event.FrameID == res.FrameID && event.LoaderID == res.LoaderID && event.Name == "DOMContentLoaded" {
+					return cdp.Empty{}, nil
+				}
+			case <-ctx.Done():
+				return cdp.Empty{}, ctx.Err()
+			}
+		}
+	})
 	if err != nil {
 		return fmt.Errorf("打开页面失败：%w", err)
 	}
 	return nil
 }
 
-// URL 返回当前页面的网址。
 func (s *Session) URL() (string, error) {
-	return chromedp.Run(s.ctx, chromedp.Location())
+	res, err := chromedp.Call(s.ctx, page.GetFrameTree, cdp.Empty{})
+	if err != nil {
+		return "", err
+	}
+	if res.FrameTree == nil || res.FrameTree.Frame == nil {
+		return "", fmt.Errorf("读不到主框架网址")
+	}
+	f := res.FrameTree.Frame
+	return f.URL + f.URLFragment, nil
 }
 
-// HasCookie 只检查某个 Cookie 在不在，不返回它的值：应用不能读取、记录或打印 Cookie。
+// HasCookie 运行前只查 Cookie 名字，不查看值。
 func (s *Session) HasCookie(urls []string, name string) (bool, error) {
+	return s.cookiePresent(urls, name, false)
+}
+
+// LoginCookiePresent 只在判断扫码完成时检查非空，不返回、不保存 Cookie 值。
+func (s *Session) LoginCookiePresent(urls []string, name string) (bool, error) {
+	return s.cookiePresent(urls, name, true)
+}
+
+func (s *Session) cookiePresent(urls []string, name string, requireValue bool) (bool, error) {
 	res, err := chromedp.Call(s.ctx, network.GetCookies, network.GetCookiesParams{URLs: urls})
 	if err != nil {
 		return false, err
 	}
 	for _, c := range res.Cookies {
-		if c.Name == name && c.Value != "" {
-			return true, nil
+		if c.Name == name {
+			return !requireValue || c.Value != "", nil
 		}
 	}
 	return false, nil
 }
 
-func freePort() (int, error) {
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return 0, err
+func commandUsesProfile(args []string, dir string) bool {
+	for i, arg := range args {
+		value, ok := strings.CutPrefix(arg, "--user-data-dir=")
+		if !ok && arg == "--user-data-dir" && i+1 < len(args) {
+			value, ok = args[i+1], true
+		}
+		if ok && filepath.Clean(value) == dir {
+			return true
+		}
 	}
-	defer l.Close()
-	return l.Addr().(*net.TCPAddr).Port, nil
+	return false
 }

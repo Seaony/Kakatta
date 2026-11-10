@@ -25,17 +25,23 @@ func (r *Runner) LoggedIn(ctx context.Context) (bool, error) {
 		}
 		return false, err
 	}
-	if boxes, err := r.H.FindNow(ctx, "#alibaba-login-box"); err == nil {
-		for _, b := range boxes {
-			if r.H.Visible(b) {
-				return false, nil
-			}
+	boxes, err := r.H.FindNow(ctx, "#alibaba-login-box")
+	if err != nil {
+		return false, err
+	}
+	for _, b := range boxes {
+		visible, err := r.H.VisibleChecked(b)
+		if err != nil {
+			return false, err
+		}
+		if visible {
+			return false, nil
 		}
 	}
-	return r.HasLoginCookie()
+	return r.S.LoginCookiePresent([]string{r.Site.Home}, loginCookie)
 }
 
-// HasLoginCookie 只看本地有没有登录 Cookie，不需要打开任何页面。每次运行开始前先用它判断，没有就不去访问闲鱼（XIANYU.md 8.3 节）。
+// HasLoginCookie 只查本地有没有这个名字，不读取 Cookie 的值。
 func (r *Runner) HasLoginCookie() (bool, error) {
 	return r.S.HasCookie([]string{r.Site.Home}, loginCookie)
 }
@@ -45,12 +51,17 @@ func (r *Runner) HasLoginCookie() (bool, error) {
 func (r *Runner) WaitForLogin(ctx context.Context, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		ok, err := r.LoggedIn(ctx)
 		if err == nil && ok {
+			// 人工登录可能已经处理过验证，后续取昵称不再重放处理前的风控。
+			r.since = r.S.Capture.Mark()
 			return nil
 		}
 		// 验证码留给用户在窗口里处理；环境异常和直接拒绝用户处理不了，立即结束。
-		if errors.Is(err, ErrEnvBlocked) || errors.Is(err, ErrDenied) {
+		if err != nil && !errors.Is(err, ErrNeedVerify) {
 			return err
 		}
 		if time.Now().After(deadline) {
@@ -62,14 +73,14 @@ func (r *Runner) WaitForLogin(ctx context.Context, timeout time.Duration) error 
 	}
 }
 
-// RequireLoginCookie 在本地确认登录 Cookie 还在；不在就返回登录失效，调用方不该再去访问闲鱼。
+// RequireLoginCookie 做本地预检。这个名字还没在真实页面确认，缺失只记警告，不判登录失效。
 func (r *Runner) RequireLoginCookie() error {
 	ok, err := r.HasLoginCookie()
 	if err != nil {
 		return fmt.Errorf("读取浏览器登录状态：%w", err)
 	}
 	if !ok {
-		return &RiskError{Kind: ErrLoginExpired, Where: "本地检查", Signal: "没有登录 Cookie"}
+		r.Log("本地登录预检警告", map[string]any{"原因": "没有 unb Cookie，是否已失效以首页跳转为准"})
 	}
 	return nil
 }
@@ -81,7 +92,7 @@ func (r *Runner) RequireLoggedIn(ctx context.Context, where string) error {
 		return err
 	}
 	if !ok {
-		return &RiskError{Kind: ErrLoginExpired, Where: where, Signal: "页面上没有登录状态"}
+		return fmt.Errorf("%s：尚未确认登录完成", where)
 	}
 	return nil
 }
@@ -106,5 +117,5 @@ func (r *Runner) CheckLogin(ctx context.Context) error {
 	if err := r.check(ctx, "检查登录"); err != nil {
 		return err
 	}
-	return r.RequireLoggedIn(ctx, "检查登录")
+	return nil
 }
