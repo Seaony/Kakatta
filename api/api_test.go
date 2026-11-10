@@ -174,6 +174,9 @@ func TestReferencesAndClosedObjects(t *testing.T) {
 func TestSecretsHaveTheRightDirection(t *testing.T) {
 	document := decoded(t)
 	requests := map[string][]string{
+		"BackupExportRequest":   {"password"},
+		"BackupRestoreUpload":   {"password"},
+		"BackupConfirmRequest":  {"ticket"},
 		"ProviderInput":         {"api_key"},
 		"ProxyCreate":           {"url"},
 		"ProxyPatch":            {"url"},
@@ -186,9 +189,10 @@ func TestSecretsHaveTheRightDirection(t *testing.T) {
 		"TOTPDisableRequest":    {"password", "code"},
 	}
 	responses := map[string][]string{
-		"IssuedToken":       {"token"},
-		"TOTPRequiredLogin": {"challenge"},
-		"TOTPSetup":         {"setup_token", "secret", "uri"},
+		"BackupRestorePreview": {"ticket"},
+		"IssuedToken":          {"token"},
+		"TOTPRequiredLogin":    {"challenge"},
+		"TOTPSetup":            {"setup_token", "secret", "uri"},
 	}
 	for _, group := range []struct {
 		fields    map[string][]string

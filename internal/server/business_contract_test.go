@@ -55,7 +55,13 @@ func sampleRoutePath(pattern string) string { return routeParameter.ReplaceAllSt
 func operationHandler(mux *http.ServeMux, operation apiOperation) (string, bool, error) {
 	probe := &http.Request{Method: operation.Method, URL: &url.URL{Path: sampleRoutePath(operation.Path)}}
 	_, pattern := mux.Handler(probe)
-	registered := pattern != "" && pattern != "/"
+	expected := operation.Method + " " + operation.Path
+	switch expected {
+	case "GET /remote/sessions/{session_id}/viewport", "GET /remote/sessions/{session_id}/vnc", "GET /remote/sessions/{session_id}/{asset_path}":
+		// 这些协议由鉴权后的远程会话处理器分发。
+		expected = "GET /remote/sessions/{session_id}/"
+	}
+	registered := pattern == expected
 	if operation.ImplementationStatus == "contract" {
 		if registered {
 			return pattern, false, fmt.Errorf("操作已有真实处理器，应移除契约阶段标记：%s %s", operation.Method, operation.Path)
@@ -63,13 +69,14 @@ func operationHandler(mux *http.ServeMux, operation apiOperation) (string, bool,
 		return pattern, true, nil
 	}
 	if !registered {
-		return pattern, false, fmt.Errorf("描述的操作没有真实处理器：%s %s", operation.Method, operation.Path)
+		return pattern, false, fmt.Errorf("描述的操作没有匹配的处理器：%s %s，实际 %q", operation.Method, operation.Path, pattern)
 	}
 	return pattern, false, nil
 }
 
 func TestBusinessRoutesAndOpenAPIMatchBothWays(t *testing.T) {
 	f := newBusinessFixture(t)
+	f.registerTransferContracts(t)
 	routes := businessRoutes(f.server, f.service)
 	declared := map[string]bool{}
 	for _, route := range routes {
@@ -88,7 +95,11 @@ func TestBusinessRoutesAndOpenAPIMatchBothWays(t *testing.T) {
 	}
 	contracts := 0
 	for _, operation := range testAPIOperations(t) {
-		if operation.Path == "/healthz" {
+		if operation.Method == http.MethodGet && operation.Path == "/healthz" {
+			requireStatus(t, f.request(http.MethodGet, operation.Path, "", false), http.StatusOK)
+			if len(operation.Security) != 0 {
+				t.Error("健康探针不应要求业务凭据")
+			}
 			continue
 		}
 		pattern, contract, err := operationHandler(f.server.mux, operation)
@@ -102,10 +113,38 @@ func TestBusinessRoutesAndOpenAPIMatchBothWays(t *testing.T) {
 		}
 		if _, exists := declared[pattern]; exists {
 			declared[pattern] = true
-			if len(operation.Security) == 0 {
-				t.Errorf("业务操作缺少鉴权声明：%s", operation.ID)
-			}
 		}
+		t.Run(operation.Method+" "+operation.Path, func(t *testing.T) {
+			path := sampleRoutePath(operation.Path)
+			credentialsOnly := false
+			switch operation.Method + " " + operation.Path {
+			case "GET /api/v1/setup", "POST /api/v1/setup", "POST /api/v1/auth/login", "POST /api/v1/auth/totp":
+				credentialsOnly = true
+			}
+			if credentialsOnly {
+				if len(operation.Security) != 0 {
+					t.Fatal("初始化或登录不应要求已有会话")
+				}
+			} else {
+				if len(operation.Security) == 0 {
+					t.Fatal("业务操作缺少鉴权声明")
+				}
+				response := f.request(operation.Method, path, "", false)
+				requireStatus(t, response, http.StatusUnauthorized)
+				if errorCode(response) != "auth.unauthenticated" {
+					t.Fatal("匿名请求未被凭据检查拦截")
+				}
+			}
+			switch operation.Method {
+			case http.MethodGet, http.MethodHead, http.MethodOptions:
+			default:
+				response := f.request(operation.Method, path, "", true, crossSiteTransferRequest)
+				requireStatus(t, response, http.StatusForbidden)
+				if errorCode(response) != "http.forbidden" {
+					t.Fatal("跨站写入未被来源检查拦截")
+				}
+			}
+		})
 	}
 	if contracts != 0 {
 		t.Logf("另有 %d 个仅冻结契约且未注册的操作，未计作 HTTP 接线通过", contracts)
@@ -127,6 +166,7 @@ func TestContractMarkerCannotHideRegisteredHandler(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", http.NotFound)
 	mux.HandleFunc("GET /api/v1/test-implemented", func(http.ResponseWriter, *http.Request) {})
+	mux.HandleFunc("GET /api/v1/tasks/{task_id}", func(http.ResponseWriter, *http.Request) {})
 	for _, test := range []struct {
 		name, path, status string
 		contract, invalid  bool
@@ -135,6 +175,8 @@ func TestContractMarkerCannotHideRegisteredHandler(t *testing.T) {
 		{"已注册正常核对", "/api/v1/test-implemented", "", false, false},
 		{"未注册仅作契约", "/api/v1/test-pending", "contract", true, false},
 		{"未注册不能冒充已接线", "/api/v1/test-pending", "", false, true},
+		{"参数路由不能代替静态路由", "/api/v1/tasks/export", "", false, true},
+		{"参数路由不会把待接契约当已注册", "/api/v1/tasks/export", "contract", true, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			pattern, contract, err := operationHandler(mux, apiOperation{Method: http.MethodGet, Path: test.path, ImplementationStatus: test.status})

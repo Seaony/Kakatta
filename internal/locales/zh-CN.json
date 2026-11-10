@@ -759,5 +759,16 @@
   "results.filter.unrecommended": "未推荐",
   "results.card.unpriced": "无法比价",
   "overview.unmatched": "不符合需求",
-  "results.filter.rejected": "已排除"
+  "results.filter.rejected": "已排除",
+  "backup.password_required": "请输入备份密码。",
+  "backup.invalid_archive": "文件不是有效的 Kakatta 加密备份。",
+  "backup.authentication_failed": "无法解密备份，请核对备份密码和文件。",
+  "backup.unsupported_version": "此服务端不支持该备份版本。",
+  "backup.restore_ticket_invalid": "恢复确认已失效，请重新验证备份。",
+  "backup.restore_expired": "恢复确认已过期，请重新验证备份。",
+  "backup.restore_changed": "服务端状态已变化，请重新验证备份。",
+  "backup.restore_authorization_failed": "当前会话不能确认恢复。请重新登录并验证备份。",
+  "backup.closed": "备份服务当前不可用。",
+  "backup.invalid_dependencies": "服务端无法准备备份操作。",
+  "backup.io_failure": "备份操作未能完成，请检查服务端状态。"
 }

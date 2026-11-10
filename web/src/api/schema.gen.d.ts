@@ -1713,6 +1713,166 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tasks/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 下载全部任务配置
+         * @description 读取完整任务快照，包含所有任务，不受网页分页限制；UTF-8 JSON 文件，金额单位元，文件时间为 RFC3339。
+         */
+        get: operations["exportTasks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tasks/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 从任务文件导入配置
+         * @description 仅上传 file。完整格式/外壳预检失败返回 4xx，不保存任务；预检完成后逐项保存，单项跳过不影响其他项。保存中断且已有报告时返回 200 和 complete=false 的真实计数，保留已成功任务，不自动整份重试。
+         */
+        post: operations["importTasks"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tasks/{task_id}/findings/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 下载任务当前筛选下全部发现
+         * @description 同一发现筛选和稳定排序的全量只读快照，不接受 task_id/limit/cursor 查询参数。UTF-8 BOM、RFC4180、CRLF 的 CSV，十三列按规格排列，金额写元单位数字，链接为桌面地址。
+         */
+        get: operations["exportTaskFindings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 下载当前筛选下全部运行和步骤
+         * @description 使用当前设置语言，读取全部匹配运行及逐步日志，不接受 limit/cursor。UTF-8 文本，一条物理行一条记录，字段用制表符分隔；[from_at,to_at) 为 UTC 毫秒。
+         */
+        get: operations["exportRuns"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/system/update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 读取缓存的版本更新状态
+         * @description 仅读取当前缓存和设置，不发起新检查、不下载更新、不执行命令。
+         */
+        get: operations["getUpdateStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/backup/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 设置密码并下载加密备份
+         * @description 用户提供本次备份密码。生成一致快照并分块加密，ZIP 包含原始文件清单和加密载荷；不包含闲鱼登录状态、会话/令牌、访问额度或图片缓存。
+         */
+        post: operations["exportBackup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/backup/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 上传并完整验证恢复候选
+         * @description 仅接收 file/password。先完整校验、解密并验证候选，成功只返回安全预览和单次票据；本步骤不覆盖当前数据。文件按流式准备。
+         */
+        post: operations["prepareBackupRestore"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/backup/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 确认覆盖为已验证备份
+         * @description 票据绑定原身份及当前运行代，确认前重新校验认证并单次消费。停止和排空旧资源后切换；成功 restored=true，所有旧会话与令牌失效，账号需重新扫码，使用备份中的密码重新登录。
+         */
+        post: operations["confirmBackupRestore"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1970,6 +2130,8 @@ export interface components {
             nickname: string | null;
             proxy_id: number | null;
             quota: components["schemas"]["QuotaView"];
+            /** @description 暂停尚未到期且账号已保存为退出登录状态时为 true，暂停到期后需重新扫码。 */
+            relogin_after_pause: boolean;
             session: components["schemas"]["SessionView"] | null;
             state: components["schemas"]["AccountState"];
             /** @description UTC Unix 整数毫秒；未知时为 null。 */
@@ -4208,6 +4370,184 @@ export interface components {
             budget_min: number | null;
             exclude_words: string[];
             keyword: string | null;
+        };
+        /** @description 完整文件预检通过后逐任务保存的真实结果。total=imported+skipped+failed+unprocessed；保存中断但报告存在时仍返回 200、complete=false、failure 原因及已保存数量，不自动重试整份文件。 */
+        TaskImportReport: {
+            complete: boolean;
+            /** Format: int64 */
+            failed: number;
+            failure: components["schemas"]["LocalizedMessage"] | null;
+            /** Format: int64 */
+            imported: number;
+            items: components["schemas"]["TaskImportItem"][];
+            /** Format: int64 */
+            skipped: number;
+            /** Format: int64 */
+            total: number;
+            /** Format: int64 */
+            unprocessed: number;
+        };
+        /** @description index 从 1 开始；task_id 仅已保存项有值。修正、推荐范围警告和字段错误分别使用真实 FieldIssue 数组，未知原因为 null。 */
+        TaskImportItem: {
+            corrections: components["schemas"]["FieldIssue"][];
+            fields: components["schemas"]["FieldIssue"][];
+            /** Format: int64 */
+            index: number;
+            reason: components["schemas"]["LocalizedMessage"] | null;
+            /** @enum {string} */
+            status: "imported" | "skipped" | "failed";
+            task_id: number | null;
+            warnings: components["schemas"]["FieldIssue"][];
+        };
+        TaskChannelRef: {
+            name: string;
+            type: string;
+        };
+        /** @description 完整验证备份后的安全预览，不包含文件路径、主密钥或解密后的内容；expires_at 为 UTC 毫秒。 */
+        BackupRestorePreview: {
+            /**
+             * Format: int64
+             * @description 票据到期时间，UTC Unix 整数毫秒。
+             */
+            expires_at: number;
+            manifest: components["schemas"]["BackupManifest"];
+            /** @description 仅本次准备返回的单次恢复票据，绑定当前身份和运行代；确认前仍须有效认证。 */
+            ticket: string;
+        };
+        BackupManifest: {
+            app_version: string;
+            /**
+             * Format: date-time
+             * @description 备份文件原始清单中的 RFC3339 时间字符串；不伪造为 HTTP UTC 毫秒字段。
+             */
+            created_at: string;
+            /** @constant */
+            format: "kakatta.backup";
+            kdf: components["schemas"]["BackupKDF"];
+            /** Format: int64 */
+            schema_version: number;
+            /**
+             * Format: int64
+             * @constant
+             */
+            version: 1;
+        };
+        BackupKDF: {
+            /**
+             * Format: int64
+             * @constant
+             */
+            memory_kib: 65536;
+            /** @constant */
+            name: "argon2id";
+            /** @description 备份文件清单中用于派生的规范 Base64 盐，不是主密钥。 */
+            salt: string;
+            /**
+             * Format: int64
+             * @constant
+             */
+            threads: 1;
+            /**
+             * Format: int64
+             * @constant
+             */
+            time: 3;
+        };
+        /** @description 只读取发布检查缓存，不因 GET 发起联网。已知版本、尝试与成功时间、下次检查和比较结果均按实际未知返回 null；stale 明确缓存过期。 */
+        UpdateStatus: {
+            current_version: string;
+            enabled: boolean;
+            error: components["schemas"]["LocalizedMessage"] | null;
+            known_release: components["schemas"]["UpdateRelease"] | null;
+            /** @description UTC Unix 整数毫秒；未知为 null。 */
+            last_attempt_at: number | null;
+            /** @description UTC Unix 整数毫秒；未知为 null。 */
+            last_success_at: number | null;
+            /** @description UTC Unix 整数毫秒；未知为 null。 */
+            next_check_at: number | null;
+            stale: boolean;
+            update_available: boolean | null;
+        };
+        UpdateRelease: {
+            url: string;
+            version: string;
+        };
+        /** @description 任务文件的完整配置，不包含账号绑定、运行状态、搜索代次、发现或渠道凭据。 */
+        TaskExportEntry: {
+            name: string;
+            keyword: string;
+            enabled: boolean;
+            min_price: number | null;
+            max_price: number | null;
+            personal_only: boolean;
+            free_shipping_only: boolean;
+            publish_window: string;
+            /** Format: int64 */
+            max_pages: number;
+            /** Format: int64 */
+            interval_minutes: number;
+            crawl_overrides: components["schemas"]["SettingValues"];
+            judge_mode: components["schemas"]["AnalysisMode"];
+            requirement: string;
+            profile: components["schemas"]["AnalysisProfile"];
+            budget_min: number | null;
+            budget_max: number | null;
+            match_keywords: string[];
+            exclude_keywords: string[];
+            analyze_on_first_run: boolean;
+            notify_policy: string;
+            notify_price_drop: boolean;
+            region: {
+                province: string | null;
+                city: string | null;
+                district: string | null;
+            };
+            channels: components["schemas"]["TaskChannelRef"][];
+        };
+        /** @description UTF-8 任务 JSON 下载文件，包含全部任务；金额为元，profile 原样导出。网页下载应请求 blob，不把全量文件读成当前页面列表。 */
+        TaskExportFile: {
+            /** @constant */
+            format: "kakatta.tasks";
+            /**
+             * Format: int64
+             * @constant
+             */
+            version: 1;
+            /**
+             * Format: date-time
+             * @description 任务文件中的 RFC3339 时间字符串。
+             */
+            exported_at: string;
+            tasks: components["schemas"]["TaskExportEntry"][];
+        };
+        TaskImportUpload: {
+            /**
+             * Format: binary
+             * @description UTF-8 kakatta.tasks 文件，上传原文件字节；完整格式预检先于保存。
+             */
+            file: Blob;
+        };
+        BackupExportRequest: {
+            /** @description 本次加密备份的密码，不保存到日志或响应。 */
+            password: string;
+        };
+        BackupRestoreUpload: {
+            /**
+             * Format: binary
+             * @description 原始加密备份 ZIP 文件；不把整个文件读入内存。
+             */
+            file: Blob;
+            /** @description 用于本次解密验证的备份密码，不回传。 */
+            password: string;
+        };
+        BackupConfirmRequest: {
+            /** @description 本次安全预览给出的单次恢复票据。 */
+            ticket: string;
+        };
+        /** @description 恢复成功，所有旧会话和令牌失效，需要用备份中的认证资料重新登录。 */
+        BackupRestored: {
+            /** @constant */
+            restored: true;
         };
     };
     responses: {
@@ -6954,7 +7294,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/octet-stream": string;
+                    "application/octet-stream": Blob;
                 };
             };
             400: components["responses"]["BadRequest"];
@@ -7682,6 +8022,290 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+            503: components["responses"]["Unavailable"];
+            default: components["responses"]["InternalError"];
+        };
+    };
+    exportTasks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 操作完成。 */
+            200: {
+                headers: {
+                    /** @description attachment，带服务端生成的安全文件名。 */
+                    "Content-Disposition"?: string;
+                    /** @description 实际传输字节数。 */
+                    "Content-Length"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskExportFile"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+            503: components["responses"]["Unavailable"];
+            default: components["responses"]["InternalError"];
+        };
+    };
+    importTasks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["TaskImportUpload"];
+            };
+        };
+        responses: {
+            /** @description 操作完成。 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskImportReport"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["ValidationFailed"];
+            503: components["responses"]["Unavailable"];
+            default: components["responses"]["InternalError"];
+        };
+    };
+    exportTaskFindings: {
+        parameters: {
+            query?: {
+                /** @description default 为 AI fair/good/steal、无法比价且非 avoid、keyword matched，并排除超预算/隐藏；other 为其余已有结论，pending 不入。 */
+                view?: "default" | "other" | "all" | "hidden";
+                decision?: components["schemas"]["AnalysisDecision"];
+                price_drop?: boolean;
+                over_budget?: boolean;
+                q?: string;
+                /** @description score 降序、空最后，再 found_at/id 降序；latest 为 found_at/id 降序。 */
+                sort?: "score" | "latest";
+            };
+            header?: never;
+            path: {
+                task_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 操作完成。 */
+            200: {
+                headers: {
+                    /** @description attachment，带服务端生成的安全文件名。 */
+                    "Content-Disposition"?: string;
+                    /** @description 实际传输字节数。 */
+                    "Content-Length"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/csv": Blob;
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+            503: components["responses"]["Unavailable"];
+            default: components["responses"]["InternalError"];
+        };
+    };
+    exportRuns: {
+        parameters: {
+            query?: {
+                task_id?: number;
+                outcome?: components["schemas"]["RunOutcome"];
+                failure_kind?: components["schemas"]["FailureKind"];
+                q?: string;
+                /** @description UTC 毫秒，含起点。 */
+                from_at?: number;
+                /** @description UTC 毫秒，不含终点。 */
+                to_at?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 操作完成。 */
+            200: {
+                headers: {
+                    /** @description attachment，带服务端生成的安全文件名。 */
+                    "Content-Disposition"?: string;
+                    /** @description 实际传输字节数。 */
+                    "Content-Length"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": Blob;
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+            503: components["responses"]["Unavailable"];
+            default: components["responses"]["InternalError"];
+        };
+    };
+    getUpdateStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 操作完成。 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdateStatus"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+            503: components["responses"]["Unavailable"];
+            default: components["responses"]["InternalError"];
+        };
+    };
+    exportBackup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BackupExportRequest"];
+            };
+        };
+        responses: {
+            /** @description 操作完成。 */
+            200: {
+                headers: {
+                    /** @description attachment，带服务端生成的安全文件名。 */
+                    "Content-Disposition"?: string;
+                    /** @description 实际传输字节数。 */
+                    "Content-Length"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/zip": Blob;
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["ValidationFailed"];
+            503: components["responses"]["Unavailable"];
+            default: components["responses"]["InternalError"];
+        };
+    };
+    prepareBackupRestore: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["BackupRestoreUpload"];
+            };
+        };
+        responses: {
+            /** @description 操作完成。 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupRestorePreview"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["ValidationFailed"];
+            503: components["responses"]["Unavailable"];
+            default: components["responses"]["InternalError"];
+        };
+    };
+    confirmBackupRestore: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BackupConfirmRequest"];
+            };
+        };
+        responses: {
+            /** @description 操作完成。 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackupRestored"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
             422: components["responses"]["ValidationFailed"];
             503: components["responses"]["Unavailable"];
             default: components["responses"]["InternalError"];

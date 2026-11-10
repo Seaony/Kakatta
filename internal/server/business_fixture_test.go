@@ -5,15 +5,19 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/Seaony/Kakatta/internal/analysis/client"
+	"github.com/Seaony/Kakatta/internal/backup"
 	"github.com/Seaony/Kakatta/internal/imagecache"
 	"github.com/Seaony/Kakatta/internal/locales"
 	"github.com/Seaony/Kakatta/internal/security"
 	"github.com/Seaony/Kakatta/internal/service"
+	"github.com/Seaony/Kakatta/internal/store"
+	"github.com/Seaony/Kakatta/internal/update"
 )
 
 type businessFixture struct {
@@ -29,6 +33,44 @@ func newBusinessFixture(t *testing.T, factories ...service.ResourceFactory) *bus
 	f := prepareBusinessFixture(t)
 	f.start(t, failedBusinessNotifier{}, factories...)
 	return f
+}
+
+func (f *businessFixture) registerTransferContracts(t *testing.T) {
+	t.Helper()
+	now := func() time.Time { return time.UnixMilli(f.clock.Load()) }
+	if err := f.server.RegisterTransfers(f.service); err != nil {
+		t.Fatal(err)
+	}
+	backups, err := backup.New(backup.Dependencies{
+		DataDir: f.dataDir, AppVersion: "v1.0.0", SchemaVersion: store.SchemaVersion(), Now: now,
+		Runtime: &backupHTTPRuntime{source: backup.SnapshotSource{
+			Store: f.store, MasterKey: [32]byte(bytes.Repeat([]byte{4}, 32)), KeySource: backup.KeyDefaultFile, Generation: "contract",
+		}},
+		ValidateCandidate: func(ctx context.Context, path string, _ [backup.MasterKeyBytes]byte, version int) error {
+			return store.ValidateBackup(ctx, path, version)
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := backups.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	if err := f.server.RegisterBackup(backups); err != nil {
+		t.Fatal(err)
+	}
+	updates, err := update.New(update.Dependencies{
+		DB: f.store.DB(), Settings: f.settings.base, CurrentVersion: "v1.0.0", Now: now,
+		HTTP: &http.Client{Transport: new(blockedNotificationTransport)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.server.RegisterUpdate(updates); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func prepareBusinessFixture(t *testing.T) *businessFixture {

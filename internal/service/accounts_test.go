@@ -487,7 +487,7 @@ func TestAccountDeniedLogoutCannotBypassPauseBySigningIn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if view.State != AccountDenied || view.CooldownUntil == nil || *view.CooldownUntil != until || view.StateReason == nil || view.StateReason.Code != reason.Code || view.StateChangedAt == nil || *view.StateChangedAt != 111 || view.VerifyLevel != 4 {
+	if view.State != AccountDenied || view.CooldownUntil == nil || *view.CooldownUntil != until || view.StateReason == nil || view.StateReason.Code != reason.Code || view.StateChangedAt == nil || *view.StateChangedAt != 111 || view.VerifyLevel != 4 || !view.ReloginAfterPause {
 		t.Fatalf("退出把拒绝暂停改掉：%+v", view)
 	}
 	if _, err := os.Stat(profile); !os.IsNotExist(err) {
@@ -614,6 +614,83 @@ func TestAccountGetAndListNeverPersistObservedClockOrExpiredWindows(t *testing.T
 	if after := accountTestMeta(t, s); !reflect.DeepEqual(before, after) {
 		t.Fatal("回拨后的只读查询写了meta")
 	}
+}
+
+func TestAccountViewReloginAfterPause(t *testing.T) {
+	s := accountTestService(t)
+	base := s.now()
+	s.now = func() time.Time { return base.Add(-time.Hour) }
+	future := base.Add(time.Hour).UnixMilli()
+	tests := []struct {
+		name      string
+		state     AccountState
+		until     any
+		loggedOut bool
+		want      bool
+	}{
+		{"普通冷却", AccountCooling, future, false, false},
+		{"退出后的冷却", AccountCooling, future, true, true},
+		{"退出后的拒绝期", AccountDenied, future, true, true},
+		{"刚到期的冷却", AccountCooling, base.UnixMilli(), true, false},
+		{"已到期的拒绝期", AccountDenied, base.Add(-time.Minute).UnixMilli(), true, false},
+		{"普通已退出", AccountSignedOut, nil, false, false},
+	}
+	wantByID := make(map[int64]bool, len(tests))
+	for _, tt := range tests {
+		id := accountTestInsert(t, s, tt.name, tt.state, 1)
+		tx := accountTestTx(t, s)
+		if _, err := tx.ExecContext(t.Context(), `UPDATE accounts SET cooldown_until=? WHERE id=?`, tt.until, id); err != nil {
+			t.Fatal(err)
+		}
+		if tt.loggedOut {
+			if err := setAccountLoggedOutTx(t.Context(), tx, id); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			t.Fatal(err)
+		}
+		wantByID[id] = tt.want
+		view, err := s.GetAccount(t.Context(), id)
+		if err != nil || view.ReloginAfterPause != tt.want {
+			t.Fatalf("%s的重新扫码标记 = %v，期望 %v：%v", tt.name, view.ReloginAfterPause, tt.want, err)
+		}
+		encoded, err := json.Marshal(view)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var response struct {
+			ReloginAfterPause *bool `json:"relogin_after_pause"`
+		}
+		if err := json.Unmarshal(encoded, &response); err != nil || response.ReloginAfterPause == nil || *response.ReloginAfterPause != tt.want {
+			t.Fatalf("%s的响应缺少正确的布尔字段：%s，%v", tt.name, encoded, err)
+		}
+	}
+	page, err := s.ListAccounts(t.Context(), ListQuery{})
+	if err != nil || len(page.Items) != len(wantByID) {
+		t.Fatalf("账号列表读取失败：%+v，%v", page, err)
+	}
+	for _, item := range page.Items {
+		want, found := wantByID[item.ID]
+		if !found || item.ReloginAfterPause != want {
+			t.Fatalf("账号列表中 %s 的重新扫码标记 = %v，期望 %v", item.Name, item.ReloginAfterPause, want)
+		}
+	}
+}
+
+func TestAccountViewRejectsBrokenReloginMarker(t *testing.T) {
+	s := accountTestService(t)
+	id := accountTestInsert(t, s, "冷却期间退出", AccountCooling, 1)
+	if _, err := s.db.ExecContext(t.Context(), `UPDATE accounts SET cooldown_until=? WHERE id=?`, s.now().Add(time.Hour).UnixMilli(), id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.ExecContext(t.Context(), `INSERT INTO meta(key,value) VALUES(?,'broken')`, accountLoggedOutPrefix+strconv.FormatInt(id, 10)); err != nil {
+		t.Fatal(err)
+	}
+	_, err := s.GetAccount(t.Context(), id)
+	accountTestProblem(t, err, ErrorUnavailable, "service.storage_failure")
+	_, err = s.ListAccounts(t.Context(), ListQuery{})
+	accountTestProblem(t, err, ErrorUnavailable, "service.storage_failure")
 }
 
 func accountTestEvent(t *testing.T, s *Service, accountID int64, kind string) int64 {

@@ -104,6 +104,15 @@ func TestBusinessInputPresenceAndSensitiveBoundaries(t *testing.T) {
 	}
 }
 
+func TestAccountViewRequiresReloginAfterPause(t *testing.T) {
+	view := schema(t, decoded(t), "AccountView")
+	const key = "relogin_after_pause"
+	field := object(t, object(t, view["properties"])[key])
+	if field["type"] != "boolean" || allowsNull(field) || !slices.Contains(stringsIn(t, view["required"]), key) {
+		t.Fatal("暂停到期后是否需重新扫码必须是必填布尔值")
+	}
+}
+
 func TestFindingSelectionCountsUniqueIDsAndKeepsUnknownKind(t *testing.T) {
 	document := decoded(t)
 	for _, name := range []string{"FindingSelection", "FindingBatchRequest"} {
@@ -170,12 +179,14 @@ type sourceField struct {
 func TestSharedDTOsMatchOwningTypes(t *testing.T) {
 	document := decoded(t)
 	definitions := map[string]ast.Expr{}
-	for pkg, path := range map[string]string{
-		"service": "../internal/service/types.go", "analysis": "../internal/analysis/types.go", "remote": "../internal/remote/session.go",
-		"modelservice": "../internal/analysis/service/types.go", "client": "../internal/analysis/client/types.go",
-		"notification": "../internal/notification/types.go", "notify": "../internal/notify/types.go",
+	for _, source := range []struct{ pkg, path string }{
+		{"service", "../internal/service/types.go"}, {"service", "../internal/service/transfer_types.go"},
+		{"analysis", "../internal/analysis/types.go"}, {"remote", "../internal/remote/session.go"},
+		{"modelservice", "../internal/analysis/service/types.go"}, {"client", "../internal/analysis/client/types.go"},
+		{"notification", "../internal/notification/types.go"}, {"notify", "../internal/notify/types.go"},
+		{"backup", "../internal/backup/types.go"}, {"update", "../internal/update/types.go"},
 	} {
-		file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+		file, err := parser.ParseFile(token.NewFileSet(), source.path, nil, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -186,7 +197,7 @@ func TestSharedDTOsMatchOwningTypes(t *testing.T) {
 			}
 			for _, spec := range group.Specs {
 				if item, ok := spec.(*ast.TypeSpec); ok {
-					definitions[pkg+"."+item.Name.Name] = item.Type
+					definitions[source.pkg+"."+item.Name.Name] = item.Type
 				}
 			}
 		}
@@ -312,7 +323,6 @@ func TestBusinessRoutesAndDescriptionAgree(t *testing.T) {
 		}
 	}
 	described := map[string]bool{}
-	contracts := map[string]bool{}
 	for path, raw := range object(t, document["paths"]) {
 		if path == "/healthz" {
 			continue
@@ -320,8 +330,8 @@ func TestBusinessRoutesAndDescriptionAgree(t *testing.T) {
 		for method, operation := range object(t, raw) {
 			route := strings.ToUpper(method) + " " + path
 			described[route] = true
-			if object(t, operation)["x-implementation-status"] == "contract" {
-				contracts[route] = true
+			if _, exists := object(t, operation)["x-implementation-status"]; exists {
+				t.Errorf("正式描述仍含开发标记：%s", route)
 			}
 		}
 	}
@@ -331,15 +341,9 @@ func TestBusinessRoutesAndDescriptionAgree(t *testing.T) {
 		}
 	}
 	for route := range described {
-		if registered[route] && contracts[route] {
-			t.Errorf("正式路由已注册，应移除开发期契约标记并恢复严格核对：%s", route)
-		}
-		if !registered[route] && !contracts[route] {
+		if !registered[route] {
 			t.Errorf("描述存在但服务未注册：%s", route)
 		}
-	}
-	if len(contracts) > 0 {
-		t.Logf("另有 %d 个仅冻结契约的操作，未计作 HTTP 接线通过", len(contracts))
 	}
 	if len(registered) == 0 {
 		t.Fatal("没有取得生产路由")

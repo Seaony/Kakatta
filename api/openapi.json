@@ -7807,6 +7807,749 @@
           }
         }
       }
+    },
+    "/api/v1/tasks/export": {
+      "get": {
+        "operationId": "exportTasks",
+        "summary": "下载全部任务配置",
+        "description": "读取完整任务快照，包含所有任务，不受网页分页限制；UTF-8 JSON 文件，金额单位元，文件时间为 RFC3339。",
+        "tags": [
+          "导入导出与备份"
+        ],
+        "security": [
+          {
+            "CookieSession": []
+          },
+          {
+            "SecureCookieSession": []
+          },
+          {
+            "BearerToken": []
+          }
+        ],
+        "x-authentication": "session_or_api_token",
+        "responses": {
+          "200": {
+            "description": "操作完成。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskExportFile"
+                }
+              }
+            },
+            "headers": {
+              "Content-Disposition": {
+                "description": "attachment，带服务端生成的安全文件名。",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Length": {
+                "description": "实际传输字节数。",
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationFailed"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/import": {
+      "post": {
+        "operationId": "importTasks",
+        "summary": "从任务文件导入配置",
+        "description": "仅上传 file。完整格式/外壳预检失败返回 4xx，不保存任务；预检完成后逐项保存，单项跳过不影响其他项。保存中断且已有报告时返回 200 和 complete=false 的真实计数，保留已成功任务，不自动整份重试。",
+        "tags": [
+          "导入导出与备份"
+        ],
+        "security": [
+          {
+            "CookieSession": []
+          },
+          {
+            "SecureCookieSession": []
+          },
+          {
+            "BearerToken": []
+          }
+        ],
+        "x-authentication": "session_or_api_token",
+        "responses": {
+          "200": {
+            "description": "操作完成。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskImportReport"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationFailed"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskImportUpload"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tasks/{task_id}/findings/export": {
+      "get": {
+        "operationId": "exportTaskFindings",
+        "summary": "下载任务当前筛选下全部发现",
+        "description": "同一发现筛选和稳定排序的全量只读快照，不接受 task_id/limit/cursor 查询参数。UTF-8 BOM、RFC4180、CRLF 的 CSV，十三列按规格排列，金额写元单位数字，链接为桌面地址。",
+        "tags": [
+          "导入导出与备份"
+        ],
+        "security": [
+          {
+            "CookieSession": []
+          },
+          {
+            "SecureCookieSession": []
+          },
+          {
+            "BearerToken": []
+          }
+        ],
+        "x-authentication": "session_or_api_token",
+        "responses": {
+          "200": {
+            "description": "操作完成。",
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            },
+            "headers": {
+              "Content-Disposition": {
+                "description": "attachment，带服务端生成的安全文件名。",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Length": {
+                "description": "实际传输字节数。",
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationFailed"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "view",
+            "in": "query",
+            "required": false,
+            "description": "default 为 AI fair/good/steal、无法比价且非 avoid、keyword matched，并排除超预算/隐藏；other 为其余已有结论，pending 不入。",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "default",
+                "other",
+                "all",
+                "hidden"
+              ],
+              "default": "default"
+            }
+          },
+          {
+            "name": "decision",
+            "in": "query",
+            "required": false,
+            "description": "",
+            "schema": {
+              "$ref": "#/components/schemas/AnalysisDecision"
+            }
+          },
+          {
+            "name": "price_drop",
+            "in": "query",
+            "required": false,
+            "description": "",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "over_budget",
+            "in": "query",
+            "required": false,
+            "description": "",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "description": "score 降序、空最后，再 found_at/id 降序；latest 为 found_at/id 降序。",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "score",
+                "latest"
+              ],
+              "default": "score"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/runs/export": {
+      "get": {
+        "operationId": "exportRuns",
+        "summary": "下载当前筛选下全部运行和步骤",
+        "description": "使用当前设置语言，读取全部匹配运行及逐步日志，不接受 limit/cursor。UTF-8 文本，一条物理行一条记录，字段用制表符分隔；[from_at,to_at) 为 UTC 毫秒。",
+        "tags": [
+          "导入导出与备份"
+        ],
+        "security": [
+          {
+            "CookieSession": []
+          },
+          {
+            "SecureCookieSession": []
+          },
+          {
+            "BearerToken": []
+          }
+        ],
+        "x-authentication": "session_or_api_token",
+        "responses": {
+          "200": {
+            "description": "操作完成。",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            },
+            "headers": {
+              "Content-Disposition": {
+                "description": "attachment，带服务端生成的安全文件名。",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Length": {
+                "description": "实际传输字节数。",
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationFailed"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        },
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "query",
+            "required": false,
+            "description": "",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "outcome",
+            "in": "query",
+            "required": false,
+            "description": "",
+            "schema": {
+              "$ref": "#/components/schemas/RunOutcome"
+            }
+          },
+          {
+            "name": "failure_kind",
+            "in": "query",
+            "required": false,
+            "description": "",
+            "schema": {
+              "$ref": "#/components/schemas/FailureKind"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from_at",
+            "in": "query",
+            "required": false,
+            "description": "UTC 毫秒，含起点。",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "to_at",
+            "in": "query",
+            "required": false,
+            "description": "UTC 毫秒，不含终点。",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/system/update": {
+      "get": {
+        "operationId": "getUpdateStatus",
+        "summary": "读取缓存的版本更新状态",
+        "description": "仅读取当前缓存和设置，不发起新检查、不下载更新、不执行命令。",
+        "tags": [
+          "导入导出与备份"
+        ],
+        "security": [
+          {
+            "CookieSession": []
+          },
+          {
+            "SecureCookieSession": []
+          },
+          {
+            "BearerToken": []
+          }
+        ],
+        "x-authentication": "session_or_api_token",
+        "responses": {
+          "200": {
+            "description": "操作完成。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateStatus"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationFailed"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/backup/export": {
+      "post": {
+        "operationId": "exportBackup",
+        "summary": "设置密码并下载加密备份",
+        "description": "用户提供本次备份密码。生成一致快照并分块加密，ZIP 包含原始文件清单和加密载荷；不包含闲鱼登录状态、会话/令牌、访问额度或图片缓存。",
+        "tags": [
+          "导入导出与备份"
+        ],
+        "security": [
+          {
+            "CookieSession": []
+          },
+          {
+            "SecureCookieSession": []
+          },
+          {
+            "BearerToken": []
+          }
+        ],
+        "x-authentication": "session_or_api_token",
+        "responses": {
+          "200": {
+            "description": "操作完成。",
+            "content": {
+              "application/zip": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            },
+            "headers": {
+              "Content-Disposition": {
+                "description": "attachment，带服务端生成的安全文件名。",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Length": {
+                "description": "实际传输字节数。",
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationFailed"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackupExportRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/backup/restore": {
+      "post": {
+        "operationId": "prepareBackupRestore",
+        "summary": "上传并完整验证恢复候选",
+        "description": "仅接收 file/password。先完整校验、解密并验证候选，成功只返回安全预览和单次票据；本步骤不覆盖当前数据。文件按流式准备。",
+        "tags": [
+          "导入导出与备份"
+        ],
+        "security": [
+          {
+            "CookieSession": []
+          },
+          {
+            "SecureCookieSession": []
+          },
+          {
+            "BearerToken": []
+          }
+        ],
+        "x-authentication": "session_or_api_token",
+        "responses": {
+          "200": {
+            "description": "操作完成。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupRestorePreview"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationFailed"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/BackupRestoreUpload"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/backup/confirm": {
+      "post": {
+        "operationId": "confirmBackupRestore",
+        "summary": "确认覆盖为已验证备份",
+        "description": "票据绑定原身份及当前运行代，确认前重新校验认证并单次消费。停止和排空旧资源后切换；成功 restored=true，所有旧会话与令牌失效，账号需重新扫码，使用备份中的密码重新登录。",
+        "tags": [
+          "导入导出与备份"
+        ],
+        "security": [
+          {
+            "CookieSession": []
+          },
+          {
+            "SecureCookieSession": []
+          },
+          {
+            "BearerToken": []
+          }
+        ],
+        "x-authentication": "session_or_api_token",
+        "responses": {
+          "200": {
+            "description": "操作完成。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupRestored"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationFailed"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackupConfirmRequest"
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -8785,6 +9528,10 @@
           "quota": {
             "$ref": "#/components/schemas/QuotaView"
           },
+          "relogin_after_pause": {
+            "type": "boolean",
+            "description": "暂停尚未到期且账号已保存为退出登录状态时为 true，暂停到期后需重新扫码。"
+          },
           "session": {
             "anyOf": [
               {
@@ -8847,7 +9594,8 @@
           "last_used_at",
           "created_at",
           "quota",
-          "session"
+          "session",
+          "relogin_after_pause"
         ],
         "type": "object",
         "x-go-type": "service.AccountView"
@@ -19722,6 +20470,701 @@
         "type": "object",
         "x-go-type": "modelservice.SuggestionsView",
         "description": "预算为非负整数分；从最短十进制元四舍五入到分，无效/负数/非有限/超范围单值为 null，原预算倒置时上下限均为 null。建议词和预算仅在用户显式应用后进入任务。"
+      },
+      "TaskImportReport": {
+        "additionalProperties": false,
+        "properties": {
+          "complete": {
+            "type": "boolean"
+          },
+          "failed": {
+            "format": "int64",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "failure": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LocalizedMessage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "imported": {
+            "format": "int64",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TaskImportItem"
+            },
+            "type": "array"
+          },
+          "skipped": {
+            "format": "int64",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "total": {
+            "format": "int64",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "unprocessed": {
+            "format": "int64",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "total",
+          "imported",
+          "skipped",
+          "failed",
+          "unprocessed",
+          "complete",
+          "failure",
+          "items"
+        ],
+        "type": "object",
+        "x-go-type": "service.TaskImportReport",
+        "description": "完整文件预检通过后逐任务保存的真实结果。total=imported+skipped+failed+unprocessed；保存中断但报告存在时仍返回 200、complete=false、failure 原因及已保存数量，不自动重试整份文件。"
+      },
+      "TaskImportItem": {
+        "additionalProperties": false,
+        "properties": {
+          "corrections": {
+            "items": {
+              "$ref": "#/components/schemas/FieldIssue"
+            },
+            "type": "array"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/FieldIssue"
+            },
+            "type": "array"
+          },
+          "index": {
+            "format": "int64",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LocalizedMessage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "imported",
+              "skipped",
+              "failed"
+            ]
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "format": "int64",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/FieldIssue"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "index",
+          "status",
+          "task_id",
+          "corrections",
+          "warnings",
+          "reason",
+          "fields"
+        ],
+        "type": "object",
+        "x-go-type": "service.TaskImportItem",
+        "description": "index 从 1 开始；task_id 仅已保存项有值。修正、推荐范围警告和字段错误分别使用真实 FieldIssue 数组，未知原因为 null。"
+      },
+      "TaskChannelRef": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "name"
+        ],
+        "type": "object",
+        "x-go-type": "service.TaskChannelRef"
+      },
+      "BackupRestorePreview": {
+        "additionalProperties": false,
+        "properties": {
+          "expires_at": {
+            "format": "int64",
+            "type": "integer",
+            "description": "票据到期时间，UTC Unix 整数毫秒。",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "manifest": {
+            "$ref": "#/components/schemas/BackupManifest"
+          },
+          "ticket": {
+            "type": "string",
+            "minLength": 1,
+            "x-sensitive": true,
+            "description": "仅本次准备返回的单次恢复票据，绑定当前身份和运行代；确认前仍须有效认证。"
+          }
+        },
+        "required": [
+          "ticket",
+          "manifest",
+          "expires_at"
+        ],
+        "type": "object",
+        "x-go-type": "backup.RestorePreview",
+        "description": "完整验证备份后的安全预览，不包含文件路径、主密钥或解密后的内容；expires_at 为 UTC 毫秒。"
+      },
+      "BackupManifest": {
+        "additionalProperties": false,
+        "properties": {
+          "app_version": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "备份文件原始清单中的 RFC3339 时间字符串；不伪造为 HTTP UTC 毫秒字段。"
+          },
+          "format": {
+            "type": "string",
+            "const": "kakatta.backup"
+          },
+          "kdf": {
+            "$ref": "#/components/schemas/BackupKDF"
+          },
+          "schema_version": {
+            "format": "int64",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "version": {
+            "format": "int64",
+            "type": "integer",
+            "minimum": 1,
+            "const": 1,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "format",
+          "version",
+          "app_version",
+          "schema_version",
+          "created_at",
+          "kdf"
+        ],
+        "type": "object",
+        "x-go-type": "backup.Manifest"
+      },
+      "BackupKDF": {
+        "additionalProperties": false,
+        "properties": {
+          "memory_kib": {
+            "format": "int64",
+            "maximum": 4294967295,
+            "minimum": 1,
+            "type": "integer",
+            "const": 65536
+          },
+          "name": {
+            "type": "string",
+            "const": "argon2id"
+          },
+          "salt": {
+            "type": "string",
+            "description": "备份文件清单中用于派生的规范 Base64 盐，不是主密钥。"
+          },
+          "threads": {
+            "format": "int64",
+            "maximum": 4294967295,
+            "minimum": 1,
+            "type": "integer",
+            "const": 1
+          },
+          "time": {
+            "format": "int64",
+            "maximum": 4294967295,
+            "minimum": 1,
+            "type": "integer",
+            "const": 3
+          }
+        },
+        "required": [
+          "name",
+          "salt",
+          "time",
+          "memory_kib",
+          "threads"
+        ],
+        "type": "object",
+        "x-go-type": "backup.KDF"
+      },
+      "UpdateStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "current_version": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LocalizedMessage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "known_release": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UpdateRelease"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "last_attempt_at": {
+            "anyOf": [
+              {
+                "format": "int64",
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "UTC Unix 整数毫秒；未知为 null。"
+          },
+          "last_success_at": {
+            "anyOf": [
+              {
+                "format": "int64",
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "UTC Unix 整数毫秒；未知为 null。"
+          },
+          "next_check_at": {
+            "anyOf": [
+              {
+                "format": "int64",
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "UTC Unix 整数毫秒；未知为 null。"
+          },
+          "stale": {
+            "type": "boolean"
+          },
+          "update_available": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "current_version",
+          "enabled",
+          "last_attempt_at",
+          "last_success_at",
+          "next_check_at",
+          "known_release",
+          "update_available",
+          "stale",
+          "error"
+        ],
+        "type": "object",
+        "x-go-type": "update.Status",
+        "description": "只读取发布检查缓存，不因 GET 发起联网。已知版本、尝试与成功时间、下次检查和比较结果均按实际未知返回 null；stale 明确缓存过期。"
+      },
+      "UpdateRelease": {
+        "additionalProperties": false,
+        "properties": {
+          "url": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "url"
+        ],
+        "type": "object",
+        "x-go-type": "update.Release"
+      },
+      "TaskExportEntry": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "keyword": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "min_price": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0,
+                "description": "任务文件中的元单位十进制金额，保留分的精度；不是业务接口的整数分。"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "max_price": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0,
+                "description": "任务文件中的元单位十进制金额，保留分的精度；不是业务接口的整数分。"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "personal_only": {
+            "type": "boolean"
+          },
+          "free_shipping_only": {
+            "type": "boolean"
+          },
+          "publish_window": {
+            "type": "string"
+          },
+          "max_pages": {
+            "format": "int64",
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "interval_minutes": {
+            "format": "int64",
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "crawl_overrides": {
+            "$ref": "#/components/schemas/SettingValues"
+          },
+          "judge_mode": {
+            "$ref": "#/components/schemas/AnalysisMode"
+          },
+          "requirement": {
+            "type": "string"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/AnalysisProfile"
+          },
+          "budget_min": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0,
+                "description": "任务文件中的元单位十进制金额，保留分的精度；不是业务接口的整数分。"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "budget_max": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0,
+                "description": "任务文件中的元单位十进制金额，保留分的精度；不是业务接口的整数分。"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "match_keywords": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "exclude_keywords": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "analyze_on_first_run": {
+            "type": "boolean"
+          },
+          "notify_policy": {
+            "type": "string"
+          },
+          "notify_price_drop": {
+            "type": "boolean"
+          },
+          "region": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "province": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "city": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "district": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "province",
+              "city",
+              "district"
+            ]
+          },
+          "channels": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskChannelRef"
+            }
+          }
+        },
+        "required": [
+          "name",
+          "keyword",
+          "enabled",
+          "min_price",
+          "max_price",
+          "personal_only",
+          "free_shipping_only",
+          "publish_window",
+          "max_pages",
+          "interval_minutes",
+          "crawl_overrides",
+          "judge_mode",
+          "requirement",
+          "profile",
+          "budget_min",
+          "budget_max",
+          "match_keywords",
+          "exclude_keywords",
+          "analyze_on_first_run",
+          "notify_policy",
+          "notify_price_drop",
+          "region",
+          "channels"
+        ],
+        "description": "任务文件的完整配置，不包含账号绑定、运行状态、搜索代次、发现或渠道凭据。"
+      },
+      "TaskExportFile": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "format": {
+            "type": "string",
+            "const": "kakatta.tasks"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "maximum": 9007199254740991,
+            "const": 1
+          },
+          "exported_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "任务文件中的 RFC3339 时间字符串。"
+          },
+          "tasks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskExportEntry"
+            }
+          }
+        },
+        "required": [
+          "format",
+          "version",
+          "exported_at",
+          "tasks"
+        ],
+        "description": "UTF-8 任务 JSON 下载文件，包含全部任务；金额为元，profile 原样导出。网页下载应请求 blob，不把全量文件读成当前页面列表。"
+      },
+      "TaskImportUpload": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "description": "UTF-8 kakatta.tasks 文件，上传原文件字节；完整格式预检先于保存。"
+          }
+        },
+        "required": [
+          "file"
+        ]
+      },
+      "BackupExportRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "password": {
+            "type": "string",
+            "minLength": 1,
+            "writeOnly": true,
+            "x-sensitive": true,
+            "description": "本次加密备份的密码，不保存到日志或响应。"
+          }
+        },
+        "required": [
+          "password"
+        ]
+      },
+      "BackupRestoreUpload": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "description": "原始加密备份 ZIP 文件；不把整个文件读入内存。"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 1,
+            "writeOnly": true,
+            "x-sensitive": true,
+            "description": "用于本次解密验证的备份密码，不回传。"
+          }
+        },
+        "required": [
+          "file",
+          "password"
+        ]
+      },
+      "BackupConfirmRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "ticket": {
+            "type": "string",
+            "minLength": 1,
+            "writeOnly": true,
+            "x-sensitive": true,
+            "description": "本次安全预览给出的单次恢复票据。"
+          }
+        },
+        "required": [
+          "ticket"
+        ]
+      },
+      "BackupRestored": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "restored": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "restored"
+        ],
+        "description": "恢复成功，所有旧会话和令牌失效，需要用备份中的认证资料重新登录。"
       }
     },
     "responses": {

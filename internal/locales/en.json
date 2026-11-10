@@ -759,5 +759,16 @@
   "results.filter.unrecommended": "Not recommended",
   "results.card.unpriced": "Cannot compare prices",
   "overview.unmatched": "Does not meet requirements",
-  "results.filter.rejected": "Rejected"
+  "results.filter.rejected": "Rejected",
+  "backup.password_required": "Enter the backup password.",
+  "backup.invalid_archive": "The file is not a valid encrypted Kakatta backup.",
+  "backup.authentication_failed": "Could not decrypt the backup. Check the password and file.",
+  "backup.unsupported_version": "This server does not support the backup version.",
+  "backup.restore_ticket_invalid": "The restore confirmation is no longer valid. Validate the backup again.",
+  "backup.restore_expired": "The restore confirmation has expired. Validate the backup again.",
+  "backup.restore_changed": "The server state changed. Validate the backup again.",
+  "backup.restore_authorization_failed": "This session cannot confirm the restore. Sign in again, then validate the backup.",
+  "backup.closed": "The backup service is unavailable.",
+  "backup.invalid_dependencies": "The server could not prepare the backup operation.",
+  "backup.io_failure": "The backup operation could not be completed. Check the server state."
 }

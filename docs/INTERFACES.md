@@ -142,6 +142,27 @@ M2 的边界如下，字段由同一描述约束：
 - 生成文件提交，生成检查在临时目录比较；生成器说明用简短中文。产物输出 `web/dist`，Go 嵌入与 SPA fallback 由集成层负责。API、健康检查、文档、MCP、远程画面和不存在的静态资产不能被首页吞掉。
 - 基础阶段不编造业务页面或直连外部服务；组件按标签、键盘、焦点、错误与取消行为测试。开发服务器由作者启动，测试服务有明确期限并负责关闭。
 
+### 导入、导出、备份和更新
+
+以下路径都经过同一认证和跨站检查。契约测试逐条核对描述和注册路径，并验证匿名请求和跨站写入被拦截。
+
+| 方法和路径 | 输入与成功结果 |
+|---|---|
+| `GET /api/v1/tasks/export` | 下载全部任务的 UTF-8 JSON 文件，不带分页参数 |
+| `POST /api/v1/tasks/import` | `multipart/form-data` 的 `file`，返回真实 `service.TaskImportReport` |
+| `GET /api/v1/tasks/{task_id}/findings/export` | 沿用发现的 `view/decision/price_drop/over_budget/q/sort`，下载全部匹配 CSV，不接查询 `task_id/limit/cursor` |
+| `GET /api/v1/runs/export` | 沿用运行的 `task_id/outcome/failure_kind/q/from_at/to_at`，按当前设置语言下载全部运行和步骤的 UTF-8 文本，不接分页参数 |
+| `GET /api/v1/system/update` | 只读缓存，返回 `update.Status`，不因页面读取发起检查 |
+| `POST /api/v1/backup/export` | JSON `{password}`，下载加密 ZIP |
+| `POST /api/v1/backup/restore` | `multipart/form-data` 的 `file/password`，返回 `backup.RestorePreview` |
+| `POST /api/v1/backup/confirm` | JSON `{ticket}`，成功返回 `{restored:true}`，旧会话和令牌失效 |
+
+导入完整预检失败走错误响应，不保存任务；逐项保存后即使中断，只要服务已给出报告，HTTP 仍返回 `200` 和 `complete=false`、失败原因及真实计数，不能用普通错误信封抹掉已保存数量。报告使用实际的 `items/corrections/warnings/fields`；计数满足 `total=imported+skipped+failed+unprocessed`。
+
+导出从完整只读快照分批编码，不能拿当前页充当全量。任务文件的金额用元、时间用 RFC3339；恢复清单沿备份文件的 RFC3339 `created_at`，其他业务和票据到期时间仍用 UTC 毫秒。下载按附件处理，网页请求 `parseAs: 'blob'`；上传文件在标准描述中是 `format: binary`，生成器映射为 `Blob`，不把整个文件转成字符串。
+
+密码和确认票据只写入对应请求，准备响应中的票据只给本次使用，不返回候选文件路径、主密钥或解密正文。上传体积与读取期限属于服务端边界；接口描述不把 2GB 的内存目标写成文件上限。
+
 ## 通知适配边界
 
 `internal/notify` 一次只发送一条已经组装好的消息，不自行读库、排队、合并或重试。发送判定、全局渠道间隔、持久结果和取消后的成功保存由业务服务统一处理。

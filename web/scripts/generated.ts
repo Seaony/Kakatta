@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import openapiTS, { astToString } from 'openapi-typescript';
+import ts from 'typescript';
 
 export const webRoot = fileURLToPath(new URL('../', import.meta.url));
 export const apiOutput = join(webRoot, 'src/api/schema.gen.d.ts');
@@ -18,7 +19,11 @@ export function normalizeRouteNotice(source: string): string {
 }
 
 export async function generateApi(): Promise<string> {
-  const ast = await openapiTS(new URL('../../api/openapi.json', import.meta.url));
+  const ast = await openapiTS(new URL('../../api/openapi.json', import.meta.url), {
+    transform(schema) {
+      if (schema.format === 'binary') return ts.factory.createTypeReferenceNode('Blob');
+    },
+  });
   return '// 接口类型由 api/openapi.json 生成，请勿手改。\n\n' + astToString(ast);
 }
 

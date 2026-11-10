@@ -503,8 +503,9 @@ type Account struct {
 
 type AccountView struct {
 	Account
-	Quota   QuotaView    `json:"quota"`
-	Session *SessionView `json:"session"`
+	Quota             QuotaView    `json:"quota"`
+	Session           *SessionView `json:"session"`
+	ReloginAfterPause bool         `json:"relogin_after_pause"`
 }
 
 type QuotaView struct {

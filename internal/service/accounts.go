@@ -228,11 +228,18 @@ func (s *Service) accountViewTx(ctx context.Context, tx *sql.Tx, account Account
 	if err != nil {
 		return AccountView{}, err
 	}
-	view, _, err := loadQuotaTx(ctx, tx, account.ID, clock, now, limits)
+	quotaView, _, err := loadQuotaTx(ctx, tx, account.ID, clock, now, limits)
 	if err != nil {
 		return AccountView{}, err
 	}
-	return AccountView{Account: account, Quota: view}, nil
+	view := AccountView{Account: account, Quota: quotaView}
+	if (account.State == AccountCooling || account.State == AccountDenied) && account.CooldownUntil != nil && *account.CooldownUntil > now.UnixMilli() {
+		view.ReloginAfterPause, err = accountLoggedOutTx(ctx, tx, account.ID)
+		if err != nil {
+			return AccountView{}, err
+		}
+	}
+	return view, nil
 }
 
 func (s *Service) GetAccount(ctx context.Context, id int64) (AccountView, error) {
