@@ -350,7 +350,9 @@ func (s *Service) CreateTask(ctx context.Context, patch TaskPatch) (TaskSaveResu
 	release()
 	s.wakeScheduler()
 	_ = s.emit("task.changed", map[string]any{"task_id": task.ID})
-	return TaskSaveResult{Task: task, Warnings: warnings, Effects: TaskSaveEffects{Generation: 1, AddedExcludeWords: []string{}}}, nil
+	return TaskSaveResult{Task: task, Warnings: warnings, Effects: TaskSaveEffects{
+		Generation: 1, AddedExcludeWords: []string{}, NeedsReanalysisIDs: []int64{}, TitleRejectedIDs: []int64{},
+	}}, nil
 }
 
 func validateTaskReferencesTx(ctx context.Context, tx *sql.Tx, fields TaskFields) error {
@@ -428,7 +430,8 @@ func (s *Service) UpdateTask(ctx context.Context, id int64, patch TaskPatch) (Ta
 	now := s.now().UnixMilli()
 	updated := old
 	updated.TaskFields, updated.UpdatedAt = fields, &now
-	effects := TaskSaveEffects{Generation: old.SearchGeneration, AddedExcludeWords: addedExcludeWords(old.ExcludeKeywords, fields.ExcludeKeywords)}
+	effects := TaskSaveEffects{Generation: old.SearchGeneration, AddedExcludeWords: addedExcludeWords(old.ExcludeKeywords, fields.ExcludeKeywords),
+		NeedsReanalysisIDs: []int64{}, TitleRejectedIDs: []int64{}}
 	if taskSearchChanged(old, updated) {
 		updated.SearchGeneration++
 		updated.BaselinePending = true
@@ -464,8 +467,10 @@ func (s *Service) UpdateTask(ctx context.Context, id int64, patch TaskPatch) (Ta
 				return TaskSaveResult{}, storageFailure(err)
 			}
 			effects.RescoredCount = profileEffects.RescoredCount
-			effects.NeedsReanalysisCount = profileEffects.NeedsReanalysisCount
-			effects.TitleRejectedCount = profileEffects.TitleRejectedCount
+			effects.NeedsReanalysisIDs = profileEffects.NeedsReanalysisIDs
+			effects.TitleRejectedIDs = profileEffects.TitleRejectedIDs
+			effects.NeedsReanalysisCount = int64(len(effects.NeedsReanalysisIDs))
+			effects.TitleRejectedCount = int64(len(effects.TitleRejectedIDs))
 		} else if !reflect.DeepEqual(old.BudgetMin, updated.BudgetMin) || !reflect.DeepEqual(old.BudgetMax, updated.BudgetMax) || !reflect.DeepEqual(old.ExcludeKeywords, updated.ExcludeKeywords) {
 			effects.RescoredCount, err = s.recalculateTaskTx(ctx, tx, updated, now)
 			if err != nil {
@@ -830,30 +835,49 @@ func (s *Service) HideAddedExcludes(ctx context.Context, taskID int64, words []s
 }
 
 func (s *Service) reprofileEffectsTx(ctx context.Context, tx *sql.Tx, old, updated Task, nowMS int64) (TaskSaveEffects, error) {
-	effects := TaskSaveEffects{Generation: updated.SearchGeneration, AddedExcludeWords: []string{}}
+	effects := TaskSaveEffects{Generation: updated.SearchGeneration, AddedExcludeWords: []string{},
+		NeedsReanalysisIDs: []int64{}, TitleRejectedIDs: []int64{}}
 	var err error
 	effects.RescoredCount, err = s.recalculateTaskTx(ctx, tx, updated, nowMS)
 	if err != nil {
 		return effects, err
 	}
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM findings WHERE task_id=? AND decision='rejected'
-		AND decided_layer=2 AND reject_kind='unmatched'`, updated.ID).Scan(&effects.TitleRejectedCount); err != nil {
+	rows, err := tx.QueryContext(ctx, `SELECT id FROM findings WHERE task_id=? AND decision='rejected'
+		AND decided_layer=2 AND reject_kind='unmatched' ORDER BY id`, updated.ID)
+	if err != nil {
+		return effects, err
+	}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return effects, err
+		}
+		effects.TitleRejectedIDs = append(effects.TitleRejectedIDs, id)
+		effects.TitleRejectedCount = int64(len(effects.TitleRejectedIDs))
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return effects, err
+	}
+	if err := rows.Close(); err != nil {
 		return effects, err
 	}
 	changed := changedProfileItems(old.Profile, updated.Profile)
 	if len(changed.musts)+len(changed.bonuses)+len(changed.checks)+len(changed.specs) == 0 {
 		return effects, nil
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT analysis_json,user_overrides_json FROM findings WHERE task_id=?
-		AND analysis_json IS NOT NULL AND decided_layer=3 AND (decision='scored' OR (decision='rejected' AND reject_kind='unmatched'))`, updated.ID)
+	rows, err = tx.QueryContext(ctx, `SELECT id,analysis_json,user_overrides_json FROM findings WHERE task_id=?
+		AND analysis_json IS NOT NULL AND decided_layer=3 AND (decision='scored' OR (decision='rejected' AND reject_kind='unmatched')) ORDER BY id`, updated.ID)
 	if err != nil {
 		return effects, err
 	}
 	defer rows.Close()
 	for rows.Next() {
+		var id int64
 		var raw string
 		var overridesRaw sql.NullString
-		if err := rows.Scan(&raw, &overridesRaw); err != nil {
+		if err := rows.Scan(&id, &raw, &overridesRaw); err != nil {
 			return effects, err
 		}
 		var facts analysis.Facts
@@ -862,7 +886,8 @@ func (s *Service) reprofileEffectsTx(ctx context.Context, tx *sql.Tx, old, updat
 			return effects, errors.New("已有商品分析事实损坏")
 		}
 		if changed.needsFacts(facts, overrides) {
-			effects.NeedsReanalysisCount++
+			effects.NeedsReanalysisIDs = append(effects.NeedsReanalysisIDs, id)
+			effects.NeedsReanalysisCount = int64(len(effects.NeedsReanalysisIDs))
 		}
 	}
 	return effects, rows.Err()

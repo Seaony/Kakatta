@@ -134,6 +134,33 @@ func TestFindingSelectionCountsUniqueIDsAndKeepsUnknownKind(t *testing.T) {
 	}
 }
 
+func TestTaskSaveEffectsExposeExactFindingSets(t *testing.T) {
+	document := decoded(t)
+	effects := schema(t, document, "TaskSaveEffects")
+	properties := object(t, effects["properties"])
+	required := stringsIn(t, effects["required"])
+	for field, count := range map[string]string{
+		"needs_reanalysis_ids": "needs_reanalysis_count",
+		"title_rejected_ids":   "title_rejected_count",
+	} {
+		value := object(t, properties[field])
+		if !slices.Contains(required, field) || value["type"] != "array" || allowsNull(value) {
+			t.Fatalf("保存影响必须明确返回 %s 数组", field)
+		}
+		if _, exists := value["minItems"]; exists {
+			t.Fatalf("%s 的无影响结果必须允许 []", field)
+		}
+		item := object(t, value["items"])
+		if item["type"] != "integer" || integerBound(t, item, "minimum") != 1 || integerBound(t, item, "maximum") != 9007199254740991 {
+			t.Fatalf("%s 没有使用发现编号的安全范围", field)
+		}
+		description, _ := value["description"].(string)
+		if !strings.Contains(description, count) || !strings.Contains(description, "id 升序") || !strings.Contains(description, "[]") {
+			t.Fatalf("%s 没有说明数量对应、稳定顺序和空数组语义", field)
+		}
+	}
+}
+
 type sourceField struct {
 	name     string
 	expr     ast.Expr

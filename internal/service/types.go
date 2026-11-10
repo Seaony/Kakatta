@@ -90,7 +90,9 @@ type TaskSaveEffects struct {
 	Generation                int64    `json:"generation"`
 	RescoredCount             int64    `json:"rescored_count"`
 	NeedsReanalysisCount      int64    `json:"needs_reanalysis_count"`
+	NeedsReanalysisIDs        []int64  `json:"needs_reanalysis_ids"`
 	TitleRejectedCount        int64    `json:"title_rejected_count"`
+	TitleRejectedIDs          []int64  `json:"title_rejected_ids"`
 	AddedExcludeWords         []string `json:"added_exclude_words"`
 	ExistingExcludeMatchCount int64    `json:"existing_exclude_match_count"`
 }

@@ -3218,6 +3218,10 @@ export interface components {
             search_reset: boolean;
             /** Format: int64 */
             title_rejected_count: number;
+            /** @description 本次清单变更后缺少当前事实的精确发现编号集合，按 id 升序；长度与 needs_reanalysis_count 一致。Create 或无影响时返回 []，不为 null。 */
+            needs_reanalysis_ids: number[];
+            /** @description 二层因不匹配被拒的精确发现编号集合，按 id 升序；长度与 title_rejected_count 一致。Create 或无影响时返回 []，不为 null。 */
+            title_rejected_ids: number[];
         };
         TaskSaveResult: {
             effects: components["schemas"]["TaskSaveEffects"];
