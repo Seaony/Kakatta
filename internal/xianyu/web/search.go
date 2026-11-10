@@ -12,32 +12,32 @@ import (
 
 	"github.com/Seaony/Kakatta/internal/browser"
 	"github.com/Seaony/Kakatta/internal/pacer"
+	"github.com/Seaony/Kakatta/internal/quota"
 )
 
 // OpenHome 打开首页，停留，滚动一次，再停留（XIANYU.md 5.1 节）。
 func (r *Runner) OpenHome(ctx context.Context) error {
-	if err := r.acquire(VisitSearch, "首页"); err != nil {
+	if err := r.acquire(quota.Search, "首页"); err != nil {
 		return err
 	}
-	mark := r.S.Capture.Mark()
 	start := time.Now()
 	if err := r.S.Navigate(r.Site.Home, 30*time.Second); err != nil {
 		return fmt.Errorf("打开首页：%w", err)
 	}
 	r.Log("首页已打开", map[string]any{"耗时毫秒": time.Since(start).Milliseconds()})
-	if err := r.check(ctx, mark, "首页"); err != nil {
+	if err := r.check(ctx, "首页"); err != nil {
 		return err
 	}
-	if err := r.wait(ctx, r.Pace.HomeStay); err != nil {
+	if err := r.wait(ctx, "首页停留", r.Pace.HomeStay); err != nil {
 		return err
 	}
 	if err := r.H.Scroll(ctx, 200+r.P.Rand()*500); err != nil {
 		return err
 	}
-	if err := r.wait(ctx, r.Pace.HomeStay); err != nil {
+	if err := r.wait(ctx, "首页滚动后停留", r.Pace.HomeStay); err != nil {
 		return err
 	}
-	return r.check(ctx, mark, "首页停留后")
+	return r.check(ctx, "首页停留后")
 }
 
 // InputFact 记录首页上一个输入框的样子，用来确认搜索框的选择器。不含输入框里的值。
@@ -116,6 +116,9 @@ func (r *Runner) findSearchInput(ctx context.Context) (*chromedp.Node, string, e
 
 // Search 在首页搜索框里逐字输入关键词并回车，等到搜索结果页和第一条搜索接口响应（XIANYU.md 5.2–5.3 节）。
 func (r *Runner) Search(ctx context.Context, keyword string) (*browser.Response, error) {
+	if err := r.check(ctx, "搜索前"); err != nil {
+		return nil, err
+	}
 	input, how, err := r.findSearchInput(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("找首页搜索框：%w", err)
@@ -124,13 +127,26 @@ func (r *Runner) Search(ctx context.Context, keyword string) (*browser.Response,
 	if err := r.H.Click(ctx, input); err != nil {
 		return nil, err
 	}
+	// 搜索框里已经有文字（比如推荐词）时先清空，不然会和关键词拼在一起（XIANYU.md 5.2 节）。placeholder 读出来是空的，不受影响。
+	if v, err := r.H.Value(input); err == nil && v != "" {
+		if err := r.H.Clear(ctx); err != nil {
+			return nil, err
+		}
+		if v, err := r.H.Value(input); err != nil || v != "" {
+			return nil, fmt.Errorf("没能清空搜索框里原有的文字（%v）", err)
+		}
+		r.Log("清空了搜索框", nil)
+	}
 	if err := r.H.Type(ctx, keyword); err != nil {
 		return nil, err
 	}
-	if err := r.wait(ctx, r.Pace.Action); err != nil {
+	if err := r.wait(ctx, "输入关键词后", r.Pace.Action); err != nil {
 		return nil, err
 	}
-	if err := r.acquire(VisitSearch, "提交搜索"); err != nil {
+	if err := r.acquire(quota.Search, "提交搜索"); err != nil {
+		return nil, err
+	}
+	if err := r.check(ctx, "提交搜索前"); err != nil {
 		return nil, err
 	}
 	mark := r.S.Capture.Mark()
@@ -142,7 +158,7 @@ func (r *Runner) Search(ctx context.Context, keyword string) (*browser.Response,
 	// 等主框架跳到搜索结果页。回车后如果是新开了标签页，这里会超时，日志里会写明，待真实页面确认后再处理（XIANYU.md 5.3 节）。
 	landed, err := r.waitURL(ctx, func(u string) bool { return strings.Contains(u, "/search") }, 60*time.Second)
 	if err != nil {
-		if cerr := r.check(ctx, mark, "提交搜索"); cerr != nil {
+		if cerr := r.check(ctx, "提交搜索"); cerr != nil {
 			return nil, cerr
 		}
 		return nil, fmt.Errorf("回车后没有进入搜索结果页（原网址 %s）：%w", before, err)
@@ -159,7 +175,7 @@ func (r *Runner) Search(ctx context.Context, keyword string) (*browser.Response,
 	}
 	r.Log("进入搜索结果页", map[string]any{"网址": landed})
 	if _, err := r.H.FirstVisible(ctx, "//*[normalize-space(.)='新发布' and not(.//*[normalize-space(.)='新发布'])]", 15*time.Second); err != nil {
-		if cerr := r.check(ctx, mark, "等筛选栏"); cerr != nil {
+		if cerr := r.check(ctx, "等筛选栏"); cerr != nil {
 			return nil, cerr
 		}
 		return nil, fmt.Errorf("结果页上找不到「新发布」，页面结构可能变了：%w", err)
@@ -194,7 +210,7 @@ func (r *Runner) SelectPublished(ctx context.Context, withinDays int) (*browser.
 		if err := r.clickText(ctx, "新发布"); err != nil {
 			return fmt.Errorf("打开发布时间菜单：%w", err)
 		}
-		if err := r.wait(ctx, r.Pace.Action); err != nil {
+		if err := r.wait(ctx, "打开菜单后", r.Pace.Action); err != nil {
 			return err
 		}
 		return r.clickText(ctx, option)
@@ -211,7 +227,10 @@ func (r *Runner) SelectPublished(ctx context.Context, withinDays int) (*browser.
 //   - 最后取这次操作之后的最后一条搜索响应，因为一次筛选可能连发几个请求。
 func (r *Runner) filterStep(ctx context.Context, name string, repeatable bool, act func() error) (*browser.Response, error) {
 	api := r.Site.searchAPI()
-	if err := r.acquire(VisitSearch, name); err != nil {
+	if err := r.acquire(quota.Search, name); err != nil {
+		return nil, err
+	}
+	if err := r.check(ctx, name+"前"); err != nil {
 		return nil, err
 	}
 	mark := r.S.Capture.Mark()
@@ -225,10 +244,10 @@ func (r *Runner) filterStep(ctx context.Context, name string, repeatable bool, a
 			resp, err = r.waitAPI(ctx, mark, api, name+"（继续等）", 10)
 		case repeatable:
 			r.Log(name+"没有反应，重做一次", nil)
-			if werr := r.wait(ctx, r.Pace.Action); werr != nil {
+			if werr := r.wait(ctx, "重做前", r.Pace.Action); werr != nil {
 				return nil, werr
 			}
-			if aerr := r.acquire(VisitSearch, name+"重试"); aerr != nil {
+			if aerr := r.acquire(quota.Search, name+"重试"); aerr != nil {
 				return nil, aerr
 			}
 			mark = r.S.Capture.Mark()
@@ -241,15 +260,16 @@ func (r *Runner) filterStep(ctx context.Context, name string, repeatable bool, a
 	if err != nil {
 		return nil, err
 	}
-	if err := r.wait(ctx, r.Pace.Action); err != nil {
+	if err := r.wait(ctx, "筛选后", r.Pace.Action); err != nil {
 		return nil, err
 	}
 	if last := r.S.Capture.LastAfter(mark, api); last != nil && last.Seq > resp.Seq {
-		if checked, err := r.waitAPI(ctx, last.Seq-1, api, name+"（最后一条）", 5); err == nil {
-			resp = checked
-		} else if IsStop(err) {
+		// 最后一条才是筛选后的结果；它失败了，前面成功的那条也不能当结果用（XIANYU.md 5.5 节）。
+		checked, err := r.waitAPI(ctx, last.Seq-1, api, name+"（最后一条）", 5)
+		if err != nil {
 			return nil, err
 		}
+		resp = checked
 	}
 	return resp, nil
 }
@@ -309,4 +329,28 @@ func factSelector(f InputFact) string {
 		return fmt.Sprintf("input[class*=%q]", strings.Fields(f.ClassPrefix)[0])
 	}
 	return "input"
+}
+
+// nextPageButton 是可点的「下一页」按钮（search_pagination.py:9-13）。
+const nextPageButton = "button[class*='search-pagination-arrow-container']:has([class*='search-pagination-arrow-right']):not([disabled])"
+
+// NextPage 翻到下一页，返回这一页的搜索响应（XIANYU.md 5.6 节）。没有下一页按钮时 ok 为 false、err 为 nil。
+func (r *Runner) NextPage(ctx context.Context) (resp *browser.Response, ok bool, err error) {
+	if n, _ := r.H.FindNow(ctx, nextPageButton); len(n) == 0 {
+		return nil, false, nil
+	}
+	if err := r.wait(ctx, "翻页前", r.Pace.PageWait); err != nil {
+		return nil, false, err
+	}
+	resp, err = r.filterStep(ctx, "翻页", true, func() error {
+		btn, err := r.H.FirstVisible(ctx, nextPageButton, 5*time.Second)
+		if err != nil {
+			return fmt.Errorf("找下一页按钮：%w", err)
+		}
+		return r.H.Click(ctx, btn)
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	return resp, true, nil
 }

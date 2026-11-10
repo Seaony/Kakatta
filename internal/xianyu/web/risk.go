@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/Seaony/Kakatta/internal/browser"
 	"github.com/Seaony/Kakatta/internal/xianyu"
@@ -48,6 +49,10 @@ var blockedTexts = []string{"非法访问", "请使用正常浏览器访问"}
 // checkPage 检查当前页面：网址是不是登录页、有没有可见的验证遮罩、有没有「非法访问」文字。
 func (r *Runner) checkPage(ctx context.Context, where string) error {
 	url, err := r.S.URL()
+	if url == "about:blank" {
+		// 刚启动、还没打开过闲鱼页面，没有可查的；在空白页上查元素会一直等到超时。
+		return nil
+	}
 	if err == nil {
 		low := strings.ToLower(url)
 		if strings.Contains(low, "passport.goofish.com") || strings.Contains(low, "mini_login") {
@@ -80,10 +85,11 @@ func (r *Runner) checkPage(ctx context.Context, where string) error {
 	return nil
 }
 
-// checkResponses 检查 mark 之后完成的全部 mtop 接口：响应头 bxpunish、ret 和 data.url。
-// 不管是不是正在等的那个接口，只要是风控就立即结束（XIANYU.md 4.1 节）。
-func (r *Runner) checkResponses(mark uint64, where string) error {
-	for _, resp := range r.S.Capture.DoneAfter(mark, r.Site.mtop()) {
+// checkResponses 检查这个 Runner 创建以来完成的全部 mtop 接口：响应头 bxpunish、ret 和 data.url。
+// 不管是不是正在等的那个接口、是哪一步发出的，只要是风控就立即结束（XIANYU.md 4.1 节）：
+// 两步之间才返回的风控响应也要在下一次检查时拦住，所以不按每一步自己的标记来查。
+func (r *Runner) checkResponses(where string) error {
+	for _, resp := range r.S.Capture.DoneAfter(r.since, r.Site.mtop()) {
 		if resp.Headers["bxpunish"] == "1" {
 			return &RiskError{Kind: ErrNeedVerify, Where: where, Signal: "响应头 bxpunish"}
 		}
@@ -107,8 +113,8 @@ func (r *Runner) checkResponses(mark uint64, where string) error {
 }
 
 // check 做一次完整的风控检查：先查接口，再查页面。
-func (r *Runner) check(ctx context.Context, mark uint64, where string) error {
-	if err := r.checkResponses(mark, where); err != nil {
+func (r *Runner) check(ctx context.Context, where string) error {
+	if err := r.checkResponses(where); err != nil {
 		return err
 	}
 	return r.checkPage(ctx, where)
@@ -117,11 +123,12 @@ func (r *Runner) check(ctx context.Context, mark uint64, where string) error {
 // waitAPI 等 mark 之后的第一条有效接口响应：令牌过期的那条跳过、继续等；风控立即返回；业务失败算这一步失败。
 func (r *Runner) waitAPI(ctx context.Context, mark uint64, m browser.Match, where string, timeoutSec int) (*browser.Response, error) {
 	after := mark
+	start := time.Now()
 	for {
 		resp, err := r.S.Capture.WaitAfter(ctx, after, m, seconds(timeoutSec))
 		if err != nil {
 			// 超时先看是不是掉了登录或出了验证（scraper.py:728-733）。
-			if cerr := r.check(ctx, mark, where); cerr != nil {
+			if cerr := r.check(ctx, where); cerr != nil {
 				return nil, cerr
 			}
 			if r.S.Capture.SentAfter(mark, m) {
@@ -129,7 +136,7 @@ func (r *Runner) waitAPI(ctx context.Context, mark uint64, m browser.Match, wher
 			}
 			return nil, fmt.Errorf("%s：没有发出请求：%w", where, err)
 		}
-		if cerr := r.check(ctx, mark, where); cerr != nil {
+		if cerr := r.check(ctx, where); cerr != nil {
 			return nil, cerr
 		}
 		if resp.Err != nil {
@@ -142,6 +149,7 @@ func (r *Runner) waitAPI(ctx context.Context, mark uint64, m browser.Match, wher
 		if err != nil {
 			return nil, fmt.Errorf("%s：响应不是有效的接口数据：%w", where, err)
 		}
+		r.Log("接口返回", map[string]any{"步骤": where, "ret": ret, "耗时毫秒": time.Since(start).Milliseconds()})
 		switch kind {
 		case xianyu.RetOK:
 			return resp, nil

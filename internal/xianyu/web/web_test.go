@@ -2,14 +2,8 @@ package web
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
-	"net/http"
-	"net/http/httptest"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -17,132 +11,21 @@ import (
 
 	"github.com/Seaony/Kakatta/internal/browser"
 	"github.com/Seaony/Kakatta/internal/pacer"
+	"github.com/Seaony/Kakatta/internal/quota"
 	"github.com/Seaony/Kakatta/internal/xianyu"
+	"github.com/Seaony/Kakatta/internal/xianyu/fake"
 )
 
-// 本地的假闲鱼：页面结构和接口格式照 docs/XIANYU.md，只在本机运行，测试不访问真实闲鱼。
-
-const fakeHome = `<!doctype html><meta charset="utf-8"><title>首页</title>
-<div style="height:80px"><input placeholder="搜索闲鱼" style="width:420px;height:32px;margin:20px">
-<input type="text" style="width:60px"></div>
-<div style="height:3000px">首页内容</div>
-<script>
-document.querySelector('input[placeholder="搜索闲鱼"]').addEventListener('keydown', e => {
-  if (e.key === 'Enter') location.href = '/search?q=' + encodeURIComponent(e.target.value);
-});
-</script>`
-
-const fakeSearch = `<!doctype html><meta charset="utf-8"><title>搜索</title>
-<div><span id="pub" style="padding:8px">新发布</span>
-<div id="menu" style="display:none"><div style="padding:6px">最新</div><div style="padding:6px">1天内</div><div style="padding:6px">7天内</div></div>
-<span style="padding:8px">个人闲置</span></div>
-<div class="closeIconBg--a1b2" style="width:30px;height:30px;position:fixed;right:10px;top:10px">×</div>
-<div class="baxia-dialog-mask" style="width:200px;height:200px;MASKSTYLE">验证</div>
-<div id="list">商品列表</div>
-<script>
-function search(extra) {
-  return fetch(API + '/h5/mtop.taobao.idlemtopsearch.pc.search/1.0/?' + extra, {method: 'POST', body: 'q=' + encodeURIComponent(new URLSearchParams(location.search).get('q'))});
-}
-search('first=1');
-document.getElementById('pub').addEventListener('click', () => { document.getElementById('menu').style.display = 'block'; });
-document.querySelectorAll('#menu div').forEach(d => d.addEventListener('click', () => {
-  document.getElementById('menu').style.display = 'none';
-  search('publish=' + encodeURIComponent(d.textContent));
-}));
-document.querySelector('[class*=closeIconBg]').addEventListener('click', e => e.target.remove());
-</script>`
-
-const fakeItem = `<!doctype html><meta charset="utf-8"><title>商品</title><div>商品详情</div>
-<script>
-function load(n) {
-  fetch(API + '/h5/mtop.taobao.idle.pc.detail/1.0/?id=' + new URLSearchParams(location.search).get('id') + '&n=' + n)
-    .then(r => r.json()).then(j => { if (String(j.ret).includes('TOKEN_EXOIRED') && n < 2) load(n + 1); });
-}
-load(1);
-</script>`
-
-type fakeXianyu struct {
-	srv *httptest.Server
-	mu  sync.Mutex
-	// 风控场景
-	maskOnSearch  bool   // 搜索结果页显示验证遮罩
-	detailRet     string // 详情接口第一次返回的 ret，空表示成功
-	searchBodies  []string
-	detailQueries int
-}
-
-func newFakeXianyu(t *testing.T) *fakeXianyu {
-	f := &fakeXianyu{}
-	mux := http.NewServeMux()
-	page := func(html string) http.HandlerFunc {
-		return func(w http.ResponseWriter, r *http.Request) {
-			f.mu.Lock()
-			mask := "display:none"
-			if f.maskOnSearch {
-				mask = "display:block"
-			}
-			f.mu.Unlock()
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			out := strings.ReplaceAll(html, "MASKSTYLE", mask)
-			out = strings.Replace(out, "<script>", "<script>const API = '"+f.srv.URL+"';", 1)
-			fmt.Fprint(w, out)
-		}
-	}
-	mux.HandleFunc("/{$}", page(fakeHome))
-	mux.HandleFunc("/search", page(fakeSearch))
-	mux.HandleFunc("/item", page(fakeItem))
-	mux.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
-		http.SetCookie(w, &http.Cookie{Name: "unb", Value: "1", Path: "/"})
-		fmt.Fprint(w, "ok")
-	})
-	mux.HandleFunc("/h5/mtop.taobao.idlemtopsearch.pc.search/1.0/", func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(r.Body)
-		f.mu.Lock()
-		f.searchBodies = append(f.searchBodies, string(body))
-		f.mu.Unlock()
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(searchJSON(f.srv.URL))
-	})
-	mux.HandleFunc("/h5/mtop.taobao.idle.pc.detail/1.0/", func(w http.ResponseWriter, r *http.Request) {
-		f.mu.Lock()
-		f.detailQueries++
-		ret := f.detailRet
-		f.mu.Unlock()
-		w.Header().Set("Content-Type", "application/json")
-		if ret != "" && r.URL.Query().Get("n") == "1" {
-			json.NewEncoder(w).Encode(map[string]any{"ret": []string{ret}, "data": map[string]any{}})
-			return
-		}
-		json.NewEncoder(w).Encode(map[string]any{
-			"ret": []string{"SUCCESS::调用成功"},
-			"data": map[string]any{
-				"itemDO":   map[string]any{"imageInfos": []any{map[string]any{"url": "//img.example.com/1.jpg"}}, "wantCnt": 3, "browseCnt": 50, "desc": "电池 92%，无拆修"},
-				"sellerDO": map[string]any{"sellerId": "998", "userRegDay": 800, "zhimaLevelInfo": map[string]any{"levelName": "信用极好"}},
-			},
-		})
-	})
-	f.srv = httptest.NewServer(mux)
-	t.Cleanup(f.srv.Close)
+func newFake(t *testing.T) *fake.Xianyu {
+	f := fake.Start()
+	t.Cleanup(f.Close)
 	return f
-}
-
-func searchJSON(base string) map[string]any {
-	item := func(id, title, price string) map[string]any {
-		return map[string]any{"data": map[string]any{"item": map[string]any{"main": map[string]any{
-			"exContent":  map[string]any{"itemId": id, "title": title, "price": []any{map[string]any{"text": "¥"}, map[string]any{"text": price}}, "area": "上海", "userNickName": "卖家" + id, "picUrl": "//img.example.com/" + id + ".jpg"},
-			"clickParam": map[string]any{"args": map[string]any{"publishTime": fmt.Sprint(time.Now().Add(-time.Hour).UnixMilli()), "wantNum": 2}},
-			"targetUrl":  "fleamarket://item?id=" + id,
-		}}}}
-	}
-	return map[string]any{"ret": []string{"SUCCESS::调用成功"}, "data": map[string]any{"resultList": []any{
-		item("101", "MacBook Pro M3", "8999"), item("102", "MacBook Air", "5200"),
-	}}}
 }
 
 // countingBudget 记下每次申请额度，用来核对计数口径。
 type countingBudget struct{ got []string }
 
-func (b *countingBudget) Acquire(kind VisitKind, what string) error {
+func (b *countingBudget) Acquire(kind quota.Kind, what string) error {
 	b.got = append(b.got, string(kind)+":"+what)
 	return nil
 }
@@ -152,7 +35,7 @@ func fastPace() Pace {
 	return Pace{HomeStay: r, Action: r, PageWait: r, PreDetail: r, Detail: r}
 }
 
-func startRunner(t *testing.T, f *fakeXianyu) (*Runner, *countingBudget, context.Context) {
+func startRunner(t *testing.T, f *fake.Xianyu) (*Runner, *countingBudget, context.Context) {
 	t.Helper()
 	if _, err := browser.FindChrome(); err != nil {
 		t.Skip("本机没有 Chrome：", err)
@@ -164,7 +47,7 @@ func startRunner(t *testing.T, f *fakeXianyu) (*Runner, *countingBudget, context
 		t.Fatal(err)
 	}
 	t.Cleanup(s.Close)
-	site := Site{Home: f.srv.URL + "/", APIHost: strings.TrimPrefix(f.srv.URL, "http://")}
+	site := Site{Home: f.Home(), APIHost: f.APIHost()}
 	b := &countingBudget{}
 	r := NewRunner(s, pacer.New(nil), pacer.Between(5*time.Millisecond, 10*time.Millisecond), site, fastPace(), b, nil)
 	return r, b, ctx
@@ -172,7 +55,7 @@ func startRunner(t *testing.T, f *fakeXianyu) (*Runner, *countingBudget, context
 
 // 完整走一遍：首页 → 搜索框输入中文关键词 → 选「最新」→ 解析结果 → 打开详情。
 func TestSearchAndDetailFlow(t *testing.T) {
-	f := newFakeXianyu(t)
+	f := newFake(t)
 	r, budget, ctx := startRunner(t, f)
 
 	if err := r.OpenHome(ctx); err != nil {
@@ -192,18 +75,26 @@ func TestSearchAndDetailFlow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(resp.URL, "publish=") {
+	if !strings.Contains(resp.URL, "final=1") {
 		t.Fatalf("应该取筛选之后的响应，拿到的是：%s", resp.URL)
 	}
 	items, err := xianyu.ParseSearch(resp.Body)
 	if err != nil || len(items) != 2 {
 		t.Fatalf("解析搜索结果：%v，%d 项", err, len(items))
 	}
-	if !strings.Contains(f.searchBodies[0], "MacBook%20") && !strings.Contains(f.searchBodies[0], "MacBook+") {
-		t.Fatalf("页面收到的关键词不对：%q", f.searchBodies[0])
+	if !strings.Contains(f.SearchBodies()[0], "MacBook%20") && !strings.Contains(f.SearchBodies()[0], "MacBook+") {
+		t.Fatalf("页面收到的关键词不对：%q", f.SearchBodies()[0])
 	}
 
-	detailURL := f.srv.URL + "/item?id=" + items[0].ID
+	page2, ok, err := r.NextPage(ctx)
+	if err != nil || !ok || !strings.Contains(page2.URL, "page=2") {
+		t.Fatalf("翻到第 2 页：ok=%v err=%v", ok, err)
+	}
+	if _, ok, err := r.NextPage(ctx); ok || err != nil {
+		t.Fatalf("没有下一页时应该返回 ok=false：ok=%v err=%v", ok, err)
+	}
+
+	detailURL := items[0].WebURL
 	d, err := r.OpenDetail(ctx, detailURL)
 	if err != nil {
 		t.Fatal(err)
@@ -212,7 +103,12 @@ func TestSearchAndDetailFlow(t *testing.T) {
 		t.Fatalf("详情解析不对：%+v", d)
 	}
 
-	want := []string{"search:首页", "search:提交搜索", "search:发布时间筛选", "detail:详情页"}
+	head, err := r.OwnProfile(ctx)
+	if err != nil || head.Nick != "测试号" {
+		t.Fatalf("自己的主页：%+v %v", head, err)
+	}
+
+	want := []string{"search:首页", "search:提交搜索", "search:发布时间筛选", "search:翻页", "detail:详情页", "detail:自己的主页"}
 	if strings.Join(budget.got, ",") != strings.Join(want, ",") {
 		t.Fatalf("额度申请不对：\n得到 %v\n应为 %v", budget.got, want)
 	}
@@ -220,10 +116,10 @@ func TestSearchAndDetailFlow(t *testing.T) {
 
 // 详情接口返回人机验证：必须作为风控错误返回，不能被当成普通失败吞掉（CRAWL-POLICY 第四节）。
 func TestDetailVerificationStopsRun(t *testing.T) {
-	f := newFakeXianyu(t)
-	f.detailRet = "FAIL_SYS_USER_VALIDATE::哎哟喂,被挤爆啦"
+	f := newFake(t)
+	f.SetDetailRet("FAIL_SYS_USER_VALIDATE::哎哟喂,被挤爆啦")
 	r, _, ctx := startRunner(t, f)
-	_, err := r.OpenDetail(ctx, f.srv.URL+"/item?id=101")
+	_, err := r.OpenDetail(ctx, xianyu.WebLink("fleamarket://item?id=101"))
 	if !errors.Is(err, ErrNeedVerify) || !IsStop(err) {
 		t.Fatalf("应该返回人机验证错误，实际：%v", err)
 	}
@@ -231,10 +127,10 @@ func TestDetailVerificationStopsRun(t *testing.T) {
 
 // 令牌过期的那条响应要跳过，等页面重发后的结果。
 func TestDetailSkipsExpiredToken(t *testing.T) {
-	f := newFakeXianyu(t)
-	f.detailRet = "FAIL_SYS_TOKEN_EXOIRED::令牌过期"
+	f := newFake(t)
+	f.SetDetailRet("FAIL_SYS_TOKEN_EXOIRED::令牌过期")
 	r, _, ctx := startRunner(t, f)
-	d, err := r.OpenDetail(ctx, f.srv.URL+"/item?id=101")
+	d, err := r.OpenDetail(ctx, xianyu.WebLink("fleamarket://item?id=101"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -245,8 +141,8 @@ func TestDetailSkipsExpiredToken(t *testing.T) {
 
 // 搜索结果页弹出验证遮罩：搜索必须以风控错误结束。
 func TestSearchStopsOnVisibleMask(t *testing.T) {
-	f := newFakeXianyu(t)
-	f.maskOnSearch = true
+	f := newFake(t)
+	f.SetMaskOnSearch(true)
 	r, _, ctx := startRunner(t, f)
 	if err := r.OpenHome(ctx); err != nil {
 		t.Fatal(err)
@@ -259,18 +155,110 @@ func TestSearchStopsOnVisibleMask(t *testing.T) {
 
 // 登录判断只看本地状态：没有登录 Cookie 时为假，有了以后为真。
 func TestLoggedInChecksCookieOnly(t *testing.T) {
-	f := newFakeXianyu(t)
+	f := newFake(t)
 	r, _, ctx := startRunner(t, f)
-	if err := r.S.Navigate(f.srv.URL+"/", 15*time.Second); err != nil {
+	if err := r.S.Navigate(f.Home(), 15*time.Second); err != nil {
 		t.Fatal(err)
 	}
 	if ok, err := r.LoggedIn(ctx); err != nil || ok {
 		t.Fatalf("还没登录却判断为已登录：%v %v", ok, err)
 	}
-	if err := r.S.Navigate(f.srv.URL+"/login", 15*time.Second); err != nil {
+	if err := r.S.Navigate(f.LoginURL(), 15*time.Second); err != nil {
 		t.Fatal(err)
 	}
 	if err := r.WaitForLogin(ctx, 5*time.Second); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// 接口数据里解析出的链接只能是闲鱼商品页，别的网址一律拒绝，浏览器不会被带去别的网站。
+func TestItemURLRejectsOtherSites(t *testing.T) {
+	site := Site{Home: "http://127.0.0.1:9/"}
+	if got, err := site.itemURL("https://www.goofish.com/item?id=1&x=2"); err != nil || got != "http://127.0.0.1:9/item?id=1&x=2" {
+		t.Fatalf("商品链接应该换到当前站点：%q %v", got, err)
+	}
+	for _, bad := range []string{"https://evil.example/item?id=1", "https://www.goofish.com/personal?userId=1", "https://www.goofish.com.evil/item?id=1", ""} {
+		if _, err := site.itemURL(bad); err == nil {
+			t.Fatalf("应该拒绝：%q", bad)
+		}
+	}
+}
+
+// 两步之间页面自己发出的接口被风控拦下：下一步开始时就要发现并停下，不能因为不是这一步发出的就漏掉。
+func TestRiskBetweenStepsIsCaught(t *testing.T) {
+	f := newFake(t)
+	r, _, ctx := startRunner(t, f)
+	if err := r.OpenHome(ctx); err != nil {
+		t.Fatal(err)
+	}
+	js := `fetch('` + strings.TrimSuffix(f.Home(), "/") + `/h5/mtop.fake.risk/1.0/'); true`
+	if _, err := chromedp.Run(r.S.Context(), chromedp.Evaluate[bool](js)); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(500 * time.Millisecond)
+	if _, err := r.Search(ctx, "相机"); !errors.Is(err, ErrNeedVerify) {
+		t.Fatalf("应该返回人机验证错误，实际：%v", err)
+	}
+}
+
+// 搜索框里有预填文字时先清空，结果页的关键词和要搜的一致。
+func TestSearchClearsPrefilledText(t *testing.T) {
+	f := newFake(t)
+	f.SetPrefill("推荐词 iPhone")
+	r, _, ctx := startRunner(t, f)
+	if err := r.OpenHome(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Search(ctx, "相机"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// 一次筛选连发的请求里最后一条失败：整个筛选算失败，不能拿前面成功的那条当结果。
+func TestFilterFailsWhenFinalResponseFails(t *testing.T) {
+	f := newFake(t)
+	f.SetFinalFilterFails(true)
+	r, _, ctx := startRunner(t, f)
+	if err := r.OpenHome(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Search(ctx, "相机"); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := r.SelectPublished(ctx, 0)
+	if err == nil || IsStop(err) {
+		t.Fatalf("应该返回普通失败，实际：%v %v", resp, err)
+	}
+}
+
+// 当前页面已经出现验证遮罩：不能再去打开详情。
+func TestDetailNotOpenedWhileMaskVisible(t *testing.T) {
+	f := newFake(t)
+	f.SetMaskOnSearch(true)
+	r, _, ctx := startRunner(t, f)
+	if err := r.S.Navigate(f.Home()+"search?q=x", 15*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(300 * time.Millisecond) // 等结果页自己的搜索请求结束，免得和后面的计数混在一起
+	_, err := r.OpenDetail(ctx, xianyu.WebLink("fleamarket://item?id=101"))
+	if !errors.Is(err, ErrNeedVerify) {
+		t.Fatalf("应该返回人机验证错误，实际：%v", err)
+	}
+	if n := f.DetailHits(); n != 0 {
+		t.Fatalf("出现验证后不应再请求详情，实际请求了 %d 次", n)
+	}
+}
+
+// 等登录时页面显示「非法访问」：用户处理不了，要立即结束，不能等满超时。
+func TestWaitForLoginStopsWhenBlocked(t *testing.T) {
+	f := newFake(t)
+	r, _, ctx := startRunner(t, f)
+	if err := r.S.Navigate(f.BlockedURL(), 15*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	err := r.WaitForLogin(ctx, 30*time.Second)
+	if !errors.Is(err, ErrEnvBlocked) || time.Since(start) > 5*time.Second {
+		t.Fatalf("应该立即返回环境异常，实际：%v，用时 %s", err, time.Since(start))
 	}
 }
