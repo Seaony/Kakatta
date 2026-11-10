@@ -51,11 +51,7 @@ func TestArchiveMultiChunkFileRoundTrip(t *testing.T) {
 	if err != nil || !bytes.Equal(database, restored) {
 		t.Fatal("数据库文件不一致", err)
 	}
-	secret, err := os.ReadFile(filepath.Join(dir, MasterKeyEntry))
-	if err != nil || !bytes.Equal(secret, key[:]) {
-		t.Fatal("主密钥文件不一致", err)
-	}
-	for _, name := range []string{"", DatabaseEntry, MasterKeyEntry} {
+	for _, name := range []string{"", DatabaseEntry} {
 		info, err := os.Stat(filepath.Join(dir, name))
 		want := os.FileMode(0600)
 		if name == "" {
@@ -66,8 +62,8 @@ func TestArchiveMultiChunkFileRoundTrip(t *testing.T) {
 		}
 	}
 	entries, err := os.ReadDir(dir)
-	if err != nil || len(entries) != 2 {
-		t.Fatal("候选目录夹带了其他文件", err)
+	if err != nil || len(entries) != 1 || entries[0].Name() != DatabaseEntry {
+		t.Fatal("解包目录应只保存数据库，主密钥应留在内存", err)
 	}
 }
 
@@ -276,6 +272,13 @@ func TestArchiveRejectsWrongMasterKeyLength(t *testing.T) {
 		raw, payload := wrapTar(t, m, plain.Bytes())
 		assertRejected(t, zipEntries(t, archiveEntry{ManifestEntry, raw, 0600}, archiveEntry{PayloadEntry, payload, 0600}), testPassword, ErrInvalidArchive)
 	}
+	plain := tarBytes(t, nil, false)
+	keyStart := bytes.Index(plain, bytes.Repeat([]byte{0x5a}, MasterKeyBytes))
+	if keyStart < 0 {
+		t.Fatal("测试归档缺少主密钥正文")
+	}
+	raw, payload := wrapTar(t, m, plain[:keyStart+MasterKeyBytes-1])
+	assertRejected(t, zipEntries(t, archiveEntry{ManifestEntry, raw, 0600}, archiveEntry{PayloadEntry, payload, 0600}), testPassword, ErrInvalidArchive)
 }
 
 func TestArchiveRefusesExistingDestinationAndUnsafeSource(t *testing.T) {

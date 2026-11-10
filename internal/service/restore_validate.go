@@ -298,16 +298,20 @@ func validateStoredAccounts(ctx context.Context, tx *sql.Tx, cipher *security.Ci
 		}
 		proxies[id] = true
 	}
-	return storedRows(ctx, tx, `SELECT id,proxy_id,verify_level,next_gap_seconds,state_reason FROM accounts`, func(rows *sql.Rows) error {
+	return storedRows(ctx, tx, `SELECT id,proxy_id,verify_level,next_gap_seconds,state_reason,state,cooldown_until FROM accounts`, func(rows *sql.Rows) error {
 		var id, level int64
-		var proxy, gap *int64
+		var proxy, gap, deadline *int64
 		var raw sql.NullString
-		if err := rows.Scan(&id, &proxy, &level, &gap, &raw); err != nil {
+		var state AccountState
+		if err := rows.Scan(&id, &proxy, &level, &gap, &raw, &state, &deadline); err != nil {
 			return err
 		}
 		key := strconv.FormatInt(id, 10)
 		if id < 1 || id > maxAccountID || level < 0 || gap != nil && *gap < 0 {
 			return storedInvalid("accounts", key, "state")
+		}
+		if (state == AccountCooling || state == AccountDenied) && deadline == nil {
+			return storedInvalid("accounts", key, "cooldown_until")
 		}
 		if proxy != nil && !proxies[*proxy] {
 			return storedInvalid("accounts", key, "proxy_id")

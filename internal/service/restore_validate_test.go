@@ -110,6 +110,46 @@ func TestValidateStoredKeepsHistoricalDataAndIsReadOnly(t *testing.T) {
 	}
 }
 
+func TestValidateStoredAccountPauseDeadline(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		state       AccountState
+		offset      time.Duration
+		wantInvalid bool
+	}{
+		{name: "cooling_missing", state: AccountCooling, wantInvalid: true},
+		{name: "denied_missing", state: AccountDenied, wantInvalid: true},
+		{name: "cooling_expired", state: AccountCooling, offset: -time.Minute},
+		{name: "cooling_future", state: AccountCooling, offset: time.Minute},
+		{name: "denied_expired", state: AccountDenied, offset: -time.Minute},
+		{name: "denied_future", state: AccountDenied, offset: time.Minute},
+		{name: "active_future", state: AccountActive, offset: time.Minute},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			h, cipher, _ := storedValidationFixture(t)
+			var deadline *int64
+			if test.offset != 0 {
+				value := h.now + test.offset.Milliseconds()
+				deadline = &value
+			}
+			h.exec(`UPDATE accounts SET state=?,cooldown_until=? WHERE id=1`, test.state, deadline)
+			before := storedSnapshot(t, h.s.db)
+			h.exec(`PRAGMA query_only=ON`)
+			err := ValidateStored(t.Context(), h.s.db, cipher, settings.Environment{TZ: "UTC"})
+			if test.wantInvalid {
+				if err == nil || !strings.Contains(err.Error(), "cooldown_until") {
+					t.Fatalf("缺少暂停截止时间的账号未被正确拒绝：%v", err)
+				}
+			} else if err != nil {
+				t.Fatalf("兼容的账号暂停截止时间被拒绝：%v", err)
+			}
+			if after := storedSnapshot(t, h.s.db); !reflect.DeepEqual(before, after) {
+				t.Fatal("校验改写了账号暂停状态")
+			}
+		})
+	}
+}
+
 func TestValidateStoredRejectsBrokenCoreJSONAndReferences(t *testing.T) {
 	for name, query := range map[string]string{
 		"task_profile":         `UPDATE tasks SET profile_json='{"musts":[{"id":"m1","text":"需求","source":"wrong"}]}'`,

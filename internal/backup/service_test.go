@@ -105,12 +105,12 @@ func TestBackupExportSerialWaitCancellationAndCloseJoin(t *testing.T) {
 	if runtime.calls.Load() != 1 || runtime.closeCalls.Load() != 0 {
 		t.Fatal("串行名额或全局Runtime所有权错误")
 	}
-	assertNoExportFiles(t, s.deps.DataDir)
+	assertNoExportFiles(t, s.workDir)
 }
 
 func TestBackupExportCleanupFailureIsReportedByExportAndClose(t *testing.T) {
 	s, _, _ := exportFixture(t)
-	original := s.deps.DataDir
+	original := s.workDir
 	moved := original + "-moved"
 	changed := false
 	defer func() {

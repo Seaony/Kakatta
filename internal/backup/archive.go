@@ -120,7 +120,7 @@ func openDatabaseSource(path string) (*os.File, os.FileInfo, error) {
 	return file, opened, nil
 }
 
-// ReadArchive 只验证归档，不打开或迁移候选数据库。
+// ReadArchive 验证归档并解出候选数据库，主密钥留在内存。
 func ReadArchive(ctx context.Context, src io.ReaderAt, size int64, password, destinationDir string, maxSchemaVersion int) (manifest Manifest, masterKey [MasterKeyBytes]byte, err error) {
 	if password == "" {
 		return manifest, masterKey, ErrPasswordRequired
@@ -192,35 +192,36 @@ func ReadArchive(ctx context.Context, src io.ReaderAt, size int64, password, des
 		return manifest, masterKey, fileFailure(err)
 	}
 	tr := tar.NewReader(chunks)
-	for _, name := range []string{DatabaseEntry, MasterKeyEntry} {
-		header, nextErr := tr.Next()
-		if nextErr != nil || !validTarHeader(header, name) {
-			return manifest, masterKey, archiveReadFailure(nextErr)
+	header, nextErr := tr.Next()
+	if nextErr != nil || !validTarHeader(header, DatabaseEntry) {
+		return manifest, masterKey, archiveReadFailure(nextErr)
+	}
+	file, openErr := os.OpenFile(filepath.Join(destinationDir, DatabaseEntry), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	if openErr != nil {
+		return manifest, masterKey, fileFailure(openErr)
+	}
+	if err := file.Chmod(0600); err != nil {
+		file.Close()
+		return manifest, masterKey, fileFailure(err)
+	}
+	_, copyErr := io.CopyN(file, contextReader{ctx, tr}, header.Size)
+	syncErr := file.Sync()
+	closeErr = file.Close()
+	if syncErr != nil || closeErr != nil {
+		return manifest, masterKey, fileFailure(errors.Join(copyErr, syncErr, closeErr))
+	}
+	if copyErr != nil {
+		if errors.Is(copyErr, io.EOF) || errors.Is(copyErr, io.ErrUnexpectedEOF) {
+			return manifest, masterKey, archiveReadFailure(copyErr)
 		}
-		file, openErr := os.OpenFile(filepath.Join(destinationDir, name), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
-		if openErr != nil {
-			return manifest, masterKey, fileFailure(openErr)
-		}
-		if err := file.Chmod(0600); err != nil {
-			file.Close()
-			return manifest, masterKey, fileFailure(err)
-		}
-		var writer io.Writer = file
-		if name == MasterKeyEntry {
-			writer = io.MultiWriter(file, &keyCollector{dst: masterKey[:]})
-		}
-		_, copyErr := io.CopyN(writer, contextReader{ctx, tr}, header.Size)
-		syncErr := file.Sync()
-		closeErr := file.Close()
-		if syncErr != nil || closeErr != nil {
-			return manifest, masterKey, fileFailure(errors.Join(copyErr, syncErr, closeErr))
-		}
-		if copyErr != nil {
-			if errors.Is(copyErr, io.EOF) || errors.Is(copyErr, io.ErrUnexpectedEOF) {
-				return manifest, masterKey, archiveReadFailure(copyErr)
-			}
-			return manifest, masterKey, fileFailure(copyErr)
-		}
+		return manifest, masterKey, fileFailure(copyErr)
+	}
+	header, nextErr = tr.Next()
+	if nextErr != nil || !validTarHeader(header, MasterKeyEntry) {
+		return manifest, masterKey, archiveReadFailure(nextErr)
+	}
+	if _, readErr := io.ReadFull(contextReader{ctx, tr}, masterKey[:]); readErr != nil {
+		return manifest, masterKey, archiveReadFailure(readErr)
 	}
 	if _, nextErr := tr.Next(); nextErr != io.EOF {
 		return manifest, masterKey, archiveReadFailure(nextErr)
@@ -236,7 +237,7 @@ func ReadArchive(ctx context.Context, src io.ReaderAt, size int64, password, des
 	if openErr != nil {
 		return manifest, masterKey, fileFailure(openErr)
 	}
-	syncErr := dir.Sync()
+	syncErr = dir.Sync()
 	closeErr = dir.Close()
 	if syncErr != nil || closeErr != nil {
 		return manifest, masterKey, fileFailure(errors.Join(syncErr, closeErr))
@@ -257,19 +258,6 @@ func validTarHeader(header *tar.Header, name string) bool {
 		}
 	}
 	return true
-}
-
-type keyCollector struct {
-	dst  []byte
-	used int
-}
-
-func (w *keyCollector) Write(src []byte) (int, error) {
-	if len(src) > len(w.dst)-w.used {
-		return 0, ErrInvalidArchive
-	}
-	w.used += copy(w.dst[w.used:], src)
-	return len(src), nil
 }
 
 type contextReaderAt struct {

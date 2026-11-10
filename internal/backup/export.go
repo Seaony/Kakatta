@@ -22,7 +22,7 @@ func (s *Service) Export(ctx context.Context, password string, dst io.Writer) (e
 		return err
 	}
 	defer done()
-	dir, err := os.MkdirTemp(s.deps.DataDir, ".backup-export-")
+	dir, err := os.MkdirTemp(s.workDir, exportWorkPrefix)
 	if err != nil {
 		return fileFailure(err)
 	}

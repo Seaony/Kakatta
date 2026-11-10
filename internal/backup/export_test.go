@@ -179,7 +179,7 @@ func TestExportRealWALKeepsBusinessAndRemovesPhysicalSecrets(t *testing.T) {
 	}
 	originalKey := runtime.source.MasterKey
 	runtime.after = func() error {
-		paths, _ := filepath.Glob(filepath.Join(s.deps.DataDir, ".backup-export-*", "raw.db"))
+		paths, _ := filepath.Glob(filepath.Join(s.workDir, ".backup-export-*", "raw.db"))
 		if len(paths) != 1 {
 			return errors.New("缺少真实租约内快照")
 		}
@@ -257,7 +257,7 @@ func TestExportRealWALKeepsBusinessAndRemovesPhysicalSecrets(t *testing.T) {
 			t.Fatal("业务表或序列发生变化", table)
 		}
 	}
-	assertNoExportFiles(t, s.deps.DataDir)
+	assertNoExportFiles(t, s.workDir)
 }
 
 type checkingExportWriter struct {
@@ -297,7 +297,7 @@ func TestExportFailuresNeverChangeLiveStoreOrLeaveTemporaryFiles(t *testing.T) {
 				want = ErrInvalidDependencies
 			case "private_sql":
 				runtime.after = func() error {
-					paths, _ := filepath.Glob(filepath.Join(s.deps.DataDir, ".backup-export-*", "raw.db"))
+					paths, _ := filepath.Glob(filepath.Join(s.workDir, ".backup-export-*", "raw.db"))
 					if len(paths) != 1 {
 						return errors.New("缺少私有快照")
 					}
@@ -323,7 +323,7 @@ func TestExportFailuresNeverChangeLiveStoreOrLeaveTemporaryFiles(t *testing.T) {
 					t.Fatal("失败改动原库", table)
 				}
 			}
-			assertNoExportFiles(t, s.deps.DataDir)
+			assertNoExportFiles(t, s.workDir)
 		})
 	}
 }
