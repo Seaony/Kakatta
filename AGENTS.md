@@ -16,6 +16,7 @@ Kakatta（かかった，「上钩了！」）是一个开源的闲鱼监控项�
 
 - `docs/VISION.md`：要做什么、给谁用、部署方式和客户端、原则、不做什么。用户的原话也记在这里。
 - `docs/BACKGROUND.md`：来龙去脉。为什么不用参考项目、为什么放弃 Mekke，以及参考项目用户真实遇到的问题。
+- `docs/PRODUCT.md`：1.0 的功能范围（草案，待作者确认）。
 - `docs/DECISIONS.md`：已经定下来的决定，每条带日期和理由。
 - `docs/TECH-STACK.md`：技术栈选型的对比和理由。
 - `docs/CRAWL-POLICY.md`：抓取与防风控规则：浏览器怎么跑、怎么浏览、风控怎么识别和处理、所有频率配置的默认值和理由。
@@ -41,6 +42,7 @@ Kakatta（かかった，「上钩了！」）是一个开源的闲鱼监控项�
 - 提交信息、代码注释和文档里不出现 AI、Claude、Codex、Generated、Co-Authored-By 之类的字样。
 - 只在 `master` 上提交；不建分支，不 amend、不 rebase、不强推。推送失败就停下来告诉作者。
 - 提交前至少通过 `git diff --check`；有代码以后，构建和测试也必须通过。
+- `.claude/` 目录（项目级的设置、技能等）也提交推送，不要写进 `.gitignore`。作者原话：「.claude 也可以推送上去」。
 
 ## 参考资料（只读）
 
