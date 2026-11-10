@@ -72,6 +72,9 @@ func TestRestoreLockPreservesInodeContentAndIdempotentClose(t *testing.T) {
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Chmod(path, 0644); err != nil {
+		t.Fatal(err)
+	}
 	before, err := os.Lstat(path)
 	if err != nil {
 		t.Fatal(err)
@@ -110,6 +113,9 @@ func TestRestoreLockRejectsUnsafeFilesAndDirectories(t *testing.T) {
 			path := filepath.Join(dir, ".restore.lock")
 			target := filepath.Join(t.TempDir(), "target")
 			if err := os.WriteFile(target, []byte("不改外部文件"), 0644); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chmod(target, 0644); err != nil {
 				t.Fatal(err)
 			}
 			var err error

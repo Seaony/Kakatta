@@ -6,7 +6,6 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -15,11 +14,7 @@ import (
 )
 
 func TestProductionMessagesFormatInBothLanguages(t *testing.T) {
-	_, here, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("无法定位源码")
-	}
-	files, err := filepath.Glob(filepath.Join(filepath.Dir(here), "*.go"))
+	files, err := filepath.Glob("*.go")
 	if err != nil {
 		t.Fatal(err)
 	}

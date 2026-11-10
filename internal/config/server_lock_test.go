@@ -66,6 +66,9 @@ func TestServerLockPreservesFileAndTightensPermissions(t *testing.T) {
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Chmod(path, 0644); err != nil {
+		t.Fatal(err)
+	}
 	lock, err := AcquireServerLock(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -121,6 +124,9 @@ func TestServerLockRejectsUnsafePaths(t *testing.T) {
 			path := filepath.Join(dir, ".server.lock")
 			target := filepath.Join(t.TempDir(), "target")
 			if err := os.WriteFile(target, []byte("不能改动"), 0644); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chmod(target, 0644); err != nil {
 				t.Fatal(err)
 			}
 			var err error

@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -110,11 +109,7 @@ func TestPurityGuardRejectsExternalState(t *testing.T) {
 }
 
 func TestProductionRulesHaveNoExternalState(t *testing.T) {
-	_, here, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("无法定位包源码")
-	}
-	files, err := filepath.Glob(filepath.Join(filepath.Dir(here), "*.go"))
+	files, err := filepath.Glob("*.go")
 	if err != nil {
 		t.Fatal(err)
 	}

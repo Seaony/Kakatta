@@ -1,0 +1,380 @@
+name: 发布镜像
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+# 不取消正在推送的版本，也不让两个版本同时改 latest。
+concurrency:
+  group: release
+  cancel-in-progress: false
+  queue: max
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  RELEASE_TAG: ${{ github.ref_name }}
+  RELEASE_SHA: ${{ github.sha }}
+  RELEASE_REPOSITORY: ${{ github.repository }}
+  DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+  DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_IMAGE }}
+  GH_PROMPT_DISABLED: '1'
+
+jobs:
+  prepare:
+    name: 核对版本并建草稿
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    outputs:
+      ghcr_image: ${{ steps.release.outputs.ghcr_image }}
+      version: ${{ steps.release.outputs.version }}
+      major: ${{ steps.release.outputs.major }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: 核对版本与草稿
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_MODE: prepare
+        # 推送前复用同一守卫，重新读取完整发布记录。
+        run: &release_guard |
+          python3 - <<'PY'
+          import datetime
+          import json
+          import os
+          import pathlib
+          import re
+          import subprocess
+
+          def fail(message):
+              raise SystemExit(message)
+
+          def gh(*args):
+              result = subprocess.run(
+                  ["gh", *args], text=True, capture_output=True, check=False,
+              )
+              if result.returncode:
+                  fail("GitHub 发布记录操作失败，停止发布。")
+              return result.stdout
+
+          def api(endpoint, *options):
+              try:
+                  return json.loads(gh(
+                      "api", "--hostname", "github.com", endpoint,
+                      "-H", "Accept: application/vnd.github+json",
+                      "-H", "X-GitHub-Api-Version: 2026-03-10", *options,
+                  ))
+              except json.JSONDecodeError:
+                  fail("GitHub 返回的发布记录不是有效 JSON。")
+
+          tag = os.environ["RELEASE_TAG"]
+          sha = os.environ["RELEASE_SHA"]
+          repo = os.environ["RELEASE_REPOSITORY"]
+          mode = os.environ["RELEASE_MODE"]
+          version_pattern = r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
+          match = re.fullmatch(version_pattern, tag)
+          if match is None or len(tag[1:]) > 128:
+              fail("发布标签必须是无前导零的 vMAJOR.MINOR.PATCH，镜像版本不能超过 128 字符。")
+          version = tuple(int(part) for part in match.groups())
+          if not re.fullmatch(r"[0-9a-f]{40}", sha):
+              fail("构建提交无效。")
+          if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo):
+              fail("GitHub 仓库名称无效。")
+          if mode not in ("prepare", "publish"):
+              fail("发布阶段无效。")
+          image = os.environ["DOCKERHUB_IMAGE"]
+          component = r"[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*"
+          if len(image) > 255 or not re.fullmatch(component + "/" + component, image):
+              fail("请将 DOCKERHUB_IMAGE 配置为小写的 namespace/repository。")
+          if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", os.environ["DOCKERHUB_USERNAME"]):
+              fail("请配置有效的 DOCKERHUB_USERNAME。")
+
+          changelog = pathlib.Path("CHANGELOG.md").read_text(encoding="utf-8")
+          headings = list(re.finditer(r"^##[ \t]+\[([^\]\r\n]+)\]([^\r\n]*)$", changelog, re.M))
+          entries = [heading for heading in headings if heading[1] == tag[1:]]
+          if len(entries) != 1:
+              fail("CHANGELOG 必须恰好包含一个与标签对应的版本段。")
+          heading = entries[0]
+          date_match = re.fullmatch(r" - ([0-9]{4}-[0-9]{2}-[0-9]{2})[ \t]*", heading[2])
+          try:
+              if date_match is None:
+                  raise ValueError
+              datetime.date.fromisoformat(date_match[1])
+          except ValueError:
+              fail("CHANGELOG 的版本日期必须是有效的 YYYY-MM-DD。")
+          section_end = re.search(r"^##[ \t]+", changelog[heading.end():], re.M)
+          body = changelog[heading.end():]
+          if section_end:
+              body = body[:section_end.start()]
+          body = body.strip()
+          visible = re.sub(r"<!--.*?-->", "", body, flags=re.S)
+          visible = re.sub(r"^\s*#{1,6}[ \t]+.*$", "", visible, flags=re.M)
+          if not re.search(r"[^\W_]", visible):
+              fail("CHANGELOG 的版本段没有实际变更正文。")
+
+          commit = api(f"repos/{repo}/commits/{tag}")
+          if not isinstance(commit, dict) or commit.get("sha") != sha:
+              fail("标签当前指向与本次构建提交不同，停止发布。")
+          # 不能只取第一页或 /latest；发布时间不等于版本大小。
+          pages = api(f"repos/{repo}/releases?per_page=100", "--paginate", "--slurp")
+          if not isinstance(pages, list) or not pages or not all(isinstance(page, list) for page in pages):
+              fail("GitHub 发布记录分页结构无效。")
+          drafts = []
+          for page in pages:
+              for release in page:
+                  if (not isinstance(release, dict)
+                          or type(release.get("draft")) is not bool
+                          or type(release.get("prerelease")) is not bool):
+                      fail("GitHub 发布记录字段无效。")
+                  if release.get("tag_name") == tag:
+                      if not release["draft"] or release["prerelease"]:
+                          fail("此标签已有公开发布或预发布，不能重发。")
+                      drafts.append(release)
+                  if release["draft"] or release["prerelease"]:
+                      continue
+                  if not release.get("published_at"):
+                      fail("正式发布缺少公开时间，停止发布。")
+                  published = re.fullmatch(version_pattern, release.get("tag_name", ""))
+                  if published is None:
+                      fail("已有正式发布的标签无法比较，停止发布。")
+                  if tuple(int(part) for part in published.groups()) >= version:
+                      fail("本版本不高于已有正式发布，不能覆盖镜像标签。")
+
+          marker = f"<!-- release-commit: {sha} -->"
+          if len(drafts) > 1:
+              fail("同标签存在重复草稿，停止发布。")
+          if drafts:
+              draft_body = drafts[0].get("body") or ""
+              if re.findall(r"<!-- release-commit: [^\r\n]* -->", draft_body) != [marker]:
+                  fail("同标签草稿的构建提交缺失或不匹配，请检查草稿与标签。")
+          elif mode == "publish":
+              fail("发布草稿已不存在，停止推送镜像。")
+          else:
+              notes = pathlib.Path(os.environ["RUNNER_TEMP"]) / "release-notes.md"
+              notes.write_text(body + "\n\n" + marker + "\n", encoding="utf-8")
+              gh(
+                  "release", "create", tag, "--repo", repo,
+                  "--draft", "--verify-tag",
+                  "--title", f"Kakatta {tag}", "--notes-file", str(notes),
+              )
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"ghcr_image=ghcr.io/{repo.lower()}\nversion={tag[1:]}\nmajor={match[1]}\n")
+          PY
+
+  verify:
+    name: 原生 ${{ matrix.arch }} 验证
+    needs: prepare
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: web/package.json
+      - name: 核对原生架构
+        env:
+          NATIVE_ARCH: ${{ matrix.arch }}
+        run: test "$(go env GOARCH)" = "$NATIVE_ARCH"
+      - name: 检查网页
+        working-directory: web
+        run: |
+          bun install --frozen-lockfile
+          bun run check
+      - name: 检查 Go
+        run: |
+          go mod download
+          go build ./...
+          go test ./...
+          go test -race ./...
+          go vet ./...
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - name: 检查 Dockerfile
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: .
+          call: check
+          platforms: linux/${{ matrix.arch }}
+          build-args: VERSION=${{ env.RELEASE_TAG }}
+      - name: 构建本机测试镜像
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: .
+          platforms: linux/${{ matrix.arch }}
+          build-args: VERSION=${{ env.RELEASE_TAG }}
+          load: true
+          tags: kakatta:local
+          cache-from: type=gha,scope=release-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=release-${{ matrix.arch }}
+      - name: 断网容器回归
+        run: |
+          deploy/test-container.sh
+          deploy/test-container.sh --seccomp deploy/chrome-seccomp.json
+          deploy/test-server-container.sh
+
+  recheck:
+    name: 推送前重新核对版本与草稿
+    needs: [prepare, verify]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      # GitHub 只向有推送权限的请求返回草稿。
+      contents: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: 核对版本与草稿
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_MODE: publish
+        run: *release_guard
+
+  publish:
+    name: 推送双仓镜像
+    needs: [prepare, recheck]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+    env:
+      GHCR_IMAGE: ${{ needs.prepare.outputs.ghcr_image }}
+      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+      RELEASE_MAJOR: ${{ needs.prepare.outputs.major }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4
+        with:
+          platforms: arm64
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - name: 生成镜像标签
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
+        with:
+          images: |
+            ${{ env.GHCR_IMAGE }}
+            ${{ env.DOCKERHUB_IMAGE }}
+          flavor: latest=false
+          tags: |
+            type=raw,value=${{ env.RELEASE_VERSION }}
+            type=raw,value=${{ env.RELEASE_MAJOR }}
+            type=raw,value=latest
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ env.RELEASE_REPOSITORY }}
+            org.opencontainers.image.revision=${{ env.RELEASE_SHA }}
+            org.opencontainers.image.version=${{ env.RELEASE_TAG }}
+      - name: 检查 Docker Hub 凭据
+        env:
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          if [ -z "$DOCKERHUB_TOKEN" ]; then
+            printf '%s\n' '缺少 DOCKERHUB_TOKEN，停止发布。' >&2
+            exit 1
+          fi
+      - name: 登录 GHCR
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
+        env:
+          GHCR_USERNAME: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          registry: ghcr.io
+          username: ${{ env.GHCR_USERNAME }}
+          password: ${{ env.GHCR_TOKEN }}
+      - name: 登录 Docker Hub
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
+        env:
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        with:
+          username: ${{ env.DOCKERHUB_USERNAME }}
+          password: ${{ env.DOCKERHUB_TOKEN }}
+      # 测试后重新构建推送；复用缓存不等于逐字节可复现。
+      - name: 构建并推送
+        id: push
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          build-args: VERSION=${{ env.RELEASE_TAG }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: |
+            type=gha,scope=release-amd64
+            type=gha,scope=release-arm64
+      - name: 核对双仓 manifest
+        env:
+          EXPECTED_DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+          import re
+          import subprocess
+
+          expected = os.environ["EXPECTED_DIGEST"]
+          if not re.fullmatch(r"sha256:[0-9a-f]{64}", expected):
+              raise SystemExit("构建没有返回有效的镜像 digest。")
+          version = os.environ["RELEASE_VERSION"]
+          tags = (version, version.split(".")[0], "latest")
+          summary = pathlib.Path(os.environ["GITHUB_STEP_SUMMARY"])
+          with summary.open("a", encoding="utf-8") as output:
+              output.write("## 镜像核对\n\n")
+              for image in (os.environ["GHCR_IMAGE"], os.environ["DOCKERHUB_IMAGE"]):
+                  for tag in tags:
+                      reference = f"{image}:{tag}"
+                      result = subprocess.run(
+                          ["docker", "buildx", "imagetools", "inspect", reference,
+                           "--format", "{{json .Manifest}}"],
+                          text=True, capture_output=True, check=True,
+                      )
+                      manifest = json.loads(result.stdout)
+                      if manifest.get("digest") != expected:
+                          raise SystemExit(f"{reference} 的 digest 与本次构建不一致。")
+                      platforms = []
+                      for entry in manifest.get("manifests", []):
+                          platform = entry.get("platform", {})
+                          pair = (platform.get("os"), platform.get("architecture"))
+                          if pair != ("unknown", "unknown"):
+                              platforms.append(pair)
+                      if sorted(platforms) != [("linux", "amd64"), ("linux", "arm64")]:
+                          raise SystemExit(f"{reference} 没有恰好包含 amd64 和 arm64。")
+                      output.write(f"- `{reference}`：`{expected}`，双架构核对通过。\n")
+                      output.flush()
+              output.write("\n双仓核对完成。Release 保持草稿，确认后再公开。\n")
+          PY
+      - name: 记录发布失败
+        if: failure()
+        run: |
+          printf '%s\n' \
+            '发布未完成，Release 未被自动公开。' \
+            '若推送已经开始，可能有部分镜像标签已写入；两仓没有原子提交，请先核对构建日志和仓库状态再重跑。' \
+            >> "$GITHUB_STEP_SUMMARY"

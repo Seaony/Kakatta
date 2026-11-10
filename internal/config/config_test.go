@@ -134,6 +134,9 @@ func TestBadDefaultKeyFailsClosed(t *testing.T) {
 	if err := os.WriteFile(paths.Key, make([]byte, 32), 0644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Chmod(paths.Key, 0644); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := LoadMasterKey(paths, environment(nil)); err == nil {
 		t.Fatal("接受了权限过宽的默认密钥")
 	}
