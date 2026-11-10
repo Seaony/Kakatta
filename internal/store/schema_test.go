@@ -82,7 +82,7 @@ var schemaRequiredColumns = map[string]string{
 		analysis_model:TEXT analysis_provider_id:INTEGER analyzed_at:INTEGER attempts:INTEGER:n
 		retryable:INTEGER:n reanalyze_requested_at:INTEGER is_read:INTEGER:n notify_kind:TEXT
 		notify_skip_reason:TEXT notified_at:INTEGER recommended_price:INTEGER
-		last_drop_notified_price:INTEGER drop_notified_at:INTEGER reanalysis_origin:INTEGER:n processing_revision:INTEGER:n`,
+		last_drop_notified_price:INTEGER drop_notified_at:INTEGER reanalysis_origin:INTEGER:n processing_revision:INTEGER:n seller_checks_json:TEXT`,
 	"ai_providers": `
 		id:INTEGER:p1 uuid:TEXT:n name:TEXT:n preset:TEXT base_url:TEXT:n api_key_enc:BLOB
 		vision_model:TEXT:n text_model:TEXT enabled:INTEGER:n sort_index:INTEGER:n error_state:TEXT error_at:INTEGER`,

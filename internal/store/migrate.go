@@ -19,12 +19,15 @@ var businessSchema string
 //go:embed migrations/003_system_notification_retry.sql
 var systemNotificationSchema string
 
+//go:embed migrations/004_finding_seller_checks.sql
+var sellerChecksSchema string
+
 type migration struct {
 	version int
 	sql     string
 }
 
-var migrations = []migration{{version: 1, sql: initialSchema}, {version: 2, sql: businessSchema}, {version: 3, sql: systemNotificationSchema}}
+var migrations = []migration{{version: 1, sql: initialSchema}, {version: 2, sql: businessSchema}, {version: 3, sql: systemNotificationSchema}, {version: 4, sql: sellerChecksSchema}}
 
 const migrationTable = `CREATE TABLE schema_migrations (
  version INTEGER NOT NULL PRIMARY KEY CHECK (version > 0),
