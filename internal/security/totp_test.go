@@ -102,6 +102,9 @@ func TestTOTPGenerationAndURI(t *testing.T) {
 func TestTOTPRejectsMalformedInputs(t *testing.T) {
 	now := time.Unix(59, 0)
 	for _, secret := range []string{"", "private-totp-secret-marker", strings.ToLower(rfcTOTPSecret), rfcTOTPSecret + "=", rfcTOTPSecret[:31], "!" + rfcTOTPSecret[1:], "\n" + rfcTOTPSecret[1:]} {
+		if err := ValidateTOTPSecret(secret); !errors.Is(err, ErrTOTPSecret) {
+			t.Fatal("坏密钥通过了格式校验")
+		}
 		if step, ok, err := VerifyTOTP(secret, "287082", now, -1); step != -1 || ok || !errors.Is(err, ErrTOTPSecret) {
 			t.Fatal("接受了不规范的 TOTP 密钥")
 		}
@@ -129,6 +132,14 @@ func TestTOTPRejectsMalformedInputs(t *testing.T) {
 	}
 	if step, ok, err := VerifyTOTP(rfcTOTPSecret, "000000", now, -1); step != -1 || ok || err != nil {
 		t.Fatal("格式正确的错误验证码应作为验证失败返回")
+	}
+}
+
+func TestValidateTOTPSecretAcceptsCanonicalKeys(t *testing.T) {
+	for _, secret := range []string{rfcTOTPSecret, NewTOTPSecret()} {
+		if err := ValidateTOTPSecret(secret); err != nil {
+			t.Fatalf("规范密钥未通过格式校验：%v", err)
+		}
 	}
 }
 

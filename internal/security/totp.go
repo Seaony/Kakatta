@@ -34,9 +34,17 @@ func decodeTOTPSecret(secret string) ([]byte, error) {
 	}
 	key, err := totpEncoding.DecodeString(secret)
 	if err != nil || len(key) != totpSecretBytes || totpEncoding.EncodeToString(key) != secret {
+		clear(key)
 		return nil, ErrTOTPSecret
 	}
 	return key, nil
+}
+
+// ValidateTOTPSecret 只检查现行密钥格式，不生成或消费验证码。
+func ValidateTOTPSecret(secret string) error {
+	key, err := decodeTOTPSecret(secret)
+	clear(key)
+	return err
 }
 
 func TOTPURI(secret, accountLabel string) (string, error) {
