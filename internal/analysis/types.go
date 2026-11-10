@@ -214,12 +214,15 @@ type GeneratedProfile struct {
 	BudgetMax    *float64               `json:"budget_max"`
 	Keyword      *string                `json:"keyword"`
 	ExcludeWords []string               `json:"exclude_words"`
+	// 只供应用记录被丢弃的预算字段，不进入界面或模型内容。
+	DiscardedBudgets []string `json:"-"`
 }
 type ProfileSuggestions struct {
-	BudgetMin    *float64 `json:"budget_min"`
-	BudgetMax    *float64 `json:"budget_max"`
-	Keyword      *string  `json:"keyword"`
-	ExcludeWords []string `json:"exclude_words"`
+	BudgetMin        *float64 `json:"budget_min"`
+	BudgetMax        *float64 `json:"budget_max"`
+	Keyword          *string  `json:"keyword"`
+	ExcludeWords     []string `json:"exclude_words"`
+	DiscardedBudgets []string `json:"-"`
 }
 type RegionCity struct {
 	Province string `json:"province"`

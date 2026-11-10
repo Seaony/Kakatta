@@ -39,24 +39,27 @@ func ParseGeneratedProfile(body []byte) (GeneratedProfile, []locales.Message, er
 			return out, warnings, invalidField(key)
 		}
 	}
+	discardedBudgets := []string{}
+	for _, key := range []string{"budget_min", "budget_max"} {
+		if bytes.Equal(bytes.TrimSpace(obj[key]), []byte("null")) {
+			continue
+		}
+		var n float64
+		if json.Unmarshal(obj[key], &n) != nil || math.IsInf(n, 0) || math.IsNaN(n) {
+			obj[key] = json.RawMessage("null")
+			discardedBudgets = append(discardedBudgets, key)
+		}
+	}
 	normalized, _ := json.Marshal(obj)
 	if json.Unmarshal(normalized, &out) != nil {
 		return GeneratedProfile{}, warnings, invalidField("profile")
 	}
+	out.DiscardedBudgets = discardedBudgets
 	if _, ok := rawString(obj["summary"]); !ok {
 		return GeneratedProfile{}, warnings, invalidField("summary")
 	}
 	for _, key := range []string{"specs", "musts", "bonuses", "risks", "allowed_kinds", "exclude_words"} {
 		if _, ok := rawArray(obj[key]); !ok {
-			return GeneratedProfile{}, warnings, invalidField(key)
-		}
-	}
-	for _, key := range []string{"budget_min", "budget_max"} {
-		if bytes.Equal(obj[key], []byte("null")) {
-			continue
-		}
-		var n float64
-		if json.Unmarshal(obj[key], &n) != nil || math.IsInf(n, 0) || math.IsNaN(n) {
 			return GeneratedProfile{}, warnings, invalidField(key)
 		}
 	}
@@ -138,7 +141,7 @@ func riskKey(r ProfileRisk) string {
 }
 func MergeGeneratedProfile(old Profile, generated GeneratedProfile, keyword, requirement string) (Profile, ProfileSuggestions, []locales.Message, error) {
 	result := Profile{Summary: generated.Summary, Specs: []ProfileSpec{}, Musts: []Requirement{}, Bonuses: []Requirement{}, Risks: []ProfileRisk{}, AllowedKinds: append([]Kind{}, generated.AllowedKinds...), NextNo: old.NextNo}
-	suggestions := ProfileSuggestions{BudgetMin: clonePtr(generated.BudgetMin), BudgetMax: clonePtr(generated.BudgetMax), Keyword: clonePtr(generated.Keyword), ExcludeWords: append([]string{}, generated.ExcludeWords...)}
+	suggestions := ProfileSuggestions{BudgetMin: clonePtr(generated.BudgetMin), BudgetMax: clonePtr(generated.BudgetMax), Keyword: clonePtr(generated.Keyword), ExcludeWords: append([]string{}, generated.ExcludeWords...), DiscardedBudgets: append([]string{}, generated.DiscardedBudgets...)}
 	warnings := []locales.Message{}
 	if result.NextNo < 1 {
 		result.NextNo = 1

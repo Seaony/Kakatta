@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"math"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -13,10 +14,89 @@ func TestGeneratedProfileParsing(t *testing.T) {
 	if err != nil || got.BudgetMin == nil || *got.BudgetMin != 1.25 {
 		t.Fatal(got, err)
 	}
-	for _, bad := range []string{"<think>未闭合", "<think>只有思考</think>", `{"specs":[],"risks":[]}`, `{"summary":"x","specs":[],"musts":[],"bonuses":[],"risks":[],"allowed_kinds":[],"budget_min":"1","budget_max":null,"keyword":null,"exclude_words":[]}`} {
+	for _, bad := range []string{"<think>未闭合", "<think>只有思考</think>", `{"specs":[],"risks":[]}`} {
 		if _, _, err := ParseGeneratedProfile([]byte(bad)); err == nil {
 			t.Error("accepted", bad)
 		}
+	}
+}
+
+func TestGeneratedProfileMalformedBudgetKeepsChecklist(t *testing.T) {
+	base := `{"summary":"有效清单","specs":[],"musts":[{"text":"国行","source":"user"}],"bonuses":[],"risks":[],"allowed_kinds":[],"budget_min":MIN,"budget_max":MAX,"keyword":null,"exclude_words":[]}`
+	for _, tc := range []struct {
+		name, min, max   string
+		wantMin, wantMax *float64
+		discarded        []string
+	}{
+		{"numeric string", `"1"`, "20", nil, ptr(20.0), []string{"budget_min"}},
+		{"boolean", "true", "20", nil, ptr(20.0), []string{"budget_min"}},
+		{"object", `{"value":1}`, "20", nil, ptr(20.0), []string{"budget_min"}},
+		{"array", "[]", "20", nil, ptr(20.0), []string{"budget_min"}},
+		{"nonfinite string", `"NaN"`, "null", nil, nil, []string{"budget_min"}},
+		{"positive overflow", "1e309", "20", nil, ptr(20.0), []string{"budget_min"}},
+		{"negative overflow", "-1e309", "20", nil, ptr(20.0), []string{"budget_min"}},
+		{"invalid maximum", "10", "false", ptr(10.0), nil, []string{"budget_max"}},
+		{"both invalid", `"not a budget"`, "1e309", nil, nil, []string{"budget_min", "budget_max"}},
+		{"null", " \nnull\t", "null", nil, nil, []string{}},
+		{"negative deferred", "-1", "20", ptr(-1.0), ptr(20.0), []string{}},
+		{"cents overflow deferred", "1e100", "null", ptr(1e100), nil, []string{}},
+		{"inverted deferred", "20", "10", ptr(20.0), ptr(10.0), []string{}},
+		{"decimal deferred", "1.255", "20", ptr(1.255), ptr(20.0), []string{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := []byte(strings.NewReplacer("MIN", tc.min, "MAX", tc.max).Replace(base))
+			before := string(body)
+			got, warnings, err := ParseGeneratedProfile(body)
+			if err != nil || len(warnings) != 0 || got.Summary != "有效清单" || len(got.Musts) != 1 || got.Musts[0].Text != "国行" {
+				t.Fatalf("budget invalidated checklist: %+v, warnings=%+v, err=%v", got, warnings, err)
+			}
+			if !reflect.DeepEqual(got.BudgetMin, tc.wantMin) || !reflect.DeepEqual(got.BudgetMax, tc.wantMax) || !reflect.DeepEqual(got.DiscardedBudgets, tc.discarded) {
+				t.Fatalf("suggestions=%+v, want min=%v max=%v discarded=%v", got, tc.wantMin, tc.wantMax, tc.discarded)
+			}
+			if string(body) != before {
+				t.Fatal("mutated model response")
+			}
+		})
+	}
+}
+
+func TestGeneratedProfileBudgetDiscardDoesNotRelaxOtherFields(t *testing.T) {
+	base := `{"summary":"有效清单","specs":[],"musts":[],"bonuses":[],"risks":[],"allowed_kinds":[],"budget_min":"invalid","budget_max":null,"keyword":null,"exclude_words":[]}`
+	for _, tc := range []struct{ old, replacement string }{
+		{`"summary":"有效清单"`, `"summary":1`},
+		{`"specs":[]`, `"specs":{}`},
+		{`"musts":[]`, `"musts":[{"text":"国行","source":"unknown"}]`},
+		{`"allowed_kinds":[]`, `"allowed_kinds":["unknown"]`},
+		{`"keyword":null`, `"keyword":1`},
+		{`"exclude_words":[]`, `"exclude_words":[null]`},
+		{`"budget_max":null,`, ""},
+	} {
+		body := strings.Replace(base, tc.old, tc.replacement, 1)
+		if _, _, err := ParseGeneratedProfile([]byte(body)); err == nil {
+			t.Fatalf("accepted invalid checklist field: %s", body)
+		}
+	}
+}
+
+func TestGeneratedProfileBudgetDiagnosticsStayInternalAndCopied(t *testing.T) {
+	body := []byte(`{"summary":"有效清单","specs":[],"musts":[],"bonuses":[],"risks":[],"allowed_kinds":[],"budget_min":"private model text","budget_max":1e309,"keyword":null,"exclude_words":[]}`)
+	generated, warnings, err := ParseGeneratedProfile(body)
+	if err != nil || len(warnings) != 0 {
+		t.Fatal(generated, warnings, err)
+	}
+	_, suggestions, warnings, err := MergeGeneratedProfile(Profile{}, generated, "", "")
+	if err != nil || len(warnings) != 0 || !reflect.DeepEqual(suggestions.DiscardedBudgets, []string{"budget_min", "budget_max"}) {
+		t.Fatal(suggestions, warnings, err)
+	}
+	for _, value := range []any{generated, suggestions} {
+		encoded, err := json.Marshal(value)
+		if err != nil || strings.Contains(string(encoded), "iscarded") || strings.Contains(string(encoded), "private model text") {
+			t.Fatalf("internal diagnostic escaped: %s, %v", encoded, err)
+		}
+	}
+	suggestions.DiscardedBudgets[0] = "changed"
+	if generated.DiscardedBudgets[0] != "budget_min" {
+		t.Fatal("aliased generated diagnostics")
 	}
 }
 
