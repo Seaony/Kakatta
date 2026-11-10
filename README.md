@@ -13,7 +13,7 @@
 
 ---
 
-Kakatta (*"got a bite!"*) watches Xianyu (闲鱼) for the things you want. It searches on a schedule, screens new listings with rules and AI, and notifies you about the ones worth a look. Self-host it with Docker, or use the desktop app (macOS, Windows, Linux) with the server built in; mobile apps connect to your own server. Still in the design phase.
+Kakatta (*"got a bite!"*) watches Xianyu (闲鱼) for the things you want. It searches on a schedule, screens new listings with rules and AI, and notifies you about the ones worth a look. Self-host it with Docker on a server, NAS or your own computer, and use it from your browser. Still in the design phase.
 
 ## License
 
