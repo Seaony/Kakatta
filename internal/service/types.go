@@ -62,6 +62,10 @@ type Task struct {
 // Patch 保留字段是否出现，null 能否清空由领域校验决定。
 type TaskPatch map[string]json.RawMessage
 
+type AccountPatch map[string]json.RawMessage
+
+type ProxyPatch map[string]json.RawMessage
+
 type TaskView struct {
 	Task
 	Runtime       TaskRuntime      `json:"runtime"`
@@ -160,6 +164,7 @@ type Finding struct {
 	DecidedLayer          *int64                   `json:"decided_layer"`
 	Reason                *locales.Message         `json:"reason"`
 	Analysis              *analysis.Facts          `json:"analysis"`
+	AnalysisWarnings      []locales.Message        `json:"analysis_warnings"`
 	UserOverrides         analysis.UserOverrides   `json:"user_overrides"`
 	Score                 *int64                   `json:"score"`
 	Grade                 *analysis.Grade          `json:"grade"`
@@ -175,6 +180,7 @@ type Finding struct {
 	AnalysisModel         *string                  `json:"analysis_model"`
 	AnalyzedAt            *int64                   `json:"analyzed_at"`
 	SellerType            *analysis.SellerType     `json:"seller_type"`
+	SellerAssessment      *analysis.SellerResult   `json:"seller_assessment"`
 	MatchedKeywords       []string                 `json:"matched_keywords"`
 	Attempts              int64                    `json:"attempts"`
 	Retryable             bool                     `json:"retryable"`
@@ -190,14 +196,35 @@ type Finding struct {
 
 type FindingView struct {
 	Finding
-	Listing    Listing                    `json:"listing"`
-	Task       TaskSummary                `json:"task"`
-	ItemSpecs  *TaskItemSpecs             `json:"item_specs"`
-	Seller     *SellerProfile             `json:"seller"`
-	Deliveries []DeliverySummary          `json:"deliveries"`
-	Questions  []analysis.ContactQuestion `json:"questions"`
-	PreviousID *int64                     `json:"previous_id"`
-	NextID     *int64                     `json:"next_id"`
+	Listing          Listing                    `json:"listing"`
+	Task             TaskSummary                `json:"task"`
+	ItemSpecs        *TaskItemSpecs             `json:"item_specs"`
+	Seller           *SellerProfile             `json:"seller"`
+	Deliveries       []DeliverySummary          `json:"deliveries"`
+	Questions        []analysis.ContactQuestion `json:"questions"`
+	Checks           []analysis.EffectiveCheck  `json:"checks"`
+	MarketComparison *FindingMarketComparison   `json:"market_comparison"`
+	PreviousID       *int64                     `json:"previous_id"`
+	NextID           *int64                     `json:"next_id"`
+}
+
+type FindingMarketComparison struct {
+	AsOf           int64                    `json:"as_of"`
+	ConfigKey      string                   `json:"config_key"`
+	BrandNew       bool                     `json:"brand_new"`
+	Fair           analysis.FairPrice       `json:"fair"`
+	AdjacentPrices []analysis.AdjacentPrice `json:"adjacent_prices"`
+}
+
+// 三种结论只取一种，评分由当前任务和资料重新计算。
+type Conclusion struct {
+	RequestProfile analysis.Profile
+	Facts          *analysis.Facts
+	Warnings       []locales.Message
+	Layer          *analysis.LayerResult
+	Skipped        *locales.Message
+	ProviderID     *int64
+	Model          *string
 }
 
 type ListingView struct {
@@ -285,6 +312,10 @@ type SellerProfile struct {
 	SoldCount         *int64             `json:"sold_count"`
 	SellerGoodRate    *float64           `json:"seller_good_rate"`
 	BuyerGoodRate     *float64           `json:"buyer_good_rate"`
+	SellerGoodCount   *int64             `json:"seller_good_count"`
+	SellerRateCount   *int64             `json:"seller_rate_count"`
+	BuyerGoodCount    *int64             `json:"buyer_good_count"`
+	BuyerRateCount    *int64             `json:"buyer_rate_count"`
 	RecentItems       []SellerRecentItem `json:"recent_items"`
 	RecentRates       []SellerRecentRate `json:"recent_rates"`
 	FetchedAt         int64              `json:"fetched_at"`
@@ -853,6 +884,7 @@ type ExceptionOverview struct {
 }
 
 type RunLogOverview struct {
+	Coverage          CoverageView    `json:"coverage"`
 	FromAt            int64           `json:"from_at"`
 	ToAt              int64           `json:"to_at"`
 	AsOf              int64           `json:"as_of"`

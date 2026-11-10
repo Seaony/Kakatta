@@ -18,16 +18,17 @@ import (
 )
 
 type Dependencies struct {
-	DB        *sql.DB
-	Settings  *appsettings.Store
-	Cipher    *security.Cipher
-	DataDir   string
-	Resources ResourceFactory
-	Models    Models
-	Notifier  Notifier
-	Publish   func(kind string, reason *locales.Message, data json.RawMessage) error
-	Now       func() time.Time // 默认 time.Now；记账仍经持久 Clock 保护。
-	Pacer     *pacer.Pacer     // 默认真实等待；测试注入同一随机与等待来源。
+	DB         *sql.DB
+	Settings   *appsettings.Store
+	Cipher     *security.Cipher
+	DataDir    string
+	Resources  ResourceFactory
+	Models     Models
+	Notifier   Notifier
+	ImageCache ImageCache
+	Publish    func(kind string, reason *locales.Message, data json.RawMessage) error
+	Now        func() time.Time // 默认 time.Now；记账仍经持久 Clock 保护。
+	Pacer      *pacer.Pacer     // 默认真实等待；测试注入同一随机与等待来源。
 }
 
 // Open 失败必须关闭部分资源并返回 nil；成功后全部资源所有权移交 Service。
@@ -68,8 +69,14 @@ type Models interface {
 type Notifier interface {
 	FlushRun(ctx context.Context, ref RunRef, firstConclusionIDs []int64) (NotifyResult, error)
 	System(ctx context.Context, eventID int64) error
+	Quiesce(ctx context.Context) (resume func(), err error)
 }
 type NotifyResult struct {
 	NotifiedCount int64
 	Warnings      []locales.Message
+}
+
+type ImageCache interface {
+	Prune(ctx context.Context, maxBytes int64) (int64, error)
+	Clear(ctx context.Context) (int64, error)
 }
