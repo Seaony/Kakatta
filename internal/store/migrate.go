@@ -16,12 +16,15 @@ var initialSchema string
 //go:embed migrations/002_business_runtime.sql
 var businessSchema string
 
+//go:embed migrations/003_system_notification_retry.sql
+var systemNotificationSchema string
+
 type migration struct {
 	version int
 	sql     string
 }
 
-var migrations = []migration{{version: 1, sql: initialSchema}, {version: 2, sql: businessSchema}}
+var migrations = []migration{{version: 1, sql: initialSchema}, {version: 2, sql: businessSchema}, {version: 3, sql: systemNotificationSchema}}
 
 const migrationTable = `CREATE TABLE schema_migrations (
  version INTEGER NOT NULL PRIMARY KEY CHECK (version > 0),

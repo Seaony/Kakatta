@@ -94,7 +94,7 @@ var schemaRequiredColumns = map[string]string{
 		http_status:INTEGER error_kind:TEXT json_mode:TEXT input_tokens:INTEGER output_tokens:INTEGER
 		reasoning_tokens:INTEGER finish_reason:TEXT duration_ms:INTEGER`,
 	"deliveries": `
-		id:INTEGER:p1 at:INTEGER channel_id:INTEGER task_id:INTEGER kind:TEXT item_count:INTEGER ok:INTEGER error:TEXT`,
+		id:INTEGER:p1 at:INTEGER channel_id:INTEGER task_id:INTEGER kind:TEXT item_count:INTEGER ok:INTEGER error:TEXT event_id:INTEGER`,
 	"delivery_items": `delivery_id:INTEGER:np1 finding_id:INTEGER:np2`,
 	"notification_intents": `id:INTEGER:p1 finding_id:INTEGER:n task_id:INTEGER:n kind:TEXT:n state:TEXT:n
 		created_at:INTEGER:n updated_at:INTEGER:n price:INTEGER previous_price:INTEGER failure_count:INTEGER:n
@@ -108,7 +108,7 @@ var schemaRequiredColumns = map[string]string{
 		layer2_count:INTEGER layer2_rejected:INTEGER detail_count:INTEGER seller_page_count:INTEGER
 		analyzed_count:INTEGER recommended_count:INTEGER notified_count:INTEGER warnings_json:TEXT`,
 	"run_steps":       `run_id:INTEGER:np1 seq:INTEGER:np2 at:INTEGER status:TEXT message:TEXT detail:TEXT`,
-	"system_events":   `id:INTEGER:p1 kind:TEXT subject_id:INTEGER message:TEXT created_at:INTEGER resolved_at:INTEGER notified_at:INTEGER`,
+	"system_events":   `id:INTEGER:p1 kind:TEXT subject_id:INTEGER message:TEXT created_at:INTEGER resolved_at:INTEGER notified_at:INTEGER failure_count:INTEGER:n first_failed_at:INTEGER`,
 	"market_insights": `id:INTEGER:p1 task_id:INTEGER generated_at:INTEGER stats_json:TEXT text:TEXT provider_id:INTEGER model:TEXT`,
 	"meta":            `key:TEXT:np1 value:TEXT:n`,
 }
@@ -129,6 +129,7 @@ var schemaRequiredDefaults = map[string]map[string]string{
 	"ai_compat":            {"json_mode": "'schema'", "send_temperature": "1", "max_tokens_param": "'max_tokens'"},
 	"run_records":          {"repeat_count": "1"},
 	"notification_intents": {"failure_count": "0"},
+	"system_events":        {"failure_count": "0"},
 }
 
 func schemaOpenDB(t *testing.T) *sql.DB {
@@ -289,7 +290,7 @@ func TestInitialSchemaIndexes(t *testing.T) {
 		"ai_providers":         {"uuid|1|0"},
 		"ai_compat":            {"provider_id,model|1|0"},
 		"ai_calls":             {"at|0|0"},
-		"deliveries":           {"at|0|0", "channel_id,at|0|0"},
+		"deliveries":           {"at|0|0", "channel_id,at|0|0", "event_id,at|0|0"},
 		"delivery_items":       {"delivery_id,finding_id|1|0", "finding_id|0|0"},
 		"notification_intents": {"finding_id|1|1", "state,created_at|0|0", "task_id,state|0|0", "finding_id,created_at|0|0", "sent_at|0|0"},
 		"delivery_intents":     {"delivery_id,intent_id|1|0", "intent_id|0|0"},

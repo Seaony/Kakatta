@@ -70,8 +70,8 @@ func TestBusinessUpgradePreservesNotificationFactsAndMarksCoverage(t *testing.T)
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { s.Close() })
-	if got := scalar[int](t, s.DB(), `SELECT max(version) FROM schema_migrations`); got != 2 {
-		t.Fatal("没有升级到第二版", got)
+	if got := scalar[int](t, s.DB(), `SELECT max(version) FROM schema_migrations`); got != len(migrations) {
+		t.Fatal("没有升级到当前版本", got)
 	}
 	for _, want := range []struct {
 		finding, failures int
@@ -163,7 +163,7 @@ func TestBusinessUpgradeRollsBackAllNewSchemaAndData(t *testing.T) {
 	path, db := versionOneDB(t)
 	seedVersionOneBusiness(t, db)
 	db.Close()
-	steps := append(append([]migration{}, migrations...), migration{version: 3, sql: `INVALID MIGRATION`})
+	steps := append(append([]migration{}, migrations...), migration{version: len(migrations) + 1, sql: `INVALID MIGRATION`})
 	if s, err := open(t.Context(), path, steps); err == nil {
 		s.Close()
 		t.Fatal("故障迁移不能提交部分升级")
