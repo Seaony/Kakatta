@@ -160,7 +160,9 @@
 
 ### M7 网页验收
 
-预览暂缓。组件和本地 HTTP 测试已运行，逐页浏览器检查和截图还未进行。准备好时，由作者在仓库目录运行下面这条命令。它使用已准备好的独立样例目录和已构建的 `web/dist`。样例有两个停用任务和九件虚构商品，已关闭更新检查，没有闲鱼账号、模型服务商或推送渠道。
+断网容器的 Chrome 冒烟测试使用 `cmd/seed` 创建临时库，启动正式服务并在退出时回收。桌面 1280×900 和手机 393×852 都检查了 18 条路由及 5 个附加视图的关键内容和中英文，验证无控制台错误、缺失文案或非预期 HTTP 错误。未登录时的身份探测应返回 401。46 张截图保存在 `build/m7-screens/desktop/` 和 `build/m7-screens/mobile/`。先构建 `web/dist`，再用 `deploy/test-web-smoke.sh` 运行。脚本可接收已构建的本地镜像名。
+
+手动预览暂缓。Dia 逐页验收和 Safari 16 实机检查仍待进行。准备好时，由作者在仓库目录运行下面这条命令。它使用已准备好的独立样例目录和已构建的 `web/dist`。样例有两个停用任务和九件虚构商品，已关闭更新检查，没有闲鱼账号、模型服务商或推送渠道。
 
 ```sh
 env -u KAKATTA_SECRET_KEY -u KAKATTA_SECRET_KEY_FILE -u KAKATTA_TRUSTED_PROXIES GOPROXY=off go run ./cmd/kakatta --data ./build/m7-preview --listen 127.0.0.1:18080
