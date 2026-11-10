@@ -33,6 +33,7 @@ type Service struct {
 
 	accounting accountingState
 	slots      slotState
+	network    networkState
 }
 
 func New(ctx context.Context, deps Dependencies) (_ *Service, err error) {
@@ -113,6 +114,7 @@ func (s *Service) Close(ctx context.Context) error {
 	s.cancel()
 	idle := s.idle
 	s.mu.Unlock()
+	s.closeNetwork()
 	select {
 	case <-idle:
 		return nil
