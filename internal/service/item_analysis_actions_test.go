@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"math"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -13,6 +12,7 @@ import (
 
 	"github.com/Seaony/Kakatta/internal/analysis"
 	"github.com/Seaony/Kakatta/internal/appsettings"
+	"github.com/Seaony/Kakatta/internal/limits"
 	"github.com/Seaony/Kakatta/internal/locales"
 	"github.com/Seaony/Kakatta/internal/settings"
 	"github.com/Seaony/Kakatta/internal/store"
@@ -306,6 +306,35 @@ func TestSetRiskOverridesUsesCurrentRevisionAndChangesOnlyThisFinding(t *testing
 	}
 }
 
+func TestSetRiskOverridesRejectsUnsafeRevisionWithoutChangingFacts(t *testing.T) {
+	f := itemActions(t)
+	var original string
+	if err := f.db.QueryRowContext(f.ctx, `SELECT analysis_json FROM findings WHERE id=?`, f.finding).Scan(&original); err != nil {
+		t.Fatal(err)
+	}
+	for _, rev := range []int64{limits.MaxSafeInteger + 1, limits.MinSafeInteger - 1} {
+		_, err := f.service.SetRiskOverrides(f.ctx, f.finding, analysis.UserOverrides{Risks: map[string]analysis.RiskOverride{
+			"c3": {Status: analysis.CheckRisk, Rev: rev},
+		}})
+		itemActionKind(t, err, ErrorInvalid)
+		var facts, overrides string
+		if err := f.db.QueryRowContext(f.ctx, `SELECT analysis_json,user_overrides_json FROM findings WHERE id=?`, f.finding).Scan(&facts, &overrides); err != nil || facts != original || overrides != `{"risks":{}}` || len(f.events) != 0 {
+			t.Fatalf("非法版本改写事实、覆盖或事件：%s %s %v %v", facts, overrides, f.events, err)
+		}
+	}
+	f.profile.Risks[0].Rev = limits.MaxSafeInteger
+	itemActionJSON(t, f.ctx, f.db, `UPDATE tasks SET profile_json=? WHERE id=?`, f.profile, f.taskID)
+	input := analysis.UserOverrides{Risks: map[string]analysis.RiskOverride{"c3": {Status: analysis.CheckRisk, Rev: limits.MaxSafeInteger}}}
+	view, err := f.service.SetRiskOverrides(f.ctx, f.finding, input)
+	if err != nil || !reflect.DeepEqual(view.UserOverrides, input) {
+		t.Fatalf("当前安全版本未原样保存：%+v %v", view.UserOverrides, err)
+	}
+	var actual string
+	if err := f.db.QueryRowContext(f.ctx, `SELECT analysis_json FROM findings WHERE id=?`, f.finding).Scan(&actual); err != nil || actual != original {
+		t.Fatalf("当前安全版本改写旧事实：%s %v", actual, err)
+	}
+}
+
 func TestAddExtraFindingMovesEvidenceAndInvalidatesOldWork(t *testing.T) {
 	for _, source := range []string{"text", "image"} {
 		t.Run(source, func(t *testing.T) {
@@ -404,7 +433,7 @@ func TestAddExtraFindingRejectsStaleDuplicateAndOverflow(t *testing.T) {
 	})
 	t.Run("profile_id_overflow", func(t *testing.T) {
 		f := itemActions(t)
-		f.profile.NextNo = math.MaxInt
+		f.profile.NextNo = int(limits.MaxSafeInteger)
 		itemActionJSON(t, f.ctx, f.db, `UPDATE tasks SET profile_json=? WHERE id=?`, f.profile, f.taskID)
 		_, err := f.service.AddExtraFinding(f.ctx, f.finding, f.facts.ExtraFindings[0])
 		itemActionKind(t, err, ErrorInvalid)

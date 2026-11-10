@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/Seaony/Kakatta/internal/limits"
 )
 
 func validate(d Definition, raw json.RawMessage) *Issue {
@@ -35,6 +37,9 @@ func validate(d Definition, raw json.RawMessage) *Issue {
 		}
 		if err != nil {
 			return bad("integer_required")
+		}
+		if n < limits.MinSafeInteger || n > limits.MaxSafeInteger {
+			return bad("overflow")
 		}
 		zero := d.Key == "crawl.interval_jitter_percent" || d.Key == "crawl.account_min_gap_jitter_seconds" || d.Key == "ai.daily_token_limit" || d.Key == "retention.findings_days"
 		if n < 0 || n == 0 && !zero {
@@ -113,7 +118,13 @@ func validate(d Definition, raw json.RawMessage) *Issue {
 		seen := map[int64]bool{}
 		for _, id := range ids {
 			var n int64
-			if json.Unmarshal(id, &n) != nil || n <= 0 {
+			if json.Unmarshal(id, &n) != nil {
+				return bad("positive_id_required")
+			}
+			if n < limits.MinSafeInteger || n > limits.MaxSafeInteger {
+				return bad("overflow")
+			}
+			if n <= 0 {
 				return bad("positive_id_required")
 			}
 			if seen[n] {

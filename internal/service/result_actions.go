@@ -9,6 +9,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/Seaony/Kakatta/internal/limits"
 	"github.com/Seaony/Kakatta/internal/locales"
 	"github.com/Seaony/Kakatta/internal/settings"
 )
@@ -17,7 +18,7 @@ func selectedFindingIDs(ids []int64) ([]int64, error) {
 	selected := make([]int64, 0, min(len(ids), 200))
 	seen := make(map[int64]bool, cap(selected))
 	for _, id := range ids {
-		if id <= 0 {
+		if id <= 0 || id > limits.MaxSafeInteger {
 			return nil, invalidFindingSelection()
 		}
 		if !seen[id] {

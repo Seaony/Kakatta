@@ -2,10 +2,13 @@ package analysis
 
 import (
 	"encoding/json"
-	"math"
+	"errors"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/Seaony/Kakatta/internal/limits"
 )
 
 func TestGeneratedProfileParsing(t *testing.T) {
@@ -18,6 +21,87 @@ func TestGeneratedProfileParsing(t *testing.T) {
 		if _, _, err := ParseGeneratedProfile([]byte(bad)); err == nil {
 			t.Error("accepted", bad)
 		}
+	}
+}
+
+func TestNormalizeProfileRejectsUnsafeIntegers(t *testing.T) {
+	for _, tc := range []struct {
+		profile Profile
+		field   string
+	}{
+		{Profile{NextNo: int(limits.MaxSafeInteger + 1)}, "next_no"},
+		{Profile{NextNo: int(limits.MinSafeInteger - 1)}, "next_no"},
+		{Profile{Musts: []Requirement{{ID: "m" + strconv.FormatInt(limits.MaxSafeInteger+1, 10), Text: "国行", Source: SourceUser}}}, "id"},
+		{Profile{Bonuses: []Requirement{{ID: "b1", Text: "在保", Source: SourceUser, Rev: limits.MaxSafeInteger + 1}}}, "rev"},
+	} {
+		p := tc.profile
+		before, _ := json.Marshal(p)
+		got, _, err := NormalizeProfile(p)
+		var invalid *Error
+		if !errors.As(err, &invalid) || invalid.Message.Code != "analysis.profile_invalid" || invalid.Message.Args["field"] != tc.field || !reflect.DeepEqual(got, Profile{}) {
+			t.Errorf("unsafe profile error: %+v, %v", got, err)
+		}
+		after, _ := json.Marshal(p)
+		if string(before) != string(after) {
+			t.Fatal("unsafe profile validation mutated input")
+		}
+	}
+}
+
+func TestProfileNumberWatermarkStaysWithinSafeBoundary(t *testing.T) {
+	for _, prefix := range []string{"m", "b", "c"} {
+		t.Run(prefix, func(t *testing.T) {
+			profile := func(id string) Profile {
+				switch prefix {
+				case "m":
+					return Profile{Musts: []Requirement{{ID: id, Text: "国行", Source: SourceUser}}}
+				case "b":
+					return Profile{Bonuses: []Requirement{{ID: id, Text: "在保", Source: SourceUser}}}
+				default:
+					return Profile{Risks: []ProfileRisk{{ID: id, Name: "亮斑", Attitude: Mind, Source: SourceUser}}}
+				}
+			}
+			lastID := prefix + strconv.FormatInt(limits.MaxSafeInteger-1, 10)
+			got, _, err := NormalizeProfile(profile(lastID))
+			if err != nil || int64(got.NextNo) != limits.MaxSafeInteger {
+				t.Fatal("last usable fixed id rejected", got, err)
+			}
+			input := profile("")
+			input.NextNo = int(limits.MaxSafeInteger - 1)
+			got, _, err = NormalizeProfile(input)
+			if err != nil || int64(got.NextNo) != limits.MaxSafeInteger {
+				t.Fatal("last allocation rejected", got, err)
+			}
+			var allocated string
+			switch prefix {
+			case "m":
+				allocated = got.Musts[0].ID
+			case "b":
+				allocated = got.Bonuses[0].ID
+			default:
+				allocated = got.Risks[0].ID
+			}
+			if allocated != lastID {
+				t.Fatalf("allocated %q want %q", allocated, lastID)
+			}
+			for _, exhausted := range []Profile{profile(prefix + strconv.FormatInt(limits.MaxSafeInteger, 10)), profile("")} {
+				exhausted.NextNo = int(limits.MaxSafeInteger)
+				before, _ := json.Marshal(exhausted)
+				_, _, err := NormalizeProfile(exhausted)
+				var invalid *Error
+				if !errors.As(err, &invalid) || invalid.Message.Code != "analysis.profile_id_exhausted" {
+					t.Fatalf("unsafe next watermark accepted: %v", err)
+				}
+				after, _ := json.Marshal(exhausted)
+				if string(before) != string(after) {
+					t.Fatal("failed allocation mutated input")
+				}
+			}
+		})
+	}
+	got, _, err := NormalizeProfile(Profile{NextNo: int(limits.MaxSafeInteger)})
+	if err != nil || int64(got.NextNo) != limits.MaxSafeInteger {
+		t.Fatal("unchanged safe watermark rejected", got, err)
 	}
 }
 
@@ -180,7 +264,7 @@ func TestProfileMergeKeepsEditedAcrossCollectionsAndNeverRecycles(t *testing.T) 
 	if err != nil || got.Bonuses[0].ID != "b21" {
 		t.Fatal(got, err)
 	}
-	old.NextNo = math.MaxInt
+	old.NextNo = int(limits.MaxSafeInteger)
 	_, _, _, err = MergeGeneratedProfile(old, GeneratedProfile{Bonuses: []GeneratedRequirement{{"新条件", SourceAI}}}, "", "")
 	if err == nil {
 		t.Fatal("ID overflow accepted")
@@ -223,7 +307,7 @@ func TestNormalizeProfileRejectsInvalidSavedShape(t *testing.T) {
 		{Specs: []ProfileSpec{{Name: "型号", Source: SourceSystem}}},
 		{Specs: []ProfileSpec{{Name: "型号", Source: SourceUser, Options: []string{"A"}, Values: []string{"B"}}}},
 		{Specs: []ProfileSpec{{Name: "型号", Source: SourceUser}, {Name: "型号", Source: SourceUser}}},
-		{NextNo: math.MaxInt, Bonuses: []Requirement{{Text: "新条件", Source: SourceUser}}},
+		{NextNo: int(limits.MaxSafeInteger), Bonuses: []Requirement{{Text: "新条件", Source: SourceUser}}},
 	} {
 		if _, _, err := NormalizeProfile(p); err == nil {
 			t.Error("accepted", p)

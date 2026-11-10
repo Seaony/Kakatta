@@ -16,6 +16,7 @@ import (
 
 	"github.com/Seaony/Kakatta/internal/appsettings"
 	"github.com/Seaony/Kakatta/internal/config"
+	"github.com/Seaony/Kakatta/internal/limits"
 	"github.com/Seaony/Kakatta/internal/locales"
 	"github.com/Seaony/Kakatta/internal/security"
 	"github.com/Seaony/Kakatta/internal/settings"
@@ -169,6 +170,21 @@ func TestAccountValidationAndIDCapacity(t *testing.T) {
 	var count int
 	if err := s.db.QueryRowContext(t.Context(), `SELECT count(*) FROM accounts`).Scan(&count); err != nil || count != 1 {
 		t.Fatal("拒绝容量后仍插入账号", count, err)
+	}
+}
+
+func TestAccountPatchProxyIDEnforcesSafeIntegers(t *testing.T) {
+	_, id, err := parseAccountPatch(accountTestPatch(map[string]any{"name": "账号", "proxy_id": limits.MaxSafeInteger}), nil)
+	if err != nil || id == nil || *id != limits.MaxSafeInteger {
+		t.Fatalf("安全上限未原样解析：%v %v", id, err)
+	}
+	for _, value := range []int64{limits.MaxSafeInteger + 1, limits.MinSafeInteger - 1} {
+		_, _, err := parseAccountPatch(accountTestPatch(map[string]any{"name": "账号", "proxy_id": value}), nil)
+		accountTestProblem(t, err, ErrorInvalid, "accounts.invalid")
+		var problem *ServiceError
+		if !errors.As(err, &problem) || len(problem.Fields) != 1 || problem.Fields[0].Key != "proxy_id" {
+			t.Fatalf("代理编号错误未定位字段：%v", err)
+		}
 	}
 }
 

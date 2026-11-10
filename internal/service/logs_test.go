@@ -12,12 +12,42 @@ import (
 	"time"
 
 	"github.com/Seaony/Kakatta/internal/appsettings"
+	"github.com/Seaony/Kakatta/internal/limits"
 	"github.com/Seaony/Kakatta/internal/locales"
 	"github.com/Seaony/Kakatta/internal/settings"
 	"github.com/Seaony/Kakatta/internal/store"
 )
 
 func logTestPointer[T any](value T) *T { return &value }
+
+func TestRunQueryEnforcesSafeIDAndSignedTimes(t *testing.T) {
+	valid := []RunQuery{
+		{TaskID: logTestPointer(limits.MaxSafeInteger)},
+		{FromAt: logTestPointer(limits.MinSafeInteger), ToAt: logTestPointer(limits.MaxSafeInteger)},
+		{FromAt: logTestPointer[int64](-1)}, {ToAt: logTestPointer[int64](-1)},
+		{FromAt: logTestPointer(limits.MaxSafeInteger)}, {ToAt: logTestPointer(limits.MinSafeInteger)},
+	}
+	for _, want := range valid {
+		got, err := normalizeRunQuery(want)
+		if err != nil || !reflect.DeepEqual(got.TaskID, want.TaskID) || !reflect.DeepEqual(got.FromAt, want.FromAt) || !reflect.DeepEqual(got.ToAt, want.ToAt) {
+			t.Fatalf("合法整数或负时间未原样保留：%+v %v", got, err)
+		}
+	}
+	for _, value := range []int64{limits.MaxSafeInteger + 1, limits.MinSafeInteger - 1} {
+		for _, q := range []RunQuery{{TaskID: &value}, {FromAt: &value}, {ToAt: &value}} {
+			_, err := normalizeRunQuery(q)
+			assertQueryError(t, err)
+		}
+	}
+	for _, q := range []RunQuery{
+		{TaskID: logTestPointer[int64](0)},
+		{FromAt: logTestPointer[int64](-1), ToAt: logTestPointer[int64](-1)},
+		{FromAt: logTestPointer[int64](0), ToAt: logTestPointer[int64](-1)},
+	} {
+		_, err := normalizeRunQuery(q)
+		assertQueryError(t, err)
+	}
+}
 
 func logTestService(t *testing.T) (*Service, *time.Time) {
 	t.Helper()

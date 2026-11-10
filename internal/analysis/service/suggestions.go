@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/Seaony/Kakatta/internal/analysis"
+	"github.com/Seaony/Kakatta/internal/limits"
 )
 
 // ConvertSuggestions 只丢弃无效预算，诊断供安全日志使用，不作为清单警告返回。
@@ -51,7 +52,7 @@ func suggestionCents(yuan *float64) (*int64, bool) {
 	if remainder.Lsh(remainder, 1).Cmp(decimal.Denom()) >= 0 {
 		whole.Add(whole, big.NewInt(1))
 	}
-	if !whole.IsInt64() {
+	if whole.Cmp(big.NewInt(limits.MaxSafeInteger)) > 0 {
 		return nil, true
 	}
 	cents := whole.Int64()

@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/Seaony/Kakatta/internal/limits"
 	"github.com/Seaony/Kakatta/internal/locales"
 	"github.com/Seaony/Kakatta/internal/settings"
 )
@@ -283,7 +284,9 @@ func normalizeRunQuery(q RunQuery) (RunQuery, error) {
 	if err != nil {
 		return RunQuery{}, err
 	}
-	if q.TaskID != nil && *q.TaskID <= 0 || !utf8.ValidString(q.Q) ||
+	if q.TaskID != nil && (*q.TaskID <= 0 || *q.TaskID > limits.MaxSafeInteger) || !utf8.ValidString(q.Q) ||
+		q.FromAt != nil && (*q.FromAt < limits.MinSafeInteger || *q.FromAt > limits.MaxSafeInteger) ||
+		q.ToAt != nil && (*q.ToAt < limits.MinSafeInteger || *q.ToAt > limits.MaxSafeInteger) ||
 		q.FromAt != nil && q.ToAt != nil && *q.FromAt >= *q.ToAt {
 		return RunQuery{}, queryError()
 	}

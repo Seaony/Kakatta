@@ -13,6 +13,18 @@ import (
 
 func suggestionPointer[T any](value T) *T { return &value }
 
+func TestConvertSuggestionsDiscardsUnsafeCentsWithoutLosingOtherSuggestions(t *testing.T) {
+	unsafeYuan, validYuan := 90071992547409.92, 20.0
+	source := analysis.ProfileSuggestions{BudgetMin: &validYuan, BudgetMax: &unsafeYuan, Keyword: suggestionPointer("电脑"), ExcludeWords: []string{"壳"}}
+	view, discarded := ConvertSuggestions(source)
+	if view.BudgetMin == nil || *view.BudgetMin != 2000 || view.BudgetMax != nil || !reflect.DeepEqual(discarded, []string{"budget_max"}) || view.Keyword == nil || *view.Keyword != "电脑" || !reflect.DeepEqual(view.ExcludeWords, []string{"壳"}) {
+		t.Fatalf("unsafe cents escaped or valid suggestions lost: %+v %v", view, discarded)
+	}
+	if *source.BudgetMin != validYuan || *source.BudgetMax != unsafeYuan || len(source.DiscardedBudgets) != 0 {
+		t.Fatal("conversion mutated input")
+	}
+}
+
 func TestConvertSuggestionsRoundsShortestDecimalToCents(t *testing.T) {
 	for _, tc := range []struct {
 		yuan  float64
@@ -21,7 +33,7 @@ func TestConvertSuggestionsRoundsShortestDecimalToCents(t *testing.T) {
 		{0, 0}, {math.Copysign(0, -1), 0}, {0.0049, 0}, {0.005, 1},
 		{1.004, 100}, {1.005, 101}, {2.675, 268}, {100.995, 10100},
 		{2995, 299500}, {math.SmallestNonzeroFloat64, 0},
-		{math.Nextafter(float64(math.MaxInt64)/100, 0), 9223372036854774000},
+		{90071992547409.9, 9007199254740990},
 	} {
 		t.Run(strconv.FormatFloat(tc.yuan, 'g', -1, 64), func(t *testing.T) {
 			view, discarded := ConvertSuggestions(analysis.ProfileSuggestions{BudgetMin: &tc.yuan})

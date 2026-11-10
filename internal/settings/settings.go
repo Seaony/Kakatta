@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Seaony/Kakatta/internal/limits"
 	"github.com/Seaony/Kakatta/internal/locales"
 )
 
@@ -170,7 +171,9 @@ func ResolveTask(global Snapshot, intervalMinutes int64, overrides json.RawMessa
 			advice = append(advice, warning)
 		}
 	}
-	if intervalMinutes < 1 {
+	if intervalMinutes < limits.MinSafeInteger || intervalMinutes > limits.MaxSafeInteger {
+		problems = append(problems, issue("interval_minutes", "overflow", nil))
+	} else if intervalMinutes < 1 {
 		problems = append(problems, issue("interval_minutes", "positive_required", nil))
 	} else if intervalMinutes > maxDuration("minutes") {
 		problems = append(problems, issue("interval_minutes", "overflow", nil))

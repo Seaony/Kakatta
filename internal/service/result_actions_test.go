@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"math"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -13,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Seaony/Kakatta/internal/limits"
 	"github.com/Seaony/Kakatta/internal/locales"
 	"github.com/Seaony/Kakatta/internal/store"
 )
@@ -54,16 +54,16 @@ func resultActionCount(t *testing.T, db *sql.DB, query string, args ...any) int6
 }
 
 func TestSelectedFindingIDsValidateAndKeepOrder(t *testing.T) {
-	input := []int64{3, 1, 3, 2, 1, math.MaxInt64}
+	input := []int64{3, 1, 3, 2, 1, limits.MaxSafeInteger}
 	snapshot := slices.Clone(input)
 	got, err := selectedFindingIDs(input)
-	if err != nil || !reflect.DeepEqual(got, []int64{3, 1, 2, math.MaxInt64}) {
+	if err != nil || !reflect.DeepEqual(got, []int64{3, 1, 2, limits.MaxSafeInteger}) {
 		t.Fatalf("稳定去重失败：%v，%v", got, err)
 	}
 	if !slices.Equal(input, snapshot) {
 		t.Fatal("批量校验修改了调用方的选择")
 	}
-	for _, invalid := range [][]int64{nil, {}, {0}, {-1}, {1, 2, 0}} {
+	for _, invalid := range [][]int64{nil, {}, {0}, {-1}, {1, 2, 0}, {1, limits.MaxSafeInteger + 1}, {limits.MinSafeInteger - 1}} {
 		_, err := selectedFindingIDs(invalid)
 		var failure *ServiceError
 		if !errors.As(err, &failure) || failure.Kind != ErrorInvalid || failure.Reason.Code != "findings.invalid_selection" {

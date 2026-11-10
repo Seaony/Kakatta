@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/Seaony/Kakatta/internal/analysis"
+	"github.com/Seaony/Kakatta/internal/limits"
 )
 
 const findingVisibleSQL = `l.is_dismissed=0 AND NOT EXISTS(SELECT 1 FROM blocked_sellers bs WHERE bs.seller_id=l.seller_id)`
@@ -32,7 +33,7 @@ func normalizeFindingQuery(q FindingQuery) (FindingQuery, error) {
 	if err != nil {
 		return FindingQuery{}, err
 	}
-	if q.TaskID != nil && *q.TaskID <= 0 {
+	if q.TaskID != nil && (*q.TaskID <= 0 || *q.TaskID > limits.MaxSafeInteger) {
 		return FindingQuery{}, queryError()
 	}
 	if q.View == "" {

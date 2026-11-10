@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/Seaony/Kakatta/internal/appsettings"
+	"github.com/Seaony/Kakatta/internal/limits"
 	"github.com/Seaony/Kakatta/internal/locales"
 	"github.com/Seaony/Kakatta/internal/quota"
 	"github.com/Seaony/Kakatta/internal/settings"
@@ -175,7 +176,7 @@ func parseAccountPatch(patch map[string]json.RawMessage, previous *Account) (str
 			}
 			name = strings.TrimSpace(name)
 		case "proxy_id":
-			if json.Unmarshal(raw, &proxyID) != nil || proxyID != nil && *proxyID <= 0 {
+			if json.Unmarshal(raw, &proxyID) != nil || proxyID != nil && (*proxyID <= 0 || *proxyID > limits.MaxSafeInteger) {
 				return "", nil, accountError(ErrorInvalid, "accounts.invalid", key)
 			}
 		default:

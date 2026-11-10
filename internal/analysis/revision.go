@@ -1,22 +1,22 @@
 package analysis
 
 import (
-	"math"
 	"strconv"
 
+	"github.com/Seaony/Kakatta/internal/limits"
 	"github.com/Seaony/Kakatta/internal/locales"
 )
 
 func validateProfileRevisions(p Profile) error {
 	for _, requirements := range [][]Requirement{p.Musts, p.Bonuses} {
 		for _, r := range requirements {
-			if r.Rev < 0 {
+			if r.Rev < 0 || r.Rev > limits.MaxSafeInteger {
 				return ruleError("analysis.profile_invalid", map[string]any{"field": "rev"})
 			}
 		}
 	}
 	for _, r := range p.Risks {
-		if r.Rev < 0 {
+		if r.Rev < 0 || r.Rev > limits.MaxSafeInteger {
 			return ruleError("analysis.profile_invalid", map[string]any{"field": "rev"})
 		}
 	}
@@ -29,33 +29,21 @@ func ReviseProfile(old, proposed Profile) (Profile, []locales.Message, error) {
 	if err := validateProfileRevisions(old); err != nil {
 		return Profile{}, warnings, err
 	}
-	watermark := old.NextNo
-	if watermark < 1 {
-		watermark = 1
+	watermark, err := profileWatermark(old)
+	if err != nil {
+		return Profile{}, warnings, err
+	}
+	if int64(proposed.NextNo) < limits.MinSafeInteger || int64(proposed.NextNo) > limits.MaxSafeInteger {
+		return Profile{}, warnings, ruleError("analysis.profile_invalid", map[string]any{"field": "next_no"})
 	}
 	oldIDs := map[string]bool{}
-	// 兼容旧清单水位不足，删除条目也不能使编号重新可用。
-	reserve := func(id string) {
-		oldIDs[id] = true
-		if len(id) < 2 || id[0] != 'm' && id[0] != 'b' && id[0] != 'c' {
-			return
-		}
-		n, err := strconv.Atoi(id[1:])
-		if err == nil && n >= watermark {
-			if n == math.MaxInt {
-				watermark = math.MaxInt
-			} else {
-				watermark = n + 1
-			}
-		}
-	}
 	for _, requirements := range [][]Requirement{old.Musts, old.Bonuses} {
 		for _, r := range requirements {
-			reserve(r.ID)
+			oldIDs[r.ID] = true
 		}
 	}
 	for _, r := range old.Risks {
-		reserve(r.ID)
+		oldIDs[r.ID] = true
 	}
 	checkID := func(id string) error {
 		if id == "" || oldIDs[id] {
@@ -104,7 +92,7 @@ func ReviseProfile(old, proposed Profile) (Profile, []locales.Message, error) {
 	revise := func(previous int64, changed bool) (int64, error) {
 		rev := profileRevision(previous)
 		if changed {
-			if rev == math.MaxInt64 {
+			if rev == limits.MaxSafeInteger {
 				return 0, ruleError("analysis.profile_invalid", map[string]any{"field": "rev"})
 			}
 			rev++

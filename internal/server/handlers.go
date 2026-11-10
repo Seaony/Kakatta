@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/Seaony/Kakatta/internal/auth"
+	"github.com/Seaony/Kakatta/internal/limits"
 	"github.com/Seaony/Kakatta/internal/settings"
 )
 
@@ -212,7 +213,7 @@ func (s *Server) createToken(w http.ResponseWriter, r *http.Request) {
 func (s *Server) revokeToken(w http.ResponseWriter, r *http.Request) {
 	raw := r.PathValue("id")
 	id, err := strconv.ParseInt(raw, 10, 64)
-	if err != nil || id < 1 || strings.TrimSpace(raw) != raw {
+	if err != nil || id < 1 || id > limits.MaxSafeInteger || strings.TrimSpace(raw) != raw {
 		s.writeFailure(w, r, &requestError{status: http.StatusBadRequest, code: "http.invalid_request", fields: []settings.Issue{{Key: "id", Reason: message("http.invalid_request")}}})
 		return
 	}

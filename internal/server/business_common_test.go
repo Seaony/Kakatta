@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Seaony/Kakatta/internal/limits"
 	"github.com/Seaony/Kakatta/internal/locales"
 	"github.com/Seaony/Kakatta/internal/service"
 	"github.com/Seaony/Kakatta/internal/settings"
@@ -55,6 +56,35 @@ func TestBusinessErrorMappingAndReasonCopy(t *testing.T) {
 		if errorCode(response) != "http.internal" || strings.Contains(response.Body.String(), "数据库秘密标记") {
 			t.Fatal("未知错误不能回显内部内容")
 		}
+	}
+}
+
+func TestBusinessIntegerInputsKeepSafeBoundsAndExactFields(t *testing.T) {
+	checkField := func(err error, field string) {
+		t.Helper()
+		var failure *requestError
+		if !errors.As(err, &failure) || failure.status != http.StatusBadRequest || len(failure.fields) != 1 || failure.fields[0].Key != field {
+			t.Fatalf("整数边界错误必须指出原字段%s：%v", field, err)
+		}
+	}
+	for _, raw := range []string{"9007199254740992", "9223372036854775807"} {
+		_, err := positiveInteger(raw, "task_id")
+		checkField(err, "task_id")
+		_, err = queryID(url.Values{"account_id": {raw}}, "account_id")
+		checkField(err, "account_id")
+	}
+	if id, err := positiveInteger("9007199254740991", "task_id"); err != nil || id != limits.MaxSafeInteger {
+		t.Fatal("安全正整数边界必须保留")
+	}
+	for raw, expected := range map[string]int64{"-9007199254740991": limits.MinSafeInteger, "9007199254740991": limits.MaxSafeInteger, "0": 0} {
+		value, err := queryTime(url.Values{"from_at": {raw}}, "from_at")
+		if err != nil || value == nil || *value != expected {
+			t.Fatalf("安全时间边界不能舍入或拒绝：%s %v", raw, err)
+		}
+	}
+	for _, raw := range []string{"-9007199254740992", "9007199254740992", "9223372036854775807"} {
+		_, err := queryTime(url.Values{"to_at": {raw}}, "to_at")
+		checkField(err, "to_at")
 	}
 }
 

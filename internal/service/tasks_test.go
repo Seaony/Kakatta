@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -16,6 +15,7 @@ import (
 
 	"github.com/Seaony/Kakatta/internal/analysis"
 	"github.com/Seaony/Kakatta/internal/appsettings"
+	"github.com/Seaony/Kakatta/internal/limits"
 	"github.com/Seaony/Kakatta/internal/locales"
 	"github.com/Seaony/Kakatta/internal/settings"
 	"github.com/Seaony/Kakatta/internal/store"
@@ -481,7 +481,7 @@ func TestTaskProfileWatermarkBackfillsLegacyRowsAndRejectsCorruption(t *testing.
 	if _, err := h.s.UpdateTask(h.ctx, task.ID, taskPatch(map[string]any{"judge_mode": "keyword"})); err != nil {
 		t.Fatal("缺失的旧水位不能安全回填", err)
 	}
-	profile := analysis.Profile{Musts: []analysis.Requirement{{Text: "日版", Source: analysis.SourceUser}}, NextNo: math.MaxInt}
+	profile := analysis.Profile{Musts: []analysis.Requirement{{Text: "日版", Source: analysis.SourceUser}}, NextNo: int(limits.MaxSafeInteger)}
 	updated, err := h.s.UpdateTask(h.ctx, task.ID, taskPatch(map[string]any{"judge_mode": "ai", "profile": profile}))
 	if err != nil || updated.Task.Profile.Musts[0].ID != "m9" {
 		t.Fatalf("没有保留旧最大编号，或信了客户端水位：%+v %v", updated.Task.Profile, err)

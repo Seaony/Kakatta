@@ -10,6 +10,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/Seaony/Kakatta/internal/limits"
 	"github.com/Seaony/Kakatta/internal/locales"
 	"github.com/Seaony/Kakatta/internal/service"
 	"github.com/Seaony/Kakatta/internal/settings"
@@ -118,7 +119,7 @@ func positiveInteger(raw, key string) (int64, error) {
 		}
 	}
 	value, err := strconv.ParseInt(raw, 10, 64)
-	if err != nil || value < 1 {
+	if err != nil || value < 1 || value > limits.MaxSafeInteger {
 		return 0, invalidParameter(key)
 	}
 	return value, nil
@@ -202,7 +203,7 @@ func queryTime(values url.Values, key string) (*int64, error) {
 	}
 	raw := values.Get(key)
 	value, err := strconv.ParseInt(raw, 10, 64)
-	if err != nil || strings.HasPrefix(raw, "+") {
+	if err != nil || strings.HasPrefix(raw, "+") || value < limits.MinSafeInteger || value > limits.MaxSafeInteger {
 		return nil, invalidParameter(key)
 	}
 	return &value, nil

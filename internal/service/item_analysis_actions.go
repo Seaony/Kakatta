@@ -7,6 +7,7 @@ import (
 	"errors"
 
 	"github.com/Seaony/Kakatta/internal/analysis"
+	"github.com/Seaony/Kakatta/internal/limits"
 	"github.com/Seaony/Kakatta/internal/locales"
 	"github.com/Seaony/Kakatta/internal/settings"
 )
@@ -225,7 +226,8 @@ func (s *Service) SetRiskOverrides(ctx context.Context, findingID int64, overrid
 	saved := analysis.UserOverrides{Risks: make(map[string]analysis.RiskOverride, len(overrides.Risks))}
 	for id, value := range overrides.Risks {
 		rev, exists := current[id]
-		if !exists || value.Status != analysis.CheckOK && value.Status != analysis.CheckRisk && value.Status != analysis.CheckSuspect && value.Status != analysis.CheckUnknown {
+		if !exists || value.Rev < limits.MinSafeInteger || value.Rev > limits.MaxSafeInteger ||
+			value.Status != analysis.CheckOK && value.Status != analysis.CheckRisk && value.Status != analysis.CheckSuspect && value.Status != analysis.CheckUnknown {
 			return FindingView{}, invalidItemAction("user_overrides.risks." + id)
 		}
 		if value.Rev != rev || rev <= 0 {

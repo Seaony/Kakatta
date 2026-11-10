@@ -14,12 +14,24 @@ import (
 
 	"github.com/Seaony/Kakatta/internal/analysis"
 	"github.com/Seaony/Kakatta/internal/appsettings"
+	"github.com/Seaony/Kakatta/internal/limits"
 	"github.com/Seaony/Kakatta/internal/locales"
 	"github.com/Seaony/Kakatta/internal/settings"
 	"github.com/Seaony/Kakatta/internal/store"
 )
 
 func queryPtr[T any](value T) *T { return &value }
+
+func TestFindingQueryTaskIDEnforcesSafeIntegers(t *testing.T) {
+	q, err := normalizeFindingQuery(FindingQuery{TaskID: queryPtr(limits.MaxSafeInteger)})
+	if err != nil || q.TaskID == nil || *q.TaskID != limits.MaxSafeInteger {
+		t.Fatalf("安全编号未原样保留：%+v %v", q, err)
+	}
+	for _, value := range []int64{0, -1, limits.MaxSafeInteger + 1, limits.MinSafeInteger - 1} {
+		_, err := normalizeFindingQuery(FindingQuery{TaskID: &value})
+		assertQueryError(t, err)
+	}
+}
 
 func queryFixture(t *testing.T) (*Service, *sql.DB) {
 	t.Helper()

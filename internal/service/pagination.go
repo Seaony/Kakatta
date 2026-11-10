@@ -7,7 +7,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"io"
+	"reflect"
 
+	"github.com/Seaony/Kakatta/internal/limits"
 	"github.com/Seaony/Kakatta/internal/locales"
 )
 
@@ -101,5 +103,26 @@ func strictCursorJSON(raw []byte, target any) error {
 	if decoder.Decode(new(any)) != io.EOF {
 		return queryError()
 	}
+	if !cursorIntegersSafe(reflect.ValueOf(target)) {
+		return queryError()
+	}
 	return nil
+}
+
+// 只检查游标结构里的整数；原始 JSON 和字符串编号不转成数值。
+func cursorIntegersSafe(value reflect.Value) bool {
+	switch value.Kind() {
+	case reflect.Pointer:
+		return value.IsNil() || cursorIntegersSafe(value.Elem())
+	case reflect.Struct:
+		for i := 0; i < value.NumField(); i++ {
+			if !cursorIntegersSafe(value.Field(i)) {
+				return false
+			}
+		}
+	case reflect.Int, reflect.Int64:
+		n := value.Int()
+		return n >= limits.MinSafeInteger && n <= limits.MaxSafeInteger
+	}
+	return true
 }

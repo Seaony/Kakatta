@@ -3,12 +3,14 @@ package service
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/Seaony/Kakatta/internal/analysis"
+	"github.com/Seaony/Kakatta/internal/limits"
 	"github.com/Seaony/Kakatta/internal/settings"
 )
 
@@ -99,6 +101,61 @@ func TestApplyTaskPatchFailureDoesNotMutateBase(t *testing.T) {
 	after, _ := json.Marshal(base)
 	if string(before) != string(after) {
 		t.Fatalf("失败污染原任务：%s → %s", before, after)
+	}
+}
+
+func TestApplyTaskPatchEnforcesSafeIntegersAtEveryDepth(t *testing.T) {
+	cases := []struct {
+		field string
+		wrap  string
+	}{
+		{"min_price", "%s"}, {"max_price", "%s"}, {"budget_min", "%s"}, {"budget_max", "%s"},
+		{"account_id", "%s"}, {"max_pages", "%s"}, {"interval_minutes", "%s"}, {"channel_ids", "[%s]"},
+		{"profile", `{"next_no":%s}`}, {"profile", `{"musts":[{"rev":%s}]}`},
+		{"profile", `{"bonuses":[{"rev":%s}]}`}, {"profile", `{"risks":[{"rev":%s}]}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.field+tc.wrap, func(t *testing.T) {
+			for _, value := range []int64{limits.MinSafeInteger, limits.MaxSafeInteger, limits.MinSafeInteger - 1, limits.MaxSafeInteger + 1} {
+				raw := json.RawMessage(fmt.Sprintf(tc.wrap, fmt.Sprint(value)))
+				_, err := applyTaskPatch(taskProfileTestFields(), TaskPatch{tc.field: raw})
+				if value < limits.MinSafeInteger || value > limits.MaxSafeInteger {
+					taskProfileTestError(t, err, tc.field, "settings.overflow")
+				} else if err != nil {
+					t.Fatalf("安全整数在解码前被拒绝：%d %v", value, err)
+				}
+			}
+		})
+	}
+}
+
+func TestNormalizeTaskFieldsEnforcesSafeIntegersWithoutJSONDecode(t *testing.T) {
+	global := taskProfileTestGlobal(t)
+	cases := []struct {
+		field string
+		set   func(*TaskFields, int64)
+	}{
+		{"min_price", func(f *TaskFields, n int64) { f.MinPrice = &n }},
+		{"max_price", func(f *TaskFields, n int64) { f.MaxPrice = &n }},
+		{"budget_min", func(f *TaskFields, n int64) { f.BudgetMin = &n }},
+		{"budget_max", func(f *TaskFields, n int64) { f.BudgetMax = &n }},
+		{"account_id", func(f *TaskFields, n int64) { f.AccountID = &n }},
+		{"channel_ids", func(f *TaskFields, n int64) { f.ChannelIDs = []int64{n} }},
+		{"max_pages", func(f *TaskFields, n int64) { f.MaxPages = n }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.field, func(t *testing.T) {
+			fields := taskProfileTestFields()
+			tc.set(&fields, limits.MaxSafeInteger)
+			if _, _, err := normalizeTaskFields(nil, fields, TaskPatch{}, global); err != nil {
+				t.Fatalf("安全上限被拒绝：%v", err)
+			}
+			for _, value := range []int64{limits.MaxSafeInteger + 1, limits.MinSafeInteger - 1} {
+				tc.set(&fields, value)
+				_, _, err := normalizeTaskFields(nil, fields, TaskPatch{}, global)
+				taskProfileTestError(t, err, tc.field, "settings.overflow")
+			}
+		})
 	}
 }
 
@@ -258,7 +315,7 @@ func TestNormalizeTaskProfileRejectsDeletedAndMalformedIDs(t *testing.T) {
 	old := Task{TaskFields: taskProfileTestFields()}
 	old.JudgeMode, old.NotifyPolicy = analysis.ModeAI, "good"
 	old.Profile = analysis.Profile{Musts: []analysis.Requirement{{ID: "m8", Text: "国行", Source: analysis.SourceUser, Rev: 1}}, NextNo: 10}
-	for _, id := range []string{"m3", "m01", "m-1", "m0", "b20", "m92233720368547758080"} {
+	for _, id := range []string{"m3", "m01", "m-1", "m0", "b20", "m92233720368547758080", "m9007199254740991", "m9007199254740992"} {
 		t.Run(id, func(t *testing.T) {
 			fields := old.TaskFields
 			fields.Profile = analysis.Profile{Musts: []analysis.Requirement{{ID: id, Text: "新项", Source: analysis.SourceUser}}, NextNo: 1}
@@ -304,7 +361,7 @@ func TestNormalizeTaskProfileRiskMeaningBumpsRevision(t *testing.T) {
 	if err != nil || got.Profile.Musts[0].Rev != 2 || got.Profile.Risks[0].Rev != 4 {
 		t.Fatalf("含义变更未更新版本：%#v %v", got.Profile, err)
 	}
-	old.Profile.Risks[0].Rev = math.MaxInt64
+	old.Profile.Risks[0].Rev = limits.MaxSafeInteger
 	_, _, err = normalizeTaskFields(&old, fields, TaskPatch{}, taskProfileTestGlobal(t))
 	taskProfileTestError(t, err, "profile", "analysis.profile_invalid")
 }

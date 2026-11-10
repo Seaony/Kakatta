@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"math"
 	"reflect"
 	"sort"
 	"strconv"
@@ -12,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/Seaony/Kakatta/internal/analysis"
+	"github.com/Seaony/Kakatta/internal/limits"
 	"github.com/Seaony/Kakatta/internal/locales"
 	"github.com/Seaony/Kakatta/internal/settings"
 )
@@ -83,12 +83,15 @@ func taskJSONShape(raw json.RawMessage, t reflect.Type) *locales.Message {
 			return taskFieldReason("boolean_required")
 		}
 	case reflect.Int, reflect.Int64:
-		_, err := strconv.ParseInt(string(raw), 10, t.Bits())
+		n, err := strconv.ParseInt(string(raw), 10, t.Bits())
 		if errors.Is(err, strconv.ErrRange) {
 			return taskFieldReason("overflow")
 		}
 		if err != nil {
 			return taskFieldReason("integer_required")
+		}
+		if n < limits.MinSafeInteger || n > limits.MaxSafeInteger {
+			return taskFieldReason("overflow")
 		}
 	case reflect.Slice:
 		if raw[0] != '[' {
@@ -170,6 +173,9 @@ func normalizeTaskFields(old *Task, proposed TaskFields, patch TaskPatch, global
 		key   string
 		value *int64
 	}{{"min_price", proposed.MinPrice}, {"max_price", proposed.MaxPrice}, {"budget_min", proposed.BudgetMin}, {"budget_max", proposed.BudgetMax}} {
+		if price.value != nil && (*price.value < limits.MinSafeInteger || *price.value > limits.MaxSafeInteger) {
+			return TaskFields{}, warnings, invalidTaskField(price.key, *taskFieldReason("overflow"))
+		}
 		if price.value != nil && *price.value < 0 {
 			return TaskFields{}, warnings, invalidTaskField(price.key, *taskFieldReason("nonnegative_required"))
 		}
@@ -180,11 +186,17 @@ func normalizeTaskFields(old *Task, proposed TaskFields, patch TaskPatch, global
 	if proposed.BudgetMin != nil && proposed.BudgetMax != nil && *proposed.BudgetMin > *proposed.BudgetMax {
 		return TaskFields{}, warnings, invalidTaskField("budget_max", *taskFieldReason("invalid_range"))
 	}
+	if proposed.AccountID != nil && (*proposed.AccountID < limits.MinSafeInteger || *proposed.AccountID > limits.MaxSafeInteger) {
+		return TaskFields{}, warnings, invalidTaskField("account_id", *taskFieldReason("overflow"))
+	}
 	if proposed.AccountID != nil && *proposed.AccountID < 1 || proposed.AccountPinned && proposed.AccountID == nil {
 		return TaskFields{}, warnings, invalidTaskField("account_id", *taskFieldReason("positive_id_required"))
 	}
 	channels := map[int64]bool{}
 	for _, id := range proposed.ChannelIDs {
+		if id < limits.MinSafeInteger || id > limits.MaxSafeInteger {
+			return TaskFields{}, warnings, invalidTaskField("channel_ids", *taskFieldReason("overflow"))
+		}
 		if id < 1 {
 			return TaskFields{}, warnings, invalidTaskField("channel_ids", *taskFieldReason("positive_id_required"))
 		}
@@ -195,6 +207,9 @@ func normalizeTaskFields(old *Task, proposed TaskFields, patch TaskPatch, global
 	}
 	proposed.ChannelIDs = append([]int64{}, proposed.ChannelIDs...)
 	sort.Slice(proposed.ChannelIDs, func(i, j int) bool { return proposed.ChannelIDs[i] < proposed.ChannelIDs[j] })
+	if proposed.MaxPages < limits.MinSafeInteger || proposed.MaxPages > limits.MaxSafeInteger {
+		return TaskFields{}, warnings, invalidTaskField("max_pages", *taskFieldReason("overflow"))
+	}
 	if proposed.MaxPages < 1 {
 		return TaskFields{}, warnings, invalidTaskField("max_pages", *taskFieldReason("positive_required"))
 	}
@@ -316,7 +331,7 @@ func taskProfileID(id string, prefix byte) (int, bool) {
 		return 0, false
 	}
 	n, err := strconv.Atoi(id[1:])
-	return n, err == nil && n > 0 && strconv.Itoa(n) == id[1:]
+	return n, err == nil && n > 0 && int64(n) < limits.MaxSafeInteger && strconv.Itoa(n) == id[1:]
 }
 
 func taskProfileForRevision(old, proposed analysis.Profile) (analysis.Profile, error) {
@@ -326,10 +341,7 @@ func taskProfileForRevision(old, proposed analysis.Profile) (analysis.Profile, e
 		oldIDs[id] = true
 		for _, prefix := range []byte{'m', 'b', 'c'} {
 			if n, ok := taskProfileID(id, prefix); ok && n >= watermark {
-				watermark = n
-				if watermark < math.MaxInt {
-					watermark++
-				}
+				watermark = n + 1
 			}
 		}
 	}

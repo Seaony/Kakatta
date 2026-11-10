@@ -5,7 +5,10 @@ import (
 	"errors"
 	"math"
 	"reflect"
+	"strconv"
 	"testing"
+
+	"github.com/Seaony/Kakatta/internal/limits"
 )
 
 func revisionFixture() Profile {
@@ -171,11 +174,11 @@ func TestProfileRevisionsRejectNegativeAndProtectOverflow(t *testing.T) {
 		old := revisionFixture()
 		switch target {
 		case "must":
-			old.Musts[0].Rev = math.MaxInt64
+			old.Musts[0].Rev = limits.MaxSafeInteger
 		case "bonus":
-			old.Bonuses[0].Rev = math.MaxInt64
+			old.Bonuses[0].Rev = limits.MaxSafeInteger
 		case "risk":
-			old.Risks[0].Rev = math.MaxInt64
+			old.Risks[0].Rev = limits.MaxSafeInteger
 		}
 		proposed := copyRevisionFixture(old)
 		got, _, err := ReviseProfile(old, proposed)
@@ -194,14 +197,104 @@ func TestProfileRevisionsRejectNegativeAndProtectOverflow(t *testing.T) {
 		assertInvalidRevision(t, err)
 	}
 	old := revisionFixture()
-	old.Risks[1].Rev = math.MaxInt64
+	old.Risks[1].Rev = limits.MaxSafeInteger
 	proposed := copyRevisionFixture(old)
 	proposed.Risks[1].Name = "伪造"
 	proposed.Risks[1].Hint = "伪造"
 	proposed.Risks[1].Rev = 1
 	got, _, err := ReviseProfile(old, proposed)
-	if err != nil || got.Risks[1].Rev != math.MaxInt64 {
+	if err != nil || got.Risks[1].Rev != limits.MaxSafeInteger {
 		t.Fatal(got, err)
+	}
+}
+
+func TestProfileRevisionBoundaryUsesStoredVersionAndKeepsInputs(t *testing.T) {
+	for _, which := range []string{"must", "bonus", "custom", "dictionary"} {
+		t.Run(which, func(t *testing.T) {
+			old := revisionFixture()
+			var revision *int64
+			var id string
+			switch which {
+			case "must":
+				revision, id = &old.Musts[0].Rev, "m1"
+			case "bonus":
+				revision, id = &old.Bonuses[0].Rev, "b3"
+			case "custom":
+				revision, id = &old.Risks[0].Rev, "c4"
+			default:
+				revision, id = &old.Risks[1].Rev, "id_lock"
+			}
+			*revision = limits.MaxSafeInteger - 1
+			proposed := copyRevisionFixture(old)
+			switch which {
+			case "must":
+				proposed.Musts[0].Text, proposed.Musts[0].Rev = "日版", math.MaxInt64
+			case "bonus":
+				proposed.Bonuses[0].Text, proposed.Bonuses[0].Rev = "已激活", 1
+			case "custom":
+				proposed.Risks[0].Hint, proposed.Risks[0].Rev = "无压伤", -1
+			default:
+				proposed.Risks[1].Attitude, proposed.Risks[1].Rev = Ignore, math.MaxInt64
+			}
+			beforeOld, _ := json.Marshal(old)
+			beforeProposed, _ := json.Marshal(proposed)
+			got, _, err := ReviseProfile(old, proposed)
+			want := limits.MaxSafeInteger
+			if which == "dictionary" {
+				want--
+			}
+			if err != nil || profileRevisions(got)[id] != want {
+				t.Fatal("stored safe version not used", got, err)
+			}
+			*revision = limits.MaxSafeInteger + 1
+			_, _, err = NormalizeProfile(old)
+			assertInvalidRevision(t, err)
+			_, _, err = ReviseProfile(old, proposed)
+			assertInvalidRevision(t, err)
+			*revision = limits.MaxSafeInteger - 1
+			afterOld, _ := json.Marshal(old)
+			afterProposed, _ := json.Marshal(proposed)
+			if string(beforeOld) != string(afterOld) || string(beforeProposed) != string(afterProposed) {
+				t.Fatal("revision validation mutated input")
+			}
+		})
+	}
+}
+
+func TestReviseAndMergeRejectUnsafeOldWatermarksEvenAfterDeletion(t *testing.T) {
+	for _, old := range []Profile{
+		{NextNo: int(limits.MaxSafeInteger + 1)},
+		{NextNo: int(limits.MinSafeInteger - 1)},
+		{Musts: []Requirement{{ID: "m" + strconv.FormatInt(limits.MaxSafeInteger+1, 10), Text: "旧条件", Source: SourceUser}}},
+		{Bonuses: []Requirement{{ID: "b" + strconv.FormatInt(limits.MaxSafeInteger, 10), Text: "旧条件", Source: SourceUser}}},
+		{Risks: []ProfileRisk{{ID: "c92233720368547758080", Name: "旧问题", Source: SourceUser, Attitude: Mind}}},
+	} {
+		before, _ := json.Marshal(old)
+		if _, _, err := ReviseProfile(old, Profile{}); err == nil {
+			t.Errorf("deleted unsafe old counter accepted: %+v", old)
+		}
+		if _, _, _, err := MergeGeneratedProfile(old, GeneratedProfile{}, "", ""); err == nil {
+			t.Errorf("generated merge accepted unsafe old counter: %+v", old)
+		}
+		after, _ := json.Marshal(old)
+		if string(before) != string(after) {
+			t.Fatal("old counter validation mutated input")
+		}
+	}
+	for _, next := range []int{int(limits.MaxSafeInteger + 1), int(limits.MinSafeInteger - 1)} {
+		if _, _, err := ReviseProfile(Profile{}, Profile{NextNo: next}); err == nil {
+			t.Fatalf("unsafe proposed watermark accepted: %d", next)
+		}
+	}
+	old := Profile{NextNo: 1, Musts: []Requirement{{ID: "m" + strconv.FormatInt(limits.MaxSafeInteger-1, 10), Text: "国行", Source: SourceUser, Rev: 1}}}
+	got, _, err := ReviseProfile(old, old)
+	if err != nil || int64(got.NextNo) != limits.MaxSafeInteger {
+		t.Fatal("last valid old id rejected", got, err)
+	}
+	_, _, _, err = MergeGeneratedProfile(old, GeneratedProfile{Bonuses: []GeneratedRequirement{{Text: "在保", Source: SourceAI}}}, "", "")
+	var invalid *Error
+	if !errors.As(err, &invalid) || invalid.Message.Code != "analysis.profile_id_exhausted" {
+		t.Fatal("generated merge advanced unsafe watermark", err)
 	}
 }
 func assertInvalidRevision(t *testing.T, err error) {

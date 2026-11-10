@@ -3,12 +3,14 @@ package analysis
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"slices"
 	"strconv"
 	"strings"
 
+	"github.com/Seaony/Kakatta/internal/limits"
 	"github.com/Seaony/Kakatta/internal/locales"
 )
 
@@ -139,13 +141,53 @@ func riskKey(r ProfileRisk) string {
 	}
 	return "name:" + evidenceText(r.Name)
 }
+
+// 旧编号也计入水位，删除条目不能让编号重新发放。
+func profileWatermark(p Profile) (int, error) {
+	if int64(p.NextNo) < limits.MinSafeInteger || int64(p.NextNo) > limits.MaxSafeInteger {
+		return 0, ruleError("analysis.profile_invalid", map[string]any{"field": "next_no"})
+	}
+	watermark := max(1, p.NextNo)
+	reserve := func(id string) error {
+		if len(id) < 2 || id[0] != 'm' && id[0] != 'b' && id[0] != 'c' {
+			return nil
+		}
+		n, err := strconv.Atoi(id[1:])
+		if errors.Is(err, strconv.ErrRange) || int64(n) < limits.MinSafeInteger || int64(n) > limits.MaxSafeInteger {
+			return ruleError("analysis.profile_invalid", map[string]any{"field": "id"})
+		}
+		if err == nil && n >= watermark {
+			if int64(n) == limits.MaxSafeInteger {
+				return ruleError("analysis.profile_id_exhausted", nil)
+			}
+			watermark = n + 1
+		}
+		return nil
+	}
+	for _, items := range [][]Requirement{p.Musts, p.Bonuses} {
+		for _, item := range items {
+			if err := reserve(item.ID); err != nil {
+				return 0, err
+			}
+		}
+	}
+	for _, item := range p.Risks {
+		if err := reserve(item.ID); err != nil {
+			return 0, err
+		}
+	}
+	return watermark, nil
+}
+
 func MergeGeneratedProfile(old Profile, generated GeneratedProfile, keyword, requirement string) (Profile, ProfileSuggestions, []locales.Message, error) {
 	result := Profile{Summary: generated.Summary, Specs: []ProfileSpec{}, Musts: []Requirement{}, Bonuses: []Requirement{}, Risks: []ProfileRisk{}, AllowedKinds: append([]Kind{}, generated.AllowedKinds...), NextNo: old.NextNo}
 	suggestions := ProfileSuggestions{BudgetMin: clonePtr(generated.BudgetMin), BudgetMax: clonePtr(generated.BudgetMax), Keyword: clonePtr(generated.Keyword), ExcludeWords: append([]string{}, generated.ExcludeWords...), DiscardedBudgets: append([]string{}, generated.DiscardedBudgets...)}
 	warnings := []locales.Message{}
-	if result.NextNo < 1 {
-		result.NextNo = 1
+	watermark, err := profileWatermark(old)
+	if err != nil {
+		return Profile{}, suggestions, warnings, err
 	}
+	result.NextNo = watermark
 	oldSpecs := map[string]ProfileSpec{}
 	oldMusts := map[string]Requirement{}
 	oldBonuses := map[string]Requirement{}
@@ -156,19 +198,6 @@ func MergeGeneratedProfile(old Profile, generated GeneratedProfile, keyword, req
 			oldSpecs[s.Name] = s
 		}
 	}
-	updateNo := func(id string) {
-		if len(id) < 2 || id[0] != 'm' && id[0] != 'b' && id[0] != 'c' {
-			return
-		}
-		n, err := strconv.Atoi(id[1:])
-		if err == nil && n >= result.NextNo {
-			if n == math.MaxInt {
-				result.NextNo = math.MaxInt
-			} else {
-				result.NextNo = n + 1
-			}
-		}
-	}
 	for _, r := range old.Musts {
 		key := requirementKey(r.Text)
 		if _, exists := oldMusts[key]; !exists {
@@ -177,7 +206,6 @@ func MergeGeneratedProfile(old Profile, generated GeneratedProfile, keyword, req
 		if r.Edited {
 			editedRequirements[key] = "must"
 		}
-		updateNo(r.ID)
 	}
 	for _, r := range old.Bonuses {
 		key := requirementKey(r.Text)
@@ -189,17 +217,15 @@ func MergeGeneratedProfile(old Profile, generated GeneratedProfile, keyword, req
 				editedRequirements[key] = "bonus"
 			}
 		}
-		updateNo(r.ID)
 	}
 	for _, r := range old.Risks {
 		key := riskKey(r)
 		if _, exists := oldRisks[key]; !exists {
 			oldRisks[key] = r
 		}
-		updateNo(r.ID)
 	}
 	allocate := func(prefix string) (string, error) {
-		if result.NextNo >= math.MaxInt {
+		if int64(result.NextNo) >= limits.MaxSafeInteger {
 			return "", ruleError("analysis.profile_id_exhausted", nil)
 		}
 		id := fmt.Sprintf("%s%d", prefix, result.NextNo)
@@ -427,6 +453,9 @@ func NormalizeProfile(p Profile) (Profile, []locales.Message, error) {
 		return Profile{}, warnings, err
 	}
 	invalid := func(field string) error { return ruleError("analysis.profile_invalid", map[string]any{"field": field}) }
+	if int64(p.NextNo) < limits.MinSafeInteger || int64(p.NextNo) > limits.MaxSafeInteger {
+		return Profile{}, warnings, invalid("next_no")
+	}
 	out := Profile{Summary: p.Summary, Specs: []ProfileSpec{}, Musts: []Requirement{}, Bonuses: []Requirement{}, Risks: []ProfileRisk{}, AllowedKinds: append([]Kind{}, p.AllowedKinds...), NextNo: p.NextNo}
 	if out.NextNo < 1 {
 		out.NextNo = 1
@@ -447,7 +476,10 @@ func NormalizeProfile(p Profile) (Profile, []locales.Message, error) {
 		if err != nil || n <= 0 || strconv.Itoa(n) != id[1:] {
 			return invalid("id")
 		}
-		if n == math.MaxInt {
+		if int64(n) > limits.MaxSafeInteger {
+			return invalid("id")
+		}
+		if int64(n) == limits.MaxSafeInteger {
 			return ruleError("analysis.profile_id_exhausted", nil)
 		}
 		if n >= out.NextNo {
@@ -523,7 +555,7 @@ func NormalizeProfile(p Profile) (Profile, []locales.Message, error) {
 		}
 	}
 	allocate := func(prefix string) (string, error) {
-		if out.NextNo >= math.MaxInt {
+		if int64(out.NextNo) >= limits.MaxSafeInteger {
 			return "", ruleError("analysis.profile_id_exhausted", nil)
 		}
 		id := fmt.Sprintf("%s%d", prefix, out.NextNo)
