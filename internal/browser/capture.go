@@ -203,6 +203,19 @@ func (c *Capture) LastAfter(mark uint64, m Match) *Response {
 	return nil
 }
 
+// DoneAfter 返回 mark 之后发出、符合条件、已经完成的全部请求，按发出顺序排列。用来对一段操作期间的所有接口做风控检查。
+func (c *Capture) DoneAfter(mark uint64, m Match) []*Response {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var out []*Response
+	for _, r := range c.all {
+		if r.Seq > mark && r.done && m.matches(r) {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
 func lowerHeaders(h network.Headers) map[string]string {
 	out := make(map[string]string, len(h))
 	for k, v := range h {

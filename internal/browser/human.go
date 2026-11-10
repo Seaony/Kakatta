@@ -7,6 +7,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/css"
 	"github.com/chromedp/cdproto/dom"
 	"github.com/chromedp/cdproto/input"
@@ -55,6 +56,21 @@ func (h *Human) Find(ctx context.Context, sel string, timeout time.Duration) ([]
 	}
 	return nodes, nil
 }
+
+// FindNow 立即查一次，不等待；没有匹配时返回空列表。用来做风控检查这类「有就报、没有就过」的判断。
+func (h *Human) FindNow(ctx context.Context, sel string) ([]*chromedp.Node, error) {
+	tctx, cancel := context.WithTimeout(h.s.ctx, 5*time.Second)
+	defer cancel()
+	stop := context.AfterFunc(ctx, cancel)
+	defer stop()
+	if len(sel) >= 2 && sel[:2] == "//" {
+		return chromedp.Run(tctx, chromedp.Nodes(chromedp.Search(sel), chromedp.AtLeast(0)))
+	}
+	return chromedp.Run(tctx, chromedp.Nodes(chromedp.CSSAll(sel), chromedp.AtLeast(0)))
+}
+
+// Box 返回元素在页面上的位置和大小，找不到位置时返回错误。
+func (h *Human) Box(n *chromedp.Node) (x, y, w, ht float64, err error) { return h.box(n) }
 
 // Visible 判断元素当前是否显示在页面上：有位置、宽高大于 0，并且自身没有被隐藏或设为完全透明。
 // 只看元素自身的样式；父元素透明的情况交给具体流程按需要再查。
@@ -119,12 +135,24 @@ func (h *Human) Click(ctx context.Context, n *chromedp.Node) error {
 	return h.mouse(input.DispatchMouseEventParams{Type: chromedp.MouseReleased, X: tx, Y: ty, Button: input.MouseButtonLeft, ClickCount: 1})
 }
 
+// wheelParams 是滚轮事件的参数。cdproto 的结构体在值为 0 时会省略 deltaX，而 Chrome 要求 deltaX 和 deltaY 都必须给，所以单独定义。
+type wheelParams struct {
+	Type   input.DispatchMouseEventType `json:"type"`
+	X      float64                      `json:"x"`
+	Y      float64                      `json:"y"`
+	DeltaX float64                      `json:"deltaX"`
+	DeltaY float64                      `json:"deltaY"`
+}
+
+var dispatchWheel = cdp.Command[wheelParams, cdp.Empty]{Method: input.CommandDispatchMouseEvent}
+
 // Scroll 在页面当前位置用滚轮向下滚 dy 像素，分几下滚完。
 func (h *Human) Scroll(ctx context.Context, dy float64) error {
 	steps := 3 + int(h.rand()*3)
 	for i := 0; i < steps; i++ {
-		if err := h.mouse(input.DispatchMouseEventParams{Type: chromedp.MouseWheel, X: h.x, Y: h.y, DeltaY: dy / float64(steps)}); err != nil {
-			return err
+		p := wheelParams{Type: chromedp.MouseWheel, X: h.x, Y: h.y, DeltaY: dy / float64(steps)}
+		if _, err := chromedp.Call(h.s.ctx, dispatchWheel, p); err != nil {
+			return fmt.Errorf("滚轮操作失败：%w", err)
 		}
 		if err := h.p.Wait(ctx, pacer.Between(80*time.Millisecond, 220*time.Millisecond)); err != nil {
 			return err
