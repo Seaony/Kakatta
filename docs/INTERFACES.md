@@ -103,6 +103,7 @@ func config.AcquireServerLock(dataDir string) (io.Closer, error)
 - 写入保留字段是否出现：创建缺省用领域默认，更新缺省保留，只有可空字段接受 `null`；服务唯一解码和校验，不在 HTTP 再做一套默认。
 - 所有列表使用 `Page<T>{items,next_cursor,total}`，默认 50、最大 200，游标绑定筛选和排序。全量导出使用完整读快照，不受分页上限截断。
 - 搜索代次每次写入都检查，晚到结果只更新仍存在的对象，不用 UPSERT 复活已删除数据；非搜索规则提交时重读当前值。
+- 每件发现另有不公开的正整数 `processing_revision`，重新分析和待处理阶段模式迁移时递增；异步处理使用 `WorkRef{RunRef,FindingID,ProcessingRevision}`，保存同时检查任务代次、发现工作版本和预期阶段，不能让旧结果覆盖同代的新请求。
 - 资源的排队、启动、保留和关闭由一个所有者管理。关闭完成才释放名额、结算账号间隔并删除恢复标记；排队不预造运行记录、不消耗人工会话十分钟。
 - 门禁无法通过等待恢复时不编造恢复时间；所需入口访问数大于配置上限时，自动等待配置变化，手动记跳过且预计时间为空。
 
@@ -158,6 +159,7 @@ type Message struct {
     Link, DesktopLink, MobileLink, KakattaURL, ImageURL string
     Price, Reason, Score, Grade, Config, FairPrice string
     ItemID, Task, Kind string
+    LinkLabel, Footer string
     Urgent bool
 }
 type Result struct {
@@ -172,6 +174,8 @@ func (s *Sender) Send(ctx context.Context, config ChannelConfig, message Message
 ```
 
 依赖只注入 HTTP 客户端、本机连接、TLS 配置、时钟和固定服务端点，用于本地假服务测试，不增加用户配置。结果不含地址、Token 或响应正文；适配器按第 13 节的长度和业务状态判断成功。格式化层负责在渠道限制内优先缩短规格，不让适配器猜标题结构或静默丢弃理由、价格和链接。
+
+链接标签与落款由格式化层按通知语言给出，适配器按渠道转义，不硬写中文；合并提醒也可用指向结果页的对应标签。两字段为空时沿用中文默认，Webhook 的规定变量与默认 JSON 字段不因此扩展。
 
 ## 纯分析规则
 
@@ -219,6 +223,24 @@ func NoGoodReasons([]RecentScoredFinding) []ReasonCount
 - `CallStart` 含服务商配置引用、模型、purpose、TaskID 和实际 JSONMode；`CallEnd` 含可用结果 OK、HTTPStatus、ErrorKind、Usage、FinishReason、Duration。Result 含文本、服务商/模型、JSONMode、Thinking、耗时与全部 Call 元数据，不含密钥或请求正文。
 - Slots 的 `Acquire(ctx) (release,error)` 覆盖整个逻辑调用，所有用途共享；兼容重发、解析重试和轮换不新建名额池。每次实际请求重新 Before，只有 test 可越过每日上限。probe 固定输出上限 5。
 - 返回可识别的 `ErrNoProvider/ErrDailyLimit/ErrInfrastructure/ErrConfigChanged`；普通失败为带 Last 原因和 Retryable 的 Failure。取消保留原 context 错误；记账、兼容和状态存储失败立即结束，不重发。请求状态与重试严格按第 8 节，不隐含 SDK 重试或 3xx 跳转。
+
+## 提示词和图片准备
+
+`internal/analysis/prompts` 只保存四份内嵌默认模板、三份固定 Schema，并构造用途输入；不读库、环境或网络。`Definitions/Resolve/PrepareSave` 读取默认、合并覆盖、验证保存；`BuildTitle/BuildProfile/BuildAnalysis/BuildMarket` 复用同包源数据和既有 `analysis`、`client` 类型。精确函数如下：
+
+```go
+func Definitions() ([]Definition, error)
+func Resolve(map[client.Kind]string) (Snapshot, error)
+func PrepareSave(client.Kind, string) (*string, error)
+func BuildTitle(Snapshot, *int64, analysis.Profile, []TitleSource) (client.Request, error)
+func BuildProfile(Snapshot, *int64, string, string, analysis.Profile) (client.Request, error)
+func BuildAnalysis(Snapshot, *int64, analysis.Profile, ProductSource, *analysis.FairPrice, []string) (client.Request, analysis.EvidenceOriginals, error)
+func BuildMarket(Snapshot, *int64, analysis.MarketResult) (client.Request, error)
+```
+
+模板与 Schema 按 `DOMAIN.md` 8.2、8.6 原文，不加内部 `rev`。模型输入和核对证据使用同一份独立来源快照，评价用规定的前 60 字摘要；持久事实重算不再核对当前来源。源金额为整数分，发模型时精确转元；字段按白名单投影，缺失不伪装成零。
+
+`internal/analysis/images` 用任务账号固定代理、无 Cookie 的 HTTP 依赖，只准备详情图，不接搜索缩略图。`New(Dependencies)` 构造准备器，`Prepare(ctx, detailURLs, imageCount)` 返回保序的图片和逐图跳过原因，`Result.DataURLs()` 返回独立数组，`JPEG(source, Limits)` 做纯转换。每准备器跨调用总共三张同时下载，单图三十秒，源图最多 20 MiB、四千万像素；先读头检查资源再解码，最长边 1024、不放大小图、校正方向、透明白底、JPEG 质量 80。先取前 N 张，坏图不从后面补，取消时停止并等待已开始任务。边界是内部资源保护，不新增用户设置，不截断允许的 `image_count`。
 
 ## 集成分工
 
