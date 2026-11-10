@@ -78,7 +78,8 @@ func (f *businessFixture) start(t *testing.T, notifier service.Notifier, factori
 	if err := f.server.RegisterService(f.service); err != nil {
 		t.Fatal(err)
 	}
-	registerNotificationHTTPFixture(t, f, nil)
+	notifications := registerNotificationHTTPFixture(t, f, nil)
+	registerModelHTTPFixture(t, f, notifications)
 }
 
 type failedBusinessResources struct{}

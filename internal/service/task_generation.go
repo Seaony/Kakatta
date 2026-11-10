@@ -4,10 +4,18 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"reflect"
 
 	"github.com/Seaony/Kakatta/internal/analysis"
 	"github.com/Seaony/Kakatta/internal/locales"
 )
+
+func ValidateProfileDraftJSON(raw []byte) error {
+	if reason := taskJSONShape(raw, reflect.TypeFor[analysis.Profile]()); reason != nil {
+		return invalidTaskField("profile", *reason)
+	}
+	return nil
+}
 
 // 生成前只整理草稿；真正保存任务时才推进编号水位。
 func PrepareProfileGenerationTx(ctx context.Context, tx *sql.Tx, taskID *int64, proposed analysis.Profile) (trustedOld, prepared analysis.Profile, warnings []locales.Message, err error) {

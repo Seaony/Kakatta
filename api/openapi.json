@@ -6802,7 +6802,6 @@
           }
         ],
         "x-authentication": "session_or_api_token",
-        "x-implementation-status": "contract",
         "responses": {
           "200": {
             "description": "操作完成。",
@@ -6862,7 +6861,6 @@
           }
         ],
         "x-authentication": "session_or_api_token",
-        "x-implementation-status": "contract",
         "responses": {
           "201": {
             "description": "已创建。",
@@ -6937,7 +6935,6 @@
           }
         ],
         "x-authentication": "session_or_api_token",
-        "x-implementation-status": "contract",
         "responses": {
           "200": {
             "description": "操作完成。",
@@ -7007,7 +7004,6 @@
           }
         ],
         "x-authentication": "session_or_api_token",
-        "x-implementation-status": "contract",
         "responses": {
           "200": {
             "description": "操作完成。",
@@ -7093,7 +7089,6 @@
           }
         ],
         "x-authentication": "session_or_api_token",
-        "x-implementation-status": "contract",
         "responses": {
           "204": {
             "description": "操作完成，无响应正文。"
@@ -7158,7 +7153,6 @@
           }
         ],
         "x-authentication": "session_or_api_token",
-        "x-implementation-status": "contract",
         "responses": {
           "200": {
             "description": "操作完成。",
@@ -7246,7 +7240,6 @@
           }
         ],
         "x-authentication": "session_or_api_token",
-        "x-implementation-status": "contract",
         "responses": {
           "200": {
             "description": "操作完成。",
@@ -7324,7 +7317,6 @@
           }
         ],
         "x-authentication": "session_or_api_token",
-        "x-implementation-status": "contract",
         "responses": {
           "200": {
             "description": "操作完成。",
@@ -7396,7 +7388,6 @@
           }
         ],
         "x-authentication": "session_or_api_token",
-        "x-implementation-status": "contract",
         "responses": {
           "200": {
             "description": "操作完成。",
@@ -7458,7 +7449,6 @@
           }
         ],
         "x-authentication": "session_or_api_token",
-        "x-implementation-status": "contract",
         "responses": {
           "200": {
             "description": "操作完成。",
@@ -7541,7 +7531,6 @@
           }
         ],
         "x-authentication": "session_or_api_token",
-        "x-implementation-status": "contract",
         "responses": {
           "200": {
             "description": "操作完成。",
@@ -7610,7 +7599,6 @@
           }
         ],
         "x-authentication": "session_or_api_token",
-        "x-implementation-status": "contract",
         "responses": {
           "200": {
             "description": "操作完成。",
@@ -7685,7 +7673,6 @@
           }
         ],
         "x-authentication": "session_or_api_token",
-        "x-implementation-status": "contract",
         "responses": {
           "200": {
             "description": "操作完成。",
@@ -7783,7 +7770,6 @@
           }
         ],
         "x-authentication": "session_or_api_token",
-        "x-implementation-status": "contract",
         "responses": {
           "200": {
             "description": "操作完成。",
