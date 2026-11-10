@@ -18,17 +18,18 @@ import (
 )
 
 type Dependencies struct {
-	DB         *sql.DB
-	Settings   *appsettings.Store
-	Cipher     *security.Cipher
-	DataDir    string
-	Resources  ResourceFactory
-	Models     Models
-	Notifier   Notifier
-	ImageCache ImageCache
-	Publish    func(kind string, reason *locales.Message, data json.RawMessage) error
-	Now        func() time.Time // 默认 time.Now；记账仍经持久 Clock 保护。
-	Pacer      *pacer.Pacer     // 默认真实等待；测试注入同一随机与等待来源。
+	DB           *sql.DB
+	ReadSnapshot func(context.Context, func(*sql.Tx) error) error
+	Settings     *appsettings.Store
+	Cipher       *security.Cipher
+	DataDir      string
+	Resources    ResourceFactory
+	Models       Models
+	Notifier     Notifier
+	ImageCache   ImageCache
+	Publish      func(kind string, reason *locales.Message, data json.RawMessage) error
+	Now          func() time.Time // 默认 time.Now；记账仍经持久 Clock 保护。
+	Pacer        *pacer.Pacer     // 默认真实等待；测试注入同一随机与等待来源。
 }
 
 // Open 失败必须关闭部分资源并返回 nil；成功后全部资源所有权移交 Service。
