@@ -59,6 +59,11 @@ func serve(ctx context.Context, cfg config.Config, lookup config.Lookup, logger 
 	if err != nil {
 		return err
 	}
+	serverLock, err := config.AcquireServerLock(cfg.DataDir)
+	if err != nil {
+		return err
+	}
+	defer serverLock.Close()
 	key, err := config.LoadMasterKey(paths, lookup)
 	if err != nil {
 		return err

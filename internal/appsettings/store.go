@@ -55,17 +55,22 @@ func (s *Store) Apply(ctx context.Context, patch settings.Values) (settings.Snap
 	return s.transact(ctx, patch, false)
 }
 
+// SnapshotTx 只读取调用方的事务，提交和额度时钟由调用方处理。
+func (s *Store) SnapshotTx(ctx context.Context, tx *sql.Tx) (settings.Snapshot, error) {
+	stored, err := readValues(ctx, tx)
+	if err != nil {
+		return settings.Snapshot{}, err
+	}
+	return settings.Resolve(stored, s.env)
+}
+
 func (s *Store) transact(ctx context.Context, patch settings.Values, initialize bool) (settings.Snapshot, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return settings.Snapshot{}, err
 	}
 	defer tx.Rollback()
-	stored, err := readValues(ctx, tx)
-	if err != nil {
-		return settings.Snapshot{}, err
-	}
-	snapshot, err := settings.Resolve(stored, s.env)
+	snapshot, err := s.SnapshotTx(ctx, tx)
 	if err != nil {
 		return settings.Snapshot{}, err
 	}
