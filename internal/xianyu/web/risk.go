@@ -40,12 +40,6 @@ func IsStop(err error) bool {
 		errors.Is(err, ErrEnvBlocked) || errors.Is(err, ErrLoginExpired)
 }
 
-// 页面上表示需要验证的遮罩（scraper.py:740-741）。
-var verifyMasks = []string{"div.baxia-dialog-mask", "div.J_MIDDLEWARE_FRAME_WIDGET"}
-
-// 页面上表示环境被识别的文字（#339）。
-var blockedTexts = []string{"非法访问", "请使用正常浏览器访问"}
-
 // checkPage 检查当前页面：网址是不是登录页、有没有可见的验证遮罩、有没有「非法访问」文字。
 func (r *Runner) checkPage(ctx context.Context, where string) error {
 	if err := ctx.Err(); err != nil {
@@ -59,10 +53,14 @@ func (r *Runner) checkPage(ctx context.Context, where string) error {
 		// 刚启动、还没打开过闲鱼页面，没有可查的；在空白页上查元素会一直等到超时。
 		return nil
 	}
+	var verification error
 	if err := pageURLRisk(current, where); err != nil {
-		return err
+		if !errors.Is(err, ErrNeedVerify) {
+			return err
+		}
+		verification = err
 	}
-	for _, sel := range verifyMasks {
+	for _, sel := range rules.Selectors.VerifyMasks {
 		nodes, err := r.H.FindNow(ctx, sel)
 		if err != nil {
 			return fmt.Errorf("%s：检查验证遮罩失败：%w", where, err)
@@ -74,11 +72,11 @@ func (r *Runner) checkPage(ctx context.Context, where string) error {
 				return fmt.Errorf("%s：检查验证遮罩是否可见失败：%w", where, err)
 			}
 			if visible {
-				return &RiskError{Kind: ErrNeedVerify, Where: where, Signal: "遮罩 " + sel}
+				verification = &RiskError{Kind: ErrNeedVerify, Where: where, Signal: "遮罩 " + sel}
 			}
 		}
 	}
-	for _, text := range blockedTexts {
+	for _, text := range rules.Selectors.BlockedTexts {
 		nodes, err := r.H.SearchText(ctx, text)
 		if err != nil {
 			return fmt.Errorf("%s：检查环境提示失败：%w", where, err)
@@ -93,7 +91,7 @@ func (r *Runner) checkPage(ctx context.Context, where string) error {
 			}
 		}
 	}
-	return nil
+	return verification
 }
 
 func pageURLRisk(current, where string) error {
@@ -110,6 +108,12 @@ func pageURLRisk(current, where string) error {
 	return nil
 }
 
+// 接口跳到处罚网址后仍按原接口检查，后台跳转不代表主框架已跳转。
+func (r *Runner) isMtopResponse(response *browser.Response) bool {
+	fragment := r.Site.mtop().URL
+	return strings.Contains(response.RequestURL, fragment) || strings.Contains(response.URL, fragment)
+}
+
 // checkResponses 检查这个 Runner 创建以来完成的全部 mtop 接口：响应头 bxpunish、ret 和 data.url。
 // 不管是不是正在等的那个接口、是哪一步发出的，只要是风控就立即结束（XIANYU.md 4.1 节）：
 // 两步之间才返回的风控响应也要在下一次检查时拦住，所以不按每一步自己的标记来查。
@@ -117,13 +121,14 @@ func (r *Runner) checkResponses(where string) error {
 	if err := r.S.Capture.Err(); err != nil {
 		return fmt.Errorf("%s：接口监听失效：%w", where, err)
 	}
+	var pending error
 	for _, resp := range r.S.Capture.HeadersAfter(r.since, browser.Match{}) {
-		if (resp.MainDocument || strings.Contains(resp.URL, r.Site.mtop().URL)) && resp.Headers["bxpunish"] == "1" {
-			return &RiskError{Kind: ErrNeedVerify, Where: where, Signal: "响应头 bxpunish"}
+		if (resp.MainDocument || r.isMtopResponse(resp)) && resp.Headers["bxpunish"] == "1" && (resp.HeaderOrder == 0 || resp.HeaderOrder > r.handledRisks[resp.Seq].header) {
+			pending = &RiskError{Kind: ErrNeedVerify, Where: where, Signal: "响应头 bxpunish"}
 		}
 	}
 	for _, resp := range r.S.Capture.DoneAfter(r.since, r.Site.mtop()) {
-		if resp.MainDocument || !strings.Contains(resp.URL, r.Site.mtop().URL) {
+		if resp.MainDocument || !r.isMtopResponse(resp) {
 			continue
 		}
 		if resp.Err != nil || len(resp.Body) == 0 {
@@ -135,14 +140,18 @@ func (r *Runner) checkResponses(where string) error {
 		}
 		switch kind {
 		case xianyu.RetNeedVerify:
-			return &RiskError{Kind: ErrNeedVerify, Where: where, Signal: "ret:" + strings.Join(ret, ",")}
+			if (resp.BodyOrder == 0 || resp.BodyOrder > r.handledRisks[resp.Seq].body) && pending == nil {
+				pending = &RiskError{Kind: ErrNeedVerify, Where: where, Signal: "ret:" + strings.Join(ret, ",")}
+			}
 		case xianyu.RetDenied:
 			return &RiskError{Kind: ErrDenied, Where: where, Signal: "ret:" + strings.Join(ret, ",")}
 		case xianyu.RetSessionExpired:
-			return &RiskError{Kind: ErrLoginExpired, Where: where, Signal: "ret:" + strings.Join(ret, ",")}
+			if resp.BodyOrder == 0 || resp.BodyOrder > r.handledRisks[resp.Seq].body {
+				pending = &RiskError{Kind: ErrLoginExpired, Where: where, Signal: "ret:" + strings.Join(ret, ",")}
+			}
 		}
 	}
-	return nil
+	return pending
 }
 
 // check 做一次完整的风控检查：先查接口，再查页面。
@@ -154,8 +163,8 @@ func (r *Runner) check(ctx context.Context, where string) error {
 }
 
 // waitAPI 等 mark 之后的第一条有效接口响应：令牌过期的那条跳过、继续等；风控立即返回；业务失败算这一步失败。
-func (r *Runner) waitAPI(ctx context.Context, mark uint64, m browser.Match, where string, timeoutSec int) (*browser.Response, error) {
-	return r.waitAPIResponse(ctx, mark, m, where, seconds(timeoutSec), 0)
+func (r *Runner) waitAPI(ctx context.Context, mark uint64, m browser.Match, where string, timeout time.Duration) (*browser.Response, error) {
+	return r.waitAPIResponse(ctx, mark, m, where, timeout, 0)
 }
 
 func (r *Runner) waitAPIResponse(ctx context.Context, mark uint64, m browser.Match, where string, timeout, quiet time.Duration) (*browser.Response, error) {

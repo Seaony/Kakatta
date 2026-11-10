@@ -38,15 +38,15 @@ func (s Site) itemURL(webURL string) (string, error) {
 
 // 要读的接口（XIANYU.md 2.1 节）。
 func (s Site) searchAPI() browser.Match {
-	return browser.Match{URL: s.APIHost + "/h5/mtop.taobao.idlemtopsearch.pc.search/1.0/", Method: "POST"}
+	return browser.Match{URL: s.APIHost + rules.API.Search, Method: "POST"}
 }
 
 func (s Site) detailAPI() browser.Match {
-	return browser.Match{URL: s.APIHost + "/h5/mtop.taobao.idle.pc.detail"}
+	return browser.Match{URL: s.APIHost + rules.API.Detail}
 }
 
 // mtop 匹配所有闲鱼接口，用来做风控检查。
-func (s Site) mtop() browser.Match { return browser.Match{URL: "/h5/mtop."} }
+func (s Site) mtop() browser.Match { return browser.Match{URL: rules.API.Mtop} }
 
 // Pace 是一次运行里各种等待的区间，都来自配置项（CRAWL-POLICY 第六节）。
 type Pace struct {
@@ -78,7 +78,8 @@ type Runner struct {
 	Budget Budget
 	Log    Logger
 
-	since uint64 // 风控检查从这里开始查，见 checkResponses
+	since        uint64 // 风控检查从这里开始查，见 checkResponses
+	handledRisks map[uint64]handledRisk
 
 	// SearchInput 是首页搜索框的选择器；为空时自动找（XIANYU.md 3.6 节：还没用真实页面确认）。
 	SearchInput string
@@ -145,5 +146,3 @@ func (r *Runner) watch(ctx context.Context, where string, wait func(context.Cont
 		}
 	}
 }
-
-func seconds(n int) time.Duration { return time.Duration(n) * time.Second }

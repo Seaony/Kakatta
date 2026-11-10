@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="viewer.css">
+<title>浏览器远程画面 · Kakatta</title>
+</head>
+<body>
+<header>
+    <div><strong>浏览器远程画面</strong><span id="status" role="status">正在连接</span></div>
+    <nav aria-label="画面操作">
+        <button id="actual" disabled>实际大小</button>
+        <button id="fit" disabled>适应窗口</button>
+        <button id="pan" aria-pressed="false" disabled>移动画面</button>
+        <button id="text-toggle" aria-expanded="false" aria-controls="text-entry" disabled>输入文字</button>
+    </nav>
+</header>
+<p id="help">请自己点击右上角的登录并扫码。遇到验证时，由你在这个画面里完成。</p>
+<section id="text-entry" hidden aria-label="向远程浏览器输入文字">
+    <label for="text-input">要发送的文字</label>
+    <p id="text-help">先点远程页面的输入框，再在这里输入并点击“发送文字”。退格、回车直接发送到远程页面。</p>
+    <textarea id="text-input" rows="2" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="text" aria-describedby="text-help"></textarea>
+    <div class="text-actions"><button id="text-send" disabled>发送文字</button><button id="text-backspace">退格</button><button id="text-enter">回车</button><button id="text-close">清空并关闭</button><span id="text-status" role="status"></span></div>
+</section>
+<div id="screen" aria-label="远程浏览器画面"></div>
+<script type="module" src="viewer.js"></script>
+</body>
+</html>

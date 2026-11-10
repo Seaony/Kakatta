@@ -33,7 +33,7 @@ document.querySelector('input[placeholder="搜索闲鱼"]').addEventListener('ke
 const fakeSearch = `<!doctype html><meta charset="utf-8"><title>搜索</title>
 <div><span id="pub" style="padding:8px">新发布</span>
 <div id="menu" style="display:none"><div style="padding:6px">最新</div><div style="padding:6px">1天内</div><div style="padding:6px">7天内</div></div>
-<span style="padding:8px">个人闲置</span></div>
+<span id="personal" style="padding:8px">个人闲置</span>FILTERMARKUP</div>
 <div class="closeIconBg--a1b2" style="width:30px;height:30px;position:fixed;right:10px;top:10px">×</div>
 <div class="baxia-dialog-mask" style="width:200px;height:200px;MASKSTYLE">验证</div>
 <div id="list">商品列表</div>
@@ -69,6 +69,9 @@ load(1);
 
 // Xianyu 是一个本地的假闲鱼网站。
 type Xianyu struct {
+	loginHold             chan struct{}
+	loginRelease          sync.Once
+	filters               filterState
 	srv                   *httptest.Server
 	mu                    sync.Mutex
 	maskOnSearch          bool   // 搜索结果页显示验证遮罩
@@ -84,7 +87,7 @@ type Xianyu struct {
 
 // Start 在本机随机端口启动假闲鱼，用完调用 Close。
 func Start() *Xianyu {
-	f := &Xianyu{}
+	f := &Xianyu{loginHold: make(chan struct{})}
 	mux := http.NewServeMux()
 	page := func(source string) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
@@ -99,6 +102,14 @@ func Start() *Xianyu {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'")
 			out := strings.ReplaceAll(source, "MASKSTYLE", mask)
+			if strings.Contains(out, "FILTERMARKUP") {
+				f.filters.Lock()
+				behavior, _ := json.Marshal(f.filters.behavior)
+				emptyDistrict := f.filters.emptyDistrict
+				f.filters.Unlock()
+				out = strings.ReplaceAll(out, "FILTERMARKUP", filterMarkup)
+				out += strings.ReplaceAll(strings.ReplaceAll(filterScript, "FILTERBEHAVIOR", string(behavior)), "EMPTYDISTRICT", fmt.Sprint(emptyDistrict))
+			}
 			out = strings.ReplaceAll(out, "PREFILL", html.EscapeString(prefill))
 			out = strings.ReplaceAll(out, "STAYRISK", fmt.Sprint(stayRisk))
 			out = strings.Replace(out, "<script>", "<script>const API = '"+f.srv.URL+"';", 1)
@@ -136,12 +147,98 @@ func Start() *Xianyu {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{"ret": []string{"RGV587_ERROR::SM::哎哟喂,被挤爆啦"}, "data": map[string]any{}})
 	})
+	mux.HandleFunc("/h5/mtop.fake.redirect/1.0/", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/fixture/punish?action=deny&"+r.URL.RawQuery, http.StatusFound)
+	})
+	mux.HandleFunc("/fixture/punish", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.Contains(r.URL.Query().Get("state"), "header") {
+			w.Header().Set("bxpunish", "1")
+			w.WriteHeader(http.StatusOK)
+			w.(http.Flusher).Flush()
+		}
+		if r.URL.Query().Get("hold") == "1" {
+			select {
+			case <-f.loginHold:
+			case <-r.Context().Done():
+				return
+			}
+		}
+		data := map[string]any{}
+		if strings.Contains(r.URL.Query().Get("state"), "denied") {
+			data["url"] = f.srv.URL + "/punish?action=deny"
+		}
+		json.NewEncoder(w).Encode(map[string]any{"ret": []string{"SUCCESS::调用成功"}, "data": data})
+	})
+	mux.HandleFunc("/blocked-mask", page(`<!doctype html><meta charset="utf-8"><div class="baxia-dialog-mask" style="width:200px;height:200px">验证</div><div>非法访问</div>`))
+	mux.HandleFunc("/h5/mtop.fake.login/1.0/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Query().Get("punish_header") == "1" {
+			w.Header().Set("bxpunish", "1")
+			w.WriteHeader(http.StatusOK)
+			w.(http.Flusher).Flush()
+		}
+		if r.URL.Query().Get("hold") == "1" {
+			select {
+			case <-f.loginHold:
+			case <-r.Context().Done():
+				return
+			}
+		}
+		if r.URL.Query().Get("delayed") == "1" {
+			select {
+			case <-time.After(300 * time.Millisecond):
+			case <-r.Context().Done():
+				return
+			}
+		}
+		ret := "SUCCESS::调用成功"
+		data := map[string]any{}
+		switch r.URL.Query().Get("state") {
+		case "verify":
+			ret = "RGV587::需要验证"
+		case "expired":
+			ret = "FAIL_SYS_SESSION_EXPIRED::登录失效"
+		case "denied":
+			data["url"] = f.srv.URL + "/punish?action=deny"
+		}
+		json.NewEncoder(w).Encode(map[string]any{"ret": []string{ret}, "data": data})
+	})
+	mux.HandleFunc("/login-box", func(w http.ResponseWriter, r *http.Request) {
+		http.SetCookie(w, &http.Cookie{Name: "unb", Value: "1", Path: "/", Expires: time.Now().Add(30 * 24 * time.Hour)})
+		page(`<!doctype html><meta charset="utf-8"><iframe id="alibaba-login-box" style="width:220px;height:120px;border:0"></iframe><button id="finish-login" style="width:120px;height:40px">完成扫码</button><script>document.getElementById('finish-login').addEventListener('click', () => document.getElementById('alibaba-login-box').remove());</script>`)(w, r)
+	})
 	mux.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
 		// 带过期时间，浏览器重启后还在，和真实的登录状态一样。
 		http.SetCookie(w, &http.Cookie{Name: "unb", Value: "1", Path: "/", Expires: time.Now().Add(30 * 24 * time.Hour)})
 		fmt.Fprint(w, "ok")
 	})
+	mux.HandleFunc("/fixture/action", func(w http.ResponseWriter, r *http.Request) {
+		f.filters.Lock()
+		f.filters.actions = append(f.filters.actions, r.URL.RawQuery)
+		f.filters.Unlock()
+		w.WriteHeader(http.StatusNoContent)
+	})
 	mux.HandleFunc("/h5/mtop.taobao.idlemtopsearch.pc.search/1.0/", func(w http.ResponseWriter, r *http.Request) {
+		f.filters.Lock()
+		behavior := f.filters.behavior[r.URL.Query().Get("step")]
+		f.filters.Unlock()
+		if behavior.NoResponse {
+			<-r.Context().Done()
+			return
+		}
+		if behavior.Delay > 0 {
+			select {
+			case <-time.After(behavior.Delay):
+			case <-r.Context().Done():
+				return
+			}
+		}
+		if behavior.Ret != "" {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{"ret": []string{behavior.Ret}, "data": map[string]any{}})
+			return
+		}
 		body, _ := io.ReadAll(r.Body)
 		f.mu.Lock()
 		f.searchBodies = append(f.searchBodies, string(body))
@@ -186,7 +283,10 @@ func Start() *Xianyu {
 }
 
 // Close 关闭假闲鱼。
-func (f *Xianyu) Close() { f.srv.Close() }
+func (f *Xianyu) Close() { f.ReleaseLoginResponses(); f.srv.Close() }
+
+// ReleaseLoginResponses 让测试控制在途登录响应何时返回。
+func (f *Xianyu) ReleaseLoginResponses() { f.loginRelease.Do(func() { close(f.loginHold) }) }
 
 // Home 是首页网址，以 / 结尾。
 func (f *Xianyu) Home() string { return f.srv.URL + "/" }

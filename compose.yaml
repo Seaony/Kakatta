@@ -1,0 +1,16 @@
+services:
+  kakatta:
+    build: .
+    image: kakatta:local
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      PUID: "${PUID:-1000}"
+      PGID: "${PGID:-1000}"
+      TZ: "${TZ:-Asia/Shanghai}"
+    volumes:
+      - ./data:/data
+    security_opt:
+      - seccomp=unconfined
+    stop_grace_period: 30s
+    command: ["--data", "/data", "--listen", ":8080", "--account", "1", "--keyword", "相机", "--details", "3"]

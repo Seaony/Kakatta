@@ -196,6 +196,7 @@ func TestLoginSuccessClearsHandledRiskBoundary(t *testing.T) {
 	if _, err := r.OpenDetail(ctx, xianyu.WebLink("fleamarket://item?id=101")); !errors.Is(err, ErrNeedVerify) {
 		t.Fatalf("应先出现验证：%v", err)
 	}
+	r.BeginVerification()
 	// 本地页面模拟用户完成验证和扫码后的浏览器状态。
 	if err := r.S.Navigate(f.LoginURL(), 15*time.Second); err != nil {
 		t.Fatal(err)

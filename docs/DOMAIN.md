@@ -1118,6 +1118,7 @@ next_run_at = 结束时间 + interval_minutes × (1 + 随机[0, interval_jitter_
 
 1. 触发验证时（账号转为 `needs_verification`）先算等级：账号还在冷却期内（`cooling`），或者距 `last_cooldown_end_at` 不到 `verify_cooldown_reset_hours` 小时，`verify_level` 加 1；否则（或第一次）`verify_level = 1`。还在冷却期内就被新的验证打断时，同时把 `last_cooldown_end_at` 写为现在。
 2. 用户在远程画面里完成验证，点「我已完成验证」。服务端在**同一个浏览器**里重新检查一次风控信号，不另外打开页面。仍有验证就保持 `needs_verification`；发现登录失效就转为 `expired`。
+   - 当前页面已无验证遮罩且没跳登录页时，只确认最后一次成功接口之前、已经收到的验证信号；之后还没恢复的验证继续拦住，直接拒绝和环境异常始终优先。不能跳过在途请求。只剩没有后续成功响应的旧验证时，提示「页面可能还没刷新，请在画面里刷新一下页面，再点我已完成验证」，程序自己不刷新、不导航（`DECISIONS.md` 第 67 条）。
 3. 检查通过后算冷却时长 = `min(verify_cooldown_base_minutes × 2^(verify_level − 1), verify_cooldown_max_minutes)`。默认就是 2 小时、4 小时、8 小时……最长 24 小时。
 4. `state = cooling`，`cooldown_until = 现在 + 冷却时长`，`cooldown_manual_used = 0`，清空 `verify_url`，关闭浏览器。冷却结束时写 `last_cooldown_end_at`。
 5. 冷却期内用户手动运行一次后，`cooldown_manual_used = 1`，重启也不能重新获得这次机会。

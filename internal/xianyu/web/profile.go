@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/Seaony/Kakatta/internal/browser"
 	"github.com/Seaony/Kakatta/internal/quota"
@@ -12,7 +11,7 @@ import (
 )
 
 func (s Site) userHeadAPI() browser.Match {
-	return browser.Match{URL: "mtop.idle.web.user.page.head"}
+	return browser.Match{URL: rules.API.UserHead}
 }
 
 // OwnProfile 打开自己的主页，读卖家头部接口拿昵称和头像（XIANYU.md 8.4 节）。算一次详情类访问。
@@ -26,13 +25,13 @@ func (r *Runner) OwnProfile(ctx context.Context) (xianyu.SellerHead, error) {
 		return h, err
 	}
 	mark := r.S.Capture.Mark()
-	if err := r.S.Navigate(strings.TrimSuffix(r.Site.Home, "/")+"/personal", 20*time.Second); err != nil {
+	if err := r.S.Navigate(strings.TrimSuffix(r.Site.Home, "/")+"/personal", rules.timeout("profile")); err != nil {
 		if cerr := r.check(ctx, "打开自己的主页"); cerr != nil {
 			return h, cerr
 		}
 		return h, fmt.Errorf("打开自己的主页：%w", err)
 	}
-	resp, err := r.waitAPI(ctx, mark, r.Site.userHeadAPI(), "自己的主页", 15)
+	resp, err := r.waitAPI(ctx, mark, r.Site.userHeadAPI(), "自己的主页", rules.timeout("profile_response"))
 	if err != nil {
 		return h, err
 	}

@@ -31,6 +31,7 @@ type Options struct {
 	CacheMB    int
 	Width      int
 	Height     int
+	WebGL      string // 仅供实验选择实际渲染后端
 }
 
 type Session struct {
@@ -78,6 +79,11 @@ func Start(parent context.Context, o Options) (*Session, error) {
 	if err := normalizeOptions(&o); err != nil {
 		return nil, err
 	}
+	glOptions, glEnv, err := webGLOptions(o.WebGL)
+	if err != nil {
+		return nil, err
+	}
+	o.Env = append(slices.Clone(o.Env), glEnv...)
 	if err := prepareProfile(o.ProfileDir); err != nil {
 		return nil, err
 	}
@@ -103,7 +109,7 @@ func Start(parent context.Context, o Options) (*Session, error) {
 			return nil, fmt.Errorf("创建浏览器运行目录：%w", err)
 		}
 	}
-	opts := slices.Clone(keptFlags)
+	opts := append(slices.Clone(keptFlags), glOptions...)
 	s := &Session{}
 	opts = append(opts,
 		chromedp.ExecPath(o.ExecPath),

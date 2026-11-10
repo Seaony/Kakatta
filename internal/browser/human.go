@@ -26,6 +26,7 @@ var ErrNotFound = errors.New("页面上找不到元素")
 // 点击坐标取元素中心附近的随机点，鼠标从上一个位置分几步移过去，而不是瞬间出现在目标上。
 type Human struct {
 	s        *Session
+	queries  cdp.Session
 	p        *pacer.Pacer
 	keyDelay pacer.Range // 每个字之间的间隔
 	x, y     float64     // 鼠标当前位置
@@ -33,7 +34,7 @@ type Human struct {
 
 // NewHuman 创建操作者。keyDelay 是逐字输入时每个字之间的间隔。
 func NewHuman(s *Session, p *pacer.Pacer, keyDelay pacer.Range) *Human {
-	return &Human{s: s, p: p, keyDelay: keyDelay, x: 200, y: 200}
+	return &Human{s: s, queries: chromedp.FromContext(s.Context()).Target, p: p, keyDelay: keyDelay, x: 200, y: 200}
 }
 
 // Find 等到至少一个匹配的节点，查询只走 DOM 命令。
@@ -59,11 +60,22 @@ func (h *Human) Find(ctx context.Context, sel string, timeout time.Duration) ([]
 
 // FindNow 每次重新取文档根节点，不使用上次页面的节点编号。
 func (h *Human) FindNow(ctx context.Context, sel string) ([]*chromedp.Node, error) {
+	tctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	return retryDOMRead(func() ([]*chromedp.Node, error) { return h.findNow(tctx, sel) })
+}
+
+var errDOMChanged = errors.New("查询期间页面内容已变化")
+
+// 重取文档会清掉节点编号和搜索会话，只对这两种本地状态失效重新查询。
+func retryDOMRead(query func() ([]*chromedp.Node, error)) ([]*chromedp.Node, error) {
 	var nodes []*chromedp.Node
 	var err error
 	for range 3 {
-		nodes, err = h.findNow(ctx, sel)
-		if err == nil || !strings.Contains(err.Error(), "Could not find node with given id") {
+		nodes, err = query()
+		if err == nil || !errors.Is(err, errDOMChanged) &&
+			!strings.Contains(err.Error(), "Could not find node with given id") &&
+			!strings.Contains(err.Error(), "No search session with given id found") {
 			return nodes, err
 		}
 	}
@@ -76,28 +88,28 @@ func (h *Human) findNow(ctx context.Context, sel string) ([]*chromedp.Node, erro
 	stop := context.AfterFunc(ctx, cancel)
 	defer stop()
 	depth := int64(-1)
-	root, err := chromedp.Call(tctx, dom.GetDocument, dom.GetDocumentParams{Depth: &depth})
+	root, err := cdp.Call(tctx, h.queries, dom.GetDocument, dom.GetDocumentParams{Depth: &depth})
 	if err != nil {
 		return nil, err
 	}
 	snapshot := nodeSnapshot(root.Root)
 	var ids []cdp.NodeID
 	if strings.HasPrefix(sel, "//") {
-		res, err := chromedp.Call(tctx, dom.PerformSearch, dom.PerformSearchParams{Query: sel})
+		res, err := cdp.Call(tctx, h.queries, dom.PerformSearch, dom.PerformSearchParams{Query: sel})
 		if err != nil {
 			return nil, err
 		}
-		defer chromedp.Call(tctx, dom.DiscardSearchResults, dom.DiscardSearchResultsParams{SearchID: res.SearchID})
+		defer cdp.Call(tctx, h.queries, dom.DiscardSearchResults, dom.DiscardSearchResultsParams{SearchID: res.SearchID})
 		if res.ResultCount == 0 {
 			return nil, nil
 		}
-		hits, err := chromedp.Call(tctx, dom.GetSearchResults, dom.GetSearchResultsParams{SearchID: res.SearchID, FromIndex: 0, ToIndex: res.ResultCount})
+		hits, err := cdp.Call(tctx, h.queries, dom.GetSearchResults, dom.GetSearchResultsParams{SearchID: res.SearchID, FromIndex: 0, ToIndex: res.ResultCount})
 		if err != nil {
 			return nil, err
 		}
 		ids = hits.NodeIDs
 	} else {
-		res, err := chromedp.Call(tctx, dom.QuerySelectorAll, dom.QuerySelectorAllParams{NodeID: root.Root.NodeID, Selector: sel})
+		res, err := cdp.Call(tctx, h.queries, dom.QuerySelectorAll, dom.QuerySelectorAllParams{NodeID: root.Root.NodeID, Selector: sel})
 		if err != nil {
 			return nil, err
 		}
@@ -109,15 +121,14 @@ func (h *Human) findNow(ctx context.Context, sel string) ([]*chromedp.Node, erro
 		byBackend[n.BackendNodeID] = n
 	}
 	for _, id := range ids {
-		res, err := chromedp.Call(tctx, dom.DescribeNode, dom.DescribeNodeParams{NodeID: id})
+		res, err := cdp.Call(tctx, h.queries, dom.DescribeNode, dom.DescribeNodeParams{NodeID: id})
 		if err != nil {
 			return nil, err
 		}
 		if n := byBackend[res.Node.BackendNodeID]; n != nil {
 			out = append(out, n)
 		} else {
-			res.Node.NodeID = id
-			out = append(out, &chromedp.Node{Node: res.Node, Parent: snapshot[res.Node.ParentID]})
+			return nil, errDOMChanged
 		}
 	}
 	return out, nil
@@ -169,26 +180,32 @@ func (h *Human) currentNodeID(n *chromedp.Node) (cdp.NodeID, error) {
 
 // SearchText 只用 DOM 搜索可见文字，不把脚本或样式里的内容当作页面提示。
 func (h *Human) SearchText(ctx context.Context, text string) ([]*chromedp.Node, error) {
+	tctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	return retryDOMRead(func() ([]*chromedp.Node, error) { return h.searchText(tctx, text) })
+}
+
+func (h *Human) searchText(ctx context.Context, text string) ([]*chromedp.Node, error) {
 	tctx, cancel := context.WithTimeout(h.s.ctx, 5*time.Second)
 	defer cancel()
 	stop := context.AfterFunc(ctx, cancel)
 	defer stop()
 	depth := int64(-1)
-	root, err := chromedp.Call(tctx, dom.GetDocument, dom.GetDocumentParams{Depth: &depth})
+	root, err := cdp.Call(tctx, h.queries, dom.GetDocument, dom.GetDocumentParams{Depth: &depth})
 	if err != nil {
 		return nil, err
 	}
 	nodes := nodeSnapshot(root.Root)
 	search := func(query string) ([]cdp.NodeID, error) {
-		found, err := chromedp.Call(tctx, dom.PerformSearch, dom.PerformSearchParams{Query: query})
+		found, err := cdp.Call(tctx, h.queries, dom.PerformSearch, dom.PerformSearchParams{Query: query})
 		if err != nil {
 			return nil, err
 		}
-		defer chromedp.Call(tctx, dom.DiscardSearchResults, dom.DiscardSearchResultsParams{SearchID: found.SearchID})
+		defer cdp.Call(tctx, h.queries, dom.DiscardSearchResults, dom.DiscardSearchResultsParams{SearchID: found.SearchID})
 		if found.ResultCount == 0 {
 			return nil, nil
 		}
-		hits, err := chromedp.Call(tctx, dom.GetSearchResults, dom.GetSearchResultsParams{SearchID: found.SearchID, ToIndex: found.ResultCount})
+		hits, err := cdp.Call(tctx, h.queries, dom.GetSearchResults, dom.GetSearchResultsParams{SearchID: found.SearchID, ToIndex: found.ResultCount})
 		return hits.NodeIDs, err
 	}
 	ids, err := search(text)
@@ -236,12 +253,15 @@ func (h *Human) SearchText(ctx context.Context, text string) ([]*chromedp.Node, 
 		byBackend[n.BackendNodeID] = n
 	}
 	for _, id := range ids {
-		described, err := chromedp.Call(tctx, dom.DescribeNode, dom.DescribeNodeParams{NodeID: id})
+		described, err := cdp.Call(tctx, h.queries, dom.DescribeNode, dom.DescribeNodeParams{NodeID: id})
 		if err != nil {
 			return nil, err
 		}
 		n := byBackend[described.Node.BackendNodeID]
-		if n != nil && n.NodeType == 3 {
+		if n == nil {
+			return nil, errDOMChanged
+		}
+		if n.NodeType == 3 {
 			n = n.Parent
 		}
 		if n == nil || seen[n.NodeID] || n.NodeType != 1 {

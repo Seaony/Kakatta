@@ -29,13 +29,13 @@ func (r *Runner) OpenDetail(ctx context.Context, webURL string) (xianyu.Detail, 
 	}
 	mark := r.S.Capture.Mark()
 	start := time.Now()
-	if err := r.S.Navigate(target, 25*time.Second); err != nil {
+	if err := r.S.Navigate(target, rules.timeout("detail")); err != nil {
 		if cerr := r.check(ctx, "打开详情页"); cerr != nil {
 			return d, cerr
 		}
 		return d, fmt.Errorf("打开详情页：%w", err)
 	}
-	resp, err := r.waitAPI(ctx, mark, r.Site.detailAPI(), "详情页", 25)
+	resp, err := r.waitAPI(ctx, mark, r.Site.detailAPI(), "详情页", rules.timeout("detail"))
 	if err != nil {
 		return d, err
 	}

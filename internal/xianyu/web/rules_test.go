@@ -1,6 +1,7 @@
 package web
 
 import (
+	"bytes"
 	"errors"
 	"testing"
 )
@@ -35,5 +36,21 @@ func TestKeywordComparisonNormalizesWidthAndWhitespace(t *testing.T) {
 	}
 	if normalizeKeyword("相机一") == normalizeKeyword("相机二") {
 		t.Fatal("不同关键词不能被规整成相同的词")
+	}
+}
+
+func TestBundledRulesAreVersionedData(t *testing.T) {
+	if _, err := decodeRules(bundledRules); err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range [][]byte{
+		bytes.Replace(bundledRules, []byte(`"version": 1`), []byte(`"version": 2`), 1),
+		bytes.Replace(bundledRules, []byte(`"home": 30000`), []byte(`"home": 0`), 1),
+		append(append([]byte(nil), bundledRules...), []byte(`{}`)...),
+		bytes.Replace(bundledRules, []byte(`{`), []byte(`{"script":"throw 1",`), 1),
+	} {
+		if _, err := decodeRules(bad); err == nil {
+			t.Fatal("无效版本、等待时间、额外内容或脚本字段必须拒绝")
+		}
 	}
 }

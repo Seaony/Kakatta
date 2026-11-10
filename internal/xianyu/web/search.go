@@ -24,7 +24,7 @@ func (r *Runner) OpenHome(ctx context.Context) error {
 		return err
 	}
 	start := time.Now()
-	if err := r.S.Navigate(r.Site.Home, 30*time.Second); err != nil {
+	if err := r.S.Navigate(r.Site.Home, rules.timeout("home")); err != nil {
 		if cerr := r.check(ctx, "打开首页"); cerr != nil {
 			return cerr
 		}
@@ -59,7 +59,7 @@ type InputFact struct {
 
 // InputFacts 列出页面顶部可见的输入框，给实验记录用（XIANYU.md 第十一节「首页搜索框的选择器」）。
 func (r *Runner) InputFacts(ctx context.Context) []InputFact {
-	nodes, err := r.H.FindNow(ctx, "input")
+	nodes, err := r.H.FindNow(ctx, rules.Selectors.SearchCandidates)
 	if err != nil {
 		return nil
 	}
@@ -89,10 +89,10 @@ func (r *Runner) InputFacts(ctx context.Context) []InputFact {
 // findSearchInput 找首页搜索框：有指定的选择器就用它；没有就取页面顶部最宽的可见输入框（搜索框通常是顶部最宽的那个）。
 func (r *Runner) findSearchInput(ctx context.Context) (*chromedp.Node, string, error) {
 	if r.SearchInput != "" {
-		n, err := r.H.FirstVisible(ctx, r.SearchInput, 10*time.Second)
+		n, err := r.H.FirstVisible(ctx, r.SearchInput, rules.timeout("search_input"))
 		return n, r.SearchInput, err
 	}
-	nodes, err := r.H.Find(ctx, "input", 10*time.Second)
+	nodes, err := r.H.Find(ctx, rules.Selectors.SearchCandidates, rules.timeout("search_input"))
 	if err != nil {
 		return nil, "", err
 	}
@@ -176,7 +176,7 @@ func (r *Runner) Search(ctx context.Context, keyword string) (*browser.Response,
 	var landed string
 	err = r.watch(ctx, "等待搜索结果页", func(waitCtx context.Context) error {
 		var err error
-		landed, err = r.S.WaitNavigation(waitCtx, navMark, func(u string) bool { return strings.Contains(u, "/search") }, 60*time.Second)
+		landed, err = r.S.WaitNavigation(waitCtx, navMark, func(u string) bool { return strings.Contains(u, "/search") }, rules.timeout("search_navigation"))
 		return err
 	})
 	if err != nil {
@@ -185,7 +185,7 @@ func (r *Runner) Search(ctx context.Context, keyword string) (*browser.Response,
 		}
 		return nil, fmt.Errorf("回车后没有进入搜索结果页（原网址 %s）：%w", before, err)
 	}
-	resp, err := r.waitAPI(ctx, mark, r.Site.searchAPI(), "搜索结果页", 30)
+	resp, err := r.waitAPI(ctx, mark, r.Site.searchAPI(), "搜索结果页", rules.timeout("search_response"))
 	if err != nil {
 		return nil, err
 	}
@@ -198,7 +198,7 @@ func (r *Runner) Search(ctx context.Context, keyword string) (*browser.Response,
 		return nil, fmt.Errorf("结果页的关键词是 %q，和要搜的 %q 不一致", q, keyword)
 	}
 	r.Log("进入搜索结果页", map[string]any{"网址": landed})
-	if _, err := r.H.FirstVisible(ctx, "//*[normalize-space(.)='新发布' and not(.//*[normalize-space(.)='新发布'])]", 15*time.Second); err != nil {
+	if _, err := r.H.FirstVisible(ctx, rules.Selectors.SearchReady, rules.timeout("search_ready")); err != nil {
 		if cerr := r.check(ctx, "等筛选栏"); cerr != nil {
 			return nil, cerr
 		}
@@ -216,7 +216,7 @@ func normalizeKeyword(s string) string {
 
 // closeAd 关掉结果页的广告弹窗，找不到就跳过；一般不产生接口请求，不计额度（XIANYU.md 5.4 节）。
 func (r *Runner) closeAd(ctx context.Context) error {
-	n, err := r.H.FirstVisible(ctx, "div[class*='closeIconBg']", 3*time.Second)
+	n, err := r.H.FirstVisible(ctx, rules.Selectors.CloseAd, rules.timeout("advertisement"))
 	if err != nil {
 		if errors.Is(err, browser.ErrNotFound) {
 			return r.check(ctx, "查找广告后")
@@ -240,10 +240,10 @@ func (r *Runner) SelectPublished(ctx context.Context, withinDays int) (*browser.
 	default:
 		return nil, fmt.Errorf("不支持的发布时间：%d 天内", withinDays)
 	}
-	const option = "最新"
+	option := rules.Text.PublishLatest
 	resp, err := r.filterStep(ctx, "发布时间筛选", true, func() error {
 		// 打开菜单本身不产生请求，点选项才会。
-		if err := r.clickText(ctx, "新发布"); err != nil {
+		if err := r.clickText(ctx, rules.Text.PublishMenu); err != nil {
 			return fmt.Errorf("打开发布时间菜单：%w", err)
 		}
 		if err := r.wait(ctx, "打开菜单后", r.Pace.Action); err != nil {
@@ -262,7 +262,7 @@ func (r *Runner) SelectPublished(ctx context.Context, withinDays int) (*browser.
 //   - 根本没发出请求：可以重复做的步骤等一下重做一次，开关类步骤不重做；
 //   - 最后取这次操作之后的最后一条搜索响应，因为一次筛选可能连发几个请求。
 func (r *Runner) filterStep(ctx context.Context, name string, repeatable bool, act func() error) (*browser.Response, error) {
-	return r.searchStep(ctx, name, repeatable, 10*time.Second, act)
+	return r.searchStep(ctx, name, repeatable, rules.timeout("filter_extra"), act)
 }
 
 func (r *Runner) searchStep(ctx context.Context, name string, repeatable bool, extraWait time.Duration, act func() error) (*browser.Response, error) {
@@ -277,11 +277,11 @@ func (r *Runner) searchStep(ctx context.Context, name string, repeatable bool, e
 	if err := act(); err != nil {
 		return nil, err
 	}
-	resp, err := r.waitAPIResponse(ctx, mark, api, name, 20*time.Second, 1500*time.Millisecond)
+	resp, err := r.waitAPIResponse(ctx, mark, api, name, rules.timeout("filter_response"), rules.timeout("response_quiet"))
 	if errors.Is(err, browser.ErrResponseTimeout) {
 		switch {
 		case r.S.Capture.SentAfter(mark, api):
-			resp, err = r.waitAPIResponse(ctx, mark, api, name+"（继续等）", extraWait, 1500*time.Millisecond)
+			resp, err = r.waitAPIResponse(ctx, mark, api, name+"（继续等）", extraWait, rules.timeout("response_quiet"))
 		case repeatable:
 			r.Log(name+"没有反应，重做一次", nil)
 			if werr := r.wait(ctx, "重做前", r.Pace.Action); werr != nil {
@@ -294,7 +294,7 @@ func (r *Runner) searchStep(ctx context.Context, name string, repeatable bool, e
 			if aerr := act(); aerr != nil {
 				return nil, aerr
 			}
-			resp, err = r.waitAPIResponse(ctx, mark, api, name+"重试", 20*time.Second, 1500*time.Millisecond)
+			resp, err = r.waitAPIResponse(ctx, mark, api, name+"重试", rules.timeout("filter_response"), rules.timeout("response_quiet"))
 		}
 	}
 	if err != nil {
@@ -309,7 +309,8 @@ func (r *Runner) searchStep(ctx context.Context, name string, repeatable bool, e
 // clickText 点页面上文字完全等于 text 的最深一层可见元素，取文档顺序里的第一个（XIANYU.md 3.1 节）。
 func (r *Runner) clickText(ctx context.Context, text string) error {
 	sel := "//*[normalize-space(.)='" + text + "' and not(.//*[normalize-space(.)='" + text + "'])]"
-	n, err := r.H.FirstVisible(ctx, sel, 10*time.Second)
+	n, err := r.H.FirstVisible(ctx, sel, rules.timeout("element"))
+	r.Log("查找页面元素", map[string]any{"文字": text, "找到": err == nil, "规则版本": rules.Version})
 	if err != nil {
 		return err
 	}
@@ -346,15 +347,12 @@ func factSelector(f InputFact) string {
 	return "input"
 }
 
-// nextPageButton 是可点的「下一页」按钮（search_pagination.py:9-13）。
-const nextPageButton = "button[class*='search-pagination-arrow-container']:has([class*='search-pagination-arrow-right']):not([disabled])"
-
 // NextPage 翻到下一页，返回这一页的搜索响应（XIANYU.md 5.6 节）。没有下一页按钮时 ok 为 false、err 为 nil。
 func (r *Runner) NextPage(ctx context.Context) (resp *browser.Response, ok bool, err error) {
 	if err := r.check(ctx, "翻页前"); err != nil {
 		return nil, false, err
 	}
-	nodes, err := r.H.FindNow(ctx, nextPageButton)
+	nodes, err := r.H.FindNow(ctx, rules.Selectors.NextPage)
 	if err != nil {
 		return nil, false, err
 	}
@@ -364,8 +362,8 @@ func (r *Runner) NextPage(ctx context.Context) (resp *browser.Response, ok bool,
 	if err := r.wait(ctx, "翻页前", r.Pace.PageWait); err != nil {
 		return nil, false, err
 	}
-	resp, err = r.searchStep(ctx, "翻页", true, 20*time.Second, func() error {
-		btn, err := r.H.FirstVisible(ctx, nextPageButton, 5*time.Second)
+	resp, err = r.searchStep(ctx, "翻页", true, rules.timeout("page_extra"), func() error {
+		btn, err := r.H.FirstVisible(ctx, rules.Selectors.NextPage, rules.timeout("page_button"))
 		if err != nil {
 			return fmt.Errorf("找下一页按钮：%w", err)
 		}

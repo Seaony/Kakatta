@@ -1,0 +1,3 @@
+# 第三方署名和许可证保留原样，只忽略上游已有的行尾空格。
+internal/remote/assets/novnc/AUTHORS whitespace=-blank-at-eol
+internal/remote/assets/novnc/LICENSE.MPL-2.0 whitespace=-blank-at-eol

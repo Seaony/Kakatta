@@ -17,16 +17,20 @@ import (
 
 // Response 是页面自己发出的请求及结果，返回给调用方的都是独立副本。
 type Response struct {
-	Seq          uint64
-	Method       string
-	URL          string
-	Status       int64
-	Headers      map[string]string
-	Body         []byte
-	Err          error
-	MainDocument bool
-	done         bool
-	updatedAt    time.Time
+	Seq           uint64
+	HeaderOrder   uint64 // 响应头到达顺序，用于判断人工确认后是否又收到风控信号；0表示还没收到
+	BodyOrder     uint64 // 正文或失败完成的到达顺序，不用请求顺序代替；0表示还没完成
+	Method        string
+	URL           string
+	RequestURL    string // 保留最初发出的地址，接口跳转到验证页后仍要检查它的响应
+	RequestMethod string // 和原始地址配对，不能拿跳转后的方法混用
+	Status        int64
+	Headers       map[string]string
+	Body          []byte
+	Err           error
+	MainDocument  bool
+	done          bool
+	updatedAt     time.Time
 }
 
 type Match struct {
@@ -35,7 +39,9 @@ type Match struct {
 }
 
 func (m Match) matches(r *Response) bool {
-	return strings.Contains(r.URL, m.URL) && (m.Method == "" || strings.EqualFold(r.Method, m.Method))
+	final := strings.Contains(r.URL, m.URL) && (m.Method == "" || strings.EqualFold(r.Method, m.Method))
+	original := strings.Contains(r.RequestURL, m.URL) && (m.Method == "" || strings.EqualFold(r.RequestMethod, m.Method))
+	return final || original
 }
 
 var (
@@ -44,8 +50,10 @@ var (
 )
 
 type requestStart struct {
-	seq  uint64
-	main bool
+	seq    uint64
+	main   bool
+	url    string
+	method string
 }
 
 const maxKept = 200
@@ -58,6 +66,7 @@ type Capture struct {
 	byID      map[network.RequestID]*Response
 	all       []*Response
 	seq       uint64
+	arrival   uint64
 	mainFrame cdp.FrameID
 	requests  map[network.RequestID]requestStart
 	err       error
@@ -138,7 +147,7 @@ func (c *Capture) sentRequest(id network.RequestID, req *network.Request, typ ne
 			return
 		}
 		c.seq++
-		start = requestStart{seq: c.seq, main: typ == network.ResourceTypeDocument && frame == c.mainFrame}
+		start = requestStart{seq: c.seq, main: typ == network.ResourceTypeDocument && frame == c.mainFrame, url: req.URL, method: req.Method}
 		c.requests[id] = start
 	}
 	// 跳转仍是同一次请求，不能把操作前发出的请求变成新请求。
@@ -155,7 +164,7 @@ func (c *Capture) sentRequest(id network.RequestID, req *network.Request, typ ne
 	if !watched {
 		return
 	}
-	r := &Response{Seq: start.seq, Method: req.Method, URL: req.URL, MainDocument: main, updatedAt: time.Now()}
+	r := &Response{Seq: start.seq, Method: req.Method, URL: req.URL, RequestURL: start.url, RequestMethod: start.method, MainDocument: main, updatedAt: time.Now()}
 	c.byID[id] = r
 	c.all = append(c.all, r)
 	slices.SortFunc(c.all, func(a, b *Response) int {
@@ -186,6 +195,8 @@ func (c *Capture) received(id network.RequestID, resp *network.Response) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if r := c.byID[id]; r != nil {
+		c.arrival++
+		r.HeaderOrder = c.arrival
 		r.URL, r.Status, r.Headers = resp.URL, resp.Status, lowerHeaders(resp.Headers)
 		if r.MainDocument {
 			// 主文档只检查响应头，收到处罚头时不必等正文。
@@ -217,6 +228,8 @@ func (c *Capture) finish(id network.RequestID, r *Response, body []byte, err err
 	if c.byID[id] != r {
 		return
 	}
+	c.arrival++
+	r.BodyOrder = c.arrival
 	r.Body, r.Err, r.done, r.updatedAt = slices.Clone(body), err, true, time.Now()
 	delete(c.byID, id)
 	delete(c.requests, id)

@@ -1,12 +1,15 @@
 package fake_test
 
 import (
+	"context"
+	"errors"
 	"image/jpeg"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Seaony/Kakatta/internal/xianyu"
 	"github.com/Seaony/Kakatta/internal/xianyu/fake"
@@ -43,6 +46,25 @@ func TestFixtureResourcesStayOnLocalServer(t *testing.T) {
 		if err != nil {
 			t.Fatalf("样例图片必须能解码：%v", err)
 		}
+	}
+}
+
+func TestUnansweredFilterRequestStopsWithClient(t *testing.T) {
+	f := fake.Start()
+	defer f.Close()
+	f.SetFilterBehavior("personal", fake.FilterBehavior{NoResponse: true})
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, f.Home()+"h5/mtop.taobao.idlemtopsearch.pc.search/1.0/?step=personal", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := http.DefaultClient.Do(request)
+	if response != nil {
+		response.Body.Close()
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("假接口应保持等待直到调用方取消：%v", err)
 	}
 }
 

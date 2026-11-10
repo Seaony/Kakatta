@@ -33,7 +33,7 @@ func TestProductionBrowserDoesNotInjectScripts(t *testing.T) {
 
 func uncheckedBrowserCalls(path string, source any) ([]string, error) {
 	allowed := map[string]bool{}
-	for _, name := range strings.Fields("NoFirstRun NoDefaultBrowserCheck Flag ExecPath UserDataDir WindowSize Env ModifyCmdFunc ProxyServer NewExecAllocator NewContext Listen Do Call CallBrowser Cancel Run") {
+	for _, name := range strings.Fields("NoFirstRun NoDefaultBrowserCheck Flag ExecPath UserDataDir WindowSize Env ModifyCmdFunc ProxyServer NewExecAllocator NewContext Listen Do Call CallBrowser Cancel Run FromContext") {
 		allowed[name] = true
 	}
 	f, err := parser.ParseFile(token.NewFileSet(), path, source, 0)
