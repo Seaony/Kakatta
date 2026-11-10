@@ -64,6 +64,9 @@ type Service struct {
 	stopParent          func() bool
 	maintenanceWarnings []locales.Message
 	insights            map[int64]*insightWork
+	prepareDone         chan struct{}
+	prepareErr          error
+	activationPending   bool
 }
 
 func (e *ServiceError) Error() string { return e.Reason.Code }
@@ -130,7 +133,10 @@ type preflightResult struct {
 }
 
 func (s *Service) emit(kind string, data any) error {
-	if s.publish == nil {
+	s.mu.Lock()
+	pending := s.activationPending
+	s.mu.Unlock()
+	if pending || s.publish == nil {
 		return nil
 	}
 	raw, err := json.Marshal(data)
@@ -158,6 +164,21 @@ func (s *Service) signalRuntimeLocked() {
 }
 
 func New(ctx context.Context, deps Dependencies) (*Service, error) {
+	s, err := NewStopped(ctx, deps)
+	if err != nil {
+		return nil, err
+	}
+	if err = s.Prepare(ctx); err == nil {
+		err = s.Start()
+	}
+	if err != nil {
+		return nil, errors.Join(err, s.Close())
+	}
+	return s, nil
+}
+
+// NewStopped 只构造内存；恢复流程换入隔离目录后才调用 Prepare。
+func NewStopped(ctx context.Context, deps Dependencies) (*Service, error) {
 	if deps.DB == nil || deps.Settings == nil || deps.Cipher == nil || strings.TrimSpace(deps.DataDir) == "" || missingRuntimeDependency(deps.Resources) || missingRuntimeDependency(deps.Models) || missingRuntimeDependency(deps.Notifier) || missingRuntimeDependency(deps.ImageCache) || deps.Publish == nil {
 		return nil, errors.New("业务服务依赖不完整")
 	}
@@ -168,10 +189,72 @@ func New(ctx context.Context, deps Dependencies) (*Service, error) {
 	s.ctx, s.cancel = context.WithCancelCause(ctx)
 	s.initRuntime()
 	s.events = eventstore.Store{DB: s.db, Now: s.now}
+	s.maintenance = 1
+	s.activationPending = true
+	return s, nil
+}
+
+// Prepare 只做一次同步本地准备，成功后仍不接纳运行或发布事件。
+func (s *Service) Prepare(ctx context.Context) error {
+	s.initRuntime()
+	s.mu.Lock()
+	if s.closing {
+		s.mu.Unlock()
+		return errServiceClosed
+	}
+	if s.ctx.Err() != nil {
+		err := errors.Join(s.ctx.Err(), context.Cause(s.ctx))
+		s.mu.Unlock()
+		return err
+	}
+	if done := s.prepareDone; done != nil {
+		select {
+		case <-done:
+			err := s.prepareErr
+			s.mu.Unlock()
+			return err
+		default:
+		}
+		s.mu.Unlock()
+		select {
+		case <-done:
+			s.mu.Lock()
+			err := s.prepareErr
+			s.mu.Unlock()
+			return err
+		case <-ctx.Done():
+			return errors.Join(ctx.Err(), context.Cause(ctx))
+		}
+	}
+	done := make(chan struct{})
+	s.prepareDone = done
+	s.mu.Unlock()
+	work, cancel := context.WithCancelCause(ctx)
+	stop := context.AfterFunc(s.ctx, func() { cancel(context.Cause(s.ctx)) })
+	err := s.prepareLocal(work)
+	if work.Err() != nil {
+		err = errors.Join(err, work.Err(), context.Cause(work))
+	}
+	if s.ctx.Err() != nil {
+		err = errors.Join(err, s.ctx.Err(), context.Cause(s.ctx))
+	}
+	stop()
+	cancel(nil)
+	err = storageFailure(err)
+	s.mu.Lock()
+	if s.closing && err == nil {
+		err = errServiceClosed
+	}
+	s.prepareErr = err
+	close(done)
+	s.mu.Unlock()
+	return err
+}
+
+func (s *Service) prepareLocal(ctx context.Context) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		s.cancel(err)
-		return nil, storageFailure(err)
+		return err
 	}
 	defer tx.Rollback()
 	snapshot, clock, now, err := s.observeNowTx(ctx, tx)
@@ -197,7 +280,13 @@ func New(ctx context.Context, deps Dependencies) (*Service, error) {
 		err = tx.Commit()
 	}
 	if err == nil {
-		err = json.Unmarshal(snapshot.Values["crawl.global_pages"], &s.pageLimit)
+		var limit int64
+		err = json.Unmarshal(snapshot.Values["crawl.global_pages"], &limit)
+		if err == nil {
+			s.mu.Lock()
+			s.pageLimit = limit
+			s.mu.Unlock()
+		}
 	}
 	if err == nil {
 		err = s.retryAccountCleanup(ctx)
@@ -207,20 +296,45 @@ func New(ctx context.Context, deps Dependencies) (*Service, error) {
 		result, err = s.Cleanup(ctx)
 		s.recordMaintenanceWarnings(result.Warnings)
 	}
-	if err != nil {
-		s.cancel(err)
-		return nil, storageFailure(err)
-	}
+	return err
+}
+
+// Start 不做本地准备，只在提交恢复后开放门禁并启动原有循环。
+func (s *Service) Start() error {
 	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closing {
+		return errServiceClosed
+	}
+	if s.ctx.Err() != nil {
+		return errors.Join(s.ctx.Err(), context.Cause(s.ctx))
+	}
+	if s.schedulerStarted {
+		return nil
+	}
+	if s.prepareDone == nil {
+		return errors.New("业务服务尚未准备")
+	}
+	select {
+	case <-s.prepareDone:
+	default:
+		return errors.New("业务服务尚未完成准备")
+	}
+	if s.prepareErr != nil {
+		return s.prepareErr
+	}
+	if s.runtimeErr != nil {
+		return s.runtimeErr
+	}
+	s.activationPending = false
+	s.maintenance--
 	s.schedulerStarted = true
-	s.mu.Unlock()
 	s.background.Add(1)
 	go func() { defer s.background.Done(); s.cleanupLoop(s.ctx) }()
 	go func() { defer close(s.done); s.schedulerLoop(s.ctx) }()
-	s.mu.Lock()
-	s.stopParent = context.AfterFunc(ctx, func() { _ = s.Close() })
-	s.mu.Unlock()
-	return s, nil
+	s.stopParent = context.AfterFunc(s.ctx, func() { _ = s.Close() })
+	s.signalRuntimeLocked()
+	return nil
 }
 
 func missingRuntimeDependency(value any) bool {
@@ -248,9 +362,13 @@ func (s *Service) Close() error {
 	if s.stopParent != nil {
 		s.stopParent()
 	}
+	preparing := s.prepareDone
 	s.signalRuntimeLocked()
 	s.mu.Unlock()
 	s.cancel(errServiceClosed)
+	if preparing != nil {
+		<-preparing
+	}
 	_ = s.waitRuntime(context.Background(), func() bool { return s.mutations == 0 })
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	resume, err := s.quiesceScope(ctx, 0, 0, 0, errServiceClosed)
