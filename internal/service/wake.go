@@ -1,4 +1,13 @@
 package service
 
-// Wake 让已提交的设置或依赖变化进入原有调度，不另开轮询。
+// Wake 通知调度器重新检查运行条件。
 func (s *Service) Wake() { s.wakeScheduler() }
+
+// SettingsChanged 通知调度和清理重新读取已保存的设置。
+func (s *Service) SettingsChanged() {
+	s.wakeScheduler()
+	select {
+	case s.cleanupWake <- struct{}{}:
+	default:
+	}
+}

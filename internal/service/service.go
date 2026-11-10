@@ -46,6 +46,7 @@ type Service struct {
 	pausedTasks         map[int64]int
 	pausedAccounts      map[int64]int
 	wake                chan struct{}
+	cleanupWake         chan struct{}
 	changed             chan struct{}
 	done                chan struct{}
 	jobs                sync.WaitGroup
@@ -109,6 +110,7 @@ func (s *Service) initRuntime() {
 		}
 		s.systemCtx, s.cancelSystem = context.WithCancelCause(s.ctx)
 		s.wake = make(chan struct{}, 1)
+		s.cleanupWake = make(chan struct{}, 1)
 		s.changed = make(chan struct{})
 		s.done = make(chan struct{})
 		s.closeDone = make(chan struct{})
@@ -396,7 +398,7 @@ func (s *Service) Close() error {
 
 func (s *Service) cleanupLoop(ctx context.Context) {
 	last := s.now()
-	for {
+	for ctx.Err() == nil {
 		snapshot, err := s.settings.Get(ctx)
 		if err != nil {
 			if ctx.Err() == nil {
@@ -412,9 +414,22 @@ func (s *Service) cleanupLoop(ctx context.Context) {
 			s.setRuntimeError(storageFailure(err))
 			return
 		}
-		wait := max(last.Add(time.Duration(hours)*time.Hour).Sub(s.now()), 0)
-		if err = s.pacer.Wait(ctx, pacer.Between(wait, wait)); err != nil {
+		wait := last.Add(time.Duration(hours) * time.Hour).Sub(s.now())
+		if wait > 0 {
+			if err := s.waitCleanup(ctx, wait); err != nil {
+				if ctx.Err() == nil {
+					s.setRuntimeError(storageFailure(err))
+				}
+				return
+			}
+			continue
+		}
+		select {
+		case <-ctx.Done():
 			return
+		case <-s.cleanupWake:
+			continue
+		default:
 		}
 		result, cleanupErr := s.Cleanup(ctx)
 		s.recordMaintenanceWarnings(result.Warnings)
@@ -425,6 +440,28 @@ func (s *Service) cleanupLoop(ctx context.Context) {
 			return
 		}
 		last = s.now()
+	}
+}
+
+func (s *Service) waitCleanup(ctx context.Context, delay time.Duration) error {
+	waitCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- s.pacer.Wait(waitCtx, pacer.Between(delay, delay)) }()
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		cancel()
+		<-done
+		return ctx.Err()
+	case <-s.cleanupWake:
+		cancel()
+		err := <-done
+		if errors.Is(err, context.Canceled) {
+			return ctx.Err()
+		}
+		return err
 	}
 }
 
