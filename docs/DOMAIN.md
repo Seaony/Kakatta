@@ -414,12 +414,14 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 | json_mode TEXT NOT NULL DEFAULT 'schema' | `schema` / `object` / `text` |
 | send_temperature INTEGER NOT NULL DEFAULT 1 | |
 | max_tokens_param TEXT NOT NULL DEFAULT 'max_tokens' | `max_tokens` / `max_completion_tokens` |
-| max_tokens_floor INTEGER | 回复被截断后调大的输出上限（8.3），为空时按 8.1 表里的值；有值时各用途取两者中较大的 |
+| max_tokens_floor INTEGER | 回复被截断后调大的输出上限（8.3），为空时按 8.1 表里的值；有值时各用途取两者中较大的，`probe` 除外，固定 5 |
 | updated_at | |
 
 主键 `(provider_id, model)`。服务商的地址或模型改了，删掉它的兼容标记重新试。
 
 **ai_calls**：每次请求一条，不存请求和回复的内容。字段：`id`、`at`、`provider_id`、`model`、`purpose`（`title_screen` / `analysis` / `profile` / `market` / `test` / `probe`）、`task_id`、`ok`、`http_status`、`error_kind`、`json_mode`、`input_tokens`、`output_tokens`、`reasoning_tokens`（返回的 `usage.completion_tokens_details.reasoning_tokens`，没有为空）、`finish_reason`、`duration_ms`。索引 `(at)`。
+
+`ok` 表示这次物理请求拿到了该用途可用的结果；返回 2xx 但解析或校验失败仍为 false，已消耗的 usage 照常记录并计入每日用量。`probe` 只按是否 2xx 判断成功，不要求正文可用。
 
 ### 2.10 推送渠道
 
@@ -1149,7 +1151,7 @@ next_run_at = 结束时间 + interval_minutes × (1 + 随机[0, interval_jitter_
 - 所有用途共用一个信号量，同时最多 `ai.max_concurrent_requests` 个请求。兼容重试持有原来的名额。
 - 回复文本取 `choices[0].message.content`；它是数组时把每段的 `text` 拼起来；为空时改取 `choices[0].message.reasoning_content`（参考上游 `src/services/ai_response_parser.py:28-42`）。再去掉闭合的 `<think>…</think>`。
 - 每次请求写一条 `ai_calls`，token 数取返回的 `usage`，同时记下 `choices[0].finish_reason`。
-- 实际发的 max_tokens 取下表的值和 `ai_compat.max_tokens_floor` 中较大的。
+- 实际发的 max_tokens 取下表的值和 `ai_compat.max_tokens_floor` 中较大的；`probe` 除外，固定 5。
 
 各用途的参数：
 

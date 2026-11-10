@@ -277,3 +277,4 @@
     - AES-256-GCM 用标准库随机 nonce 接口，保持原定存储格式和逐行 AAD。令牌采用 32 字节随机量及其 SHA-256，不在数据库存明文。
     - TOTP 为 SHA1、6 位、30 秒，允许前后一步；新增内部 `admin.totp_last_step`，和会话创建同事务条件更新，防并发与重启后重放。依据是 [RFC 6238 的一次性消费要求](https://www.rfc-editor.org/rfc/rfc6238.html#section-5.2)，不增加恢复码或额外产品选项。
 69. **网页构建按 Safari 16.0，而不是 16.4**：Tailwind 4 的最低要求是 Safari 16.4，官方建议更早浏览器保留 3.4，所以使用 Tailwind 3.4，Vite 的脚本和样式目标都明确设为 `safari16`。接口描述用单一 `api/openapi.json`，字典用 `internal/locales/zh-CN.json`、`en.json`，前后端共用消息代码和 `{name}` 参数。依据：[Tailwind 浏览器要求](https://tailwindcss.com/docs/upgrade-guide#browser-requirements)、[Vite 构建目标](https://vite.dev/guide/build#browser-compatibility)，以及既定的第 22、30 条和 `TECH-STACK.md`。
+70. **恢复探测固定 5，成功统计按单次请求的可用结果算**：`probe` 只检查服务商是否恢复，输出上限固定为 5，不套已有的 `max_tokens_floor`，不因截断重发或标成思考太长。`ai_calls.ok` 表示这次物理请求拿到了该用途可用的结果；2xx 但解析或校验失败仍记 false，usage 照记并计入每日额度；`probe` 按 2xx 算。依据是 `DOMAIN.md` 2.9 的最小恢复请求和 8.3 的探测截断例外，避免恢复检查无谓消耗输出额度，也避免成功率掩盖不可用结果。

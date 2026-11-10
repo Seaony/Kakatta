@@ -151,6 +151,45 @@ func (s *Sender) Send(ctx context.Context, config ChannelConfig, message Message
 
 依赖只注入 HTTP 客户端、本机连接、TLS 配置、时钟和固定服务端点，用于本地假服务测试，不增加用户配置。结果不含地址、Token 或响应正文；适配器按第 13 节的长度和业务状态判断成功。格式化层负责在渠道限制内优先缩短规格，不让适配器猜标题结构或静默丢弃理由、价格和链接。
 
+## 纯分析规则
+
+`internal/analysis` 只接收已经取得的数据，不读库、不联网、不自行取当前时间。类型保持 `DOMAIN.md` 的 JSON：`Profile`、生成清单的独立 `GeneratedProfile`、`Facts`、`ItemSpecs`、`UserOverrides`；金额为整数分，可空字段用指针，模型原话不翻译。以下入口固定，具体输入结构只含对应规则实际使用的数据：
+
+```go
+func RiskDictionary() []RiskDefinition
+func ResolveRisks(Profile) []ResolvedRisk
+func DefaultProfile() Profile
+func ParseGeneratedProfile([]byte) (GeneratedProfile, []locales.Message, error)
+func MergeGeneratedProfile(Profile, GeneratedProfile, string, string) (Profile, ProfileSuggestions, []locales.Message, error)
+func ParseKeywords(string) []string
+func MatchingKeywords(string, []string) []string
+func FirstLayer(FirstLayerInput) LayerResult
+func KeywordKind(string) Kind
+func JudgeKeyword(string, string, []string, []string) LayerResult
+func ParseTitleScreen([]byte, int) (TitleScreen, []locales.Message, error)
+func ResolveSpecs(Profile, []SpecValue, *bool, SpecSource) ItemSpecs
+func JudgeTitle(Profile, TitleItem) TitleResult
+func ParseFacts([]byte, Profile, EvidenceOriginals) (Facts, []locales.Message, error)
+func JudgeSeller(SellerInput, []SellerSignal, string) SellerResult
+func Score(ScoreInput) ScoreResult
+func ContactQuestions(Profile, []EffectiveCheck) []ContactQuestion
+func CalculateMarket(MarketInput) MarketResult
+func AdjacentPrices(Profile, ItemSpecs, int64, []MarketGroup) []AdjacentPrice
+func NoGoodReasons([]RecentScoredFinding) []ReasonCount
+```
+
+清单合并按生成项的顺序替换同名旧编辑项，再按旧相对顺序追加未命中的旧编辑项；不得重用删除的编号。`breakdown` 固定为 `base/items/ai/caps/gates`，程序原因用 Message，模型调整理由保留原文。普通保存不补回被删的通用项；用户规格保护、重分析与通知由编排处理。关键词、证据、规格分别按文档的三套规则规整，不共用一个含糊的文本匹配器。
+
+## 模型请求
+
+`internal/analysis/client` 不依赖分析规则、数据库、抓取或业务 HTTP。`New(Dependencies)` 必须取得 `Repository`、`Accounting`、全应用共享的 `Slots`、专用 `HTTPDoer` 和超时；普通调用 `Complete(ctx, Request)`，试分析 `Test(ctx, providerID, titleRequest, analysisRequest)`，恢复探测 `Probe(ctx, providerID)`。Request 仅传用途、任务编号、提示词、图片、结构化 Schema 和纯 Validate 回调，不开放跳过每日上限的参数。
+
+- Repository 提供 `Providers/Provider/LoadCompat/SaveCompat/ChangeProvider`；ProviderRef 的 `ID/ConfigToken` 防止旧请求写坏新配置。兼容保存原子地只向降级方向合并并返回实际保存值，地址或模型变化后的重置归存储层。
+- Accounting 的 `Before(ctx, CallStart) (Ticket,error)` 紧邻每次物理请求，成功持久化票据才发送；`After(ctx, Ticket, CallEnd)` 每票据恰好一次，用有界且不随用户取消的上下文收尾。usage 按每次请求计；reasoning 已含在输出，不再加一次。After 失败必须跨调用闭锁，不能把存储失败当供应商错误轮换；无法补记的未知用量恢复规则，在接持久适配器前单独定清楚。
+- `CallStart` 含服务商配置引用、模型、purpose、TaskID 和实际 JSONMode；`CallEnd` 含可用结果 OK、HTTPStatus、ErrorKind、Usage、FinishReason、Duration。Result 含文本、服务商/模型、JSONMode、Thinking、耗时与全部 Call 元数据，不含密钥或请求正文。
+- Slots 的 `Acquire(ctx) (release,error)` 覆盖整个逻辑调用，所有用途共享；兼容重发、解析重试和轮换不新建名额池。每次实际请求重新 Before，只有 test 可越过每日上限。probe 固定输出上限 5。
+- 返回可识别的 `ErrNoProvider/ErrDailyLimit/ErrInfrastructure/ErrConfigChanged`；普通失败为带 Last 原因和 Retryable 的 Failure。取消保留原 context 错误；记账、兼容和状态存储失败立即结束，不重发。请求状态与重试严格按第 8 节，不隐含 SDK 重试或 3xx 跳转。
+
 ## 集成分工
 
 - 安全计算：`internal/security/`。
