@@ -81,6 +81,10 @@ func TestSessionAgainstLocalPage(t *testing.T) {
 	if err := s.Navigate(srv.URL, 15*time.Second); err != nil {
 		t.Fatal(err)
 	}
+	// 主进程加上渲染等子进程，至少几十 MB。
+	if mem, err := TreeMemory(s.PID()); err != nil || mem < 20<<20 {
+		t.Fatalf("浏览器内存统计不对：%d 字节，%v", mem, err)
+	}
 
 	// 固定端口连接时，浏览器不应该把自己标记为被自动化控制。
 	webdriver, err := chromedp.Run(s.Context(), chromedp.Evaluate[bool](`navigator.webdriver === true`))
@@ -303,5 +307,86 @@ func TestTransparentElementIsNotVisible(t *testing.T) {
 	}
 	if !h.Visible(btn[0]) {
 		t.Fatal("正常的按钮应该可见")
+	}
+}
+
+func TestSumTreeCountsDescendantsOnly(t *testing.T) {
+	procs := []proc{{1, 0, 5}, {10, 1, 100}, {11, 10, 20}, {12, 11, 3}, {20, 1, 999}}
+	if got := sumTree(10, procs); got != 123 {
+		t.Fatalf("应该只算 10 和它的子孙：%d", got)
+	}
+}
+
+// 外层上下文结束（超时、Ctrl+C）时也要正常关闭浏览器，刚写入的登录 Cookie 不能丢。
+func TestCookieSurvivesParentCancel(t *testing.T) {
+	if _, err := FindChrome(); err != nil {
+		t.Skip("本机没有 Chrome：", err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.SetCookie(w, &http.Cookie{Name: "keep", Value: "1", Path: "/", Expires: time.Now().Add(time.Hour)})
+		fmt.Fprint(w, "ok")
+	}))
+	defer srv.Close()
+	dir := t.TempDir()
+
+	parent, cancel := context.WithCancel(context.Background())
+	s, err := Start(parent, Options{ProfileDir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Navigate(srv.URL, 15*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	s.Close() // 等后台的正常关闭做完
+
+	s2, err := Start(context.Background(), Options{ProfileDir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s2.Close()
+	if ok, err := s2.HasCookie([]string{srv.URL}, "keep"); err != nil || !ok {
+		t.Fatalf("重启后 Cookie 应该还在：%v %v", ok, err)
+	}
+}
+
+// 搜索框里预填了文字时要能读出来并清空，再输入关键词不会和旧文字拼在一起。
+func TestClearPrefilledInput(t *testing.T) {
+	if _, err := FindChrome(); err != nil {
+		t.Skip("本机没有 Chrome：", err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `<!doctype html><meta charset="utf-8"><input id="q" value="推荐词 iPhone" style="width:300px">`)
+	}))
+	defer srv.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	s, err := Start(ctx, Options{ProfileDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err := s.Navigate(srv.URL, 15*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	h := NewHuman(s, pacer.New(nil), pacer.Between(5*time.Millisecond, 10*time.Millisecond))
+	n, err := h.FirstVisible(ctx, "#q", 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Click(ctx, n); err != nil {
+		t.Fatal(err)
+	}
+	if v, err := h.Value(n); err != nil || v != "推荐词 iPhone" {
+		t.Fatalf("应读到预填的文字：%q %v", v, err)
+	}
+	if err := h.Clear(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Type(ctx, "相机"); err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := h.Value(n); v != "相机" {
+		t.Fatalf("清空后再输入应该只有新关键词：%q", v)
 	}
 }

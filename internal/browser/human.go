@@ -2,11 +2,14 @@ package browser
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"runtime"
 	"time"
 	"unicode/utf8"
 
+	"github.com/chromedp/cdproto/accessibility"
 	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/css"
 	"github.com/chromedp/cdproto/dom"
@@ -189,7 +192,12 @@ func (h *Human) Press(ctx context.Context, key string) error {
 	if !ok {
 		return fmt.Errorf("不支持的按键：%s", key)
 	}
-	down := input.DispatchKeyEventParams{Type: input.DispatchKeyEventTypeKeyDown, Key: key, Code: k.code, WindowsVirtualKeyCode: k.vk, NativeVirtualKeyCode: k.vk, Text: k.text}
+	// 不产生文字的键用 rawKeyDown，和 Chrome 处理真实按键时一样。
+	typ := input.DispatchKeyEventTypeKeyDown
+	if k.text == "" {
+		typ = input.DispatchKeyEventTypeRawKeyDown
+	}
+	down := input.DispatchKeyEventParams{Type: typ, Key: key, Code: k.code, WindowsVirtualKeyCode: k.vk, NativeVirtualKeyCode: k.vk, Text: k.text}
 	if err := h.key(down); err != nil {
 		return err
 	}
@@ -204,8 +212,9 @@ var specialKeys = map[string]struct {
 	vk   int64
 	text string
 }{
-	"Enter": {"Enter", 13, "\r"},
-	"Tab":   {"Tab", 9, ""},
+	"Enter":     {"Enter", 13, "\r"},
+	"Tab":       {"Tab", 9, ""},
+	"Backspace": {"Backspace", 8, ""},
 }
 
 // moveTo 把鼠标分几步移到目标点，每步之间有很短的停顿。
@@ -257,3 +266,42 @@ func (h *Human) box(n *chromedp.Node) (x, y, w, ht float64, err error) {
 }
 
 func (h *Human) rand() float64 { return h.p.Rand() }
+
+// Value 读输入框当前显示的值。不在页面里跑脚本：从无障碍树里取这个节点的 value（XIANYU.md 3.3 节）。
+func (h *Human) Value(n *chromedp.Node) (string, error) {
+	no := false
+	res, err := chromedp.Call(h.s.ctx, accessibility.GetPartialAXTree, accessibility.GetPartialAXTreeParams{BackendNodeID: n.BackendNodeID, FetchRelatives: &no})
+	if err != nil {
+		return "", fmt.Errorf("读取输入框的值失败：%w", err)
+	}
+	for _, ax := range res.Nodes {
+		if ax.Value == nil || len(ax.Value.Value) == 0 {
+			continue
+		}
+		var s string
+		if err := json.Unmarshal(ax.Value.Value, &s); err == nil {
+			return s, nil
+		}
+	}
+	return "", nil
+}
+
+// Clear 清空当前获得焦点的输入框：全选再按退格（XIANYU.md 3.3 节）。
+// macOS 上 Cmd+A 是由系统菜单处理的，按键事件本身不会触发全选，所以同时带上 selectAll 编辑命令，和真按 Cmd+A 的效果一样。
+func (h *Human) Clear(ctx context.Context) error {
+	mod, cmds := int64(2), []string(nil) // Ctrl
+	if runtime.GOOS == "darwin" {
+		mod, cmds = 4, []string{"selectAll"} // Cmd
+	}
+	a := input.DispatchKeyEventParams{Type: input.DispatchKeyEventTypeRawKeyDown, Key: "a", Code: "KeyA", WindowsVirtualKeyCode: 65, NativeVirtualKeyCode: 65, Modifiers: mod, Commands: cmds}
+	if err := h.key(a); err != nil {
+		return err
+	}
+	if err := h.key(input.DispatchKeyEventParams{Type: input.DispatchKeyEventTypeKeyUp, Key: "a", Code: "KeyA", WindowsVirtualKeyCode: 65, NativeVirtualKeyCode: 65, Modifiers: mod}); err != nil {
+		return err
+	}
+	if err := h.p.Wait(ctx, pacer.Between(80*time.Millisecond, 200*time.Millisecond)); err != nil {
+		return err
+	}
+	return h.Press(ctx, "Backspace")
+}

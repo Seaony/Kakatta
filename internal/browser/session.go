@@ -6,6 +6,7 @@ import (
 	"net"
 	"slices"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/chromedp/cdproto/cdp"
@@ -30,6 +31,8 @@ type Session struct {
 	ctx         context.Context
 	cancelTab   context.CancelFunc
 	cancelAlloc context.CancelFunc
+	stopWatch   func() bool
+	closeOnce   sync.Once
 	Capture     *Capture
 }
 
@@ -90,9 +93,12 @@ func Start(parent context.Context, o Options) (*Session, error) {
 		opts = append(opts, chromedp.WindowSize(o.Width, o.Height))
 	}
 
-	allocCtx, cancelAlloc := chromedp.NewExecAllocator(parent, opts...)
+	// 浏览器不直接挂在 parent 上：parent 结束时（超时、Ctrl+C）chromedp 会直接杀掉进程，Cookie 来不及写盘。
+	// 改成 parent 结束时走 Close 正常关闭。
+	allocCtx, cancelAlloc := chromedp.NewExecAllocator(context.WithoutCancel(parent), opts...)
 	tabCtx, cancelTab := chromedp.NewContext(allocCtx)
 	s := &Session{ctx: tabCtx, cancelTab: cancelTab, cancelAlloc: cancelAlloc}
+	s.stopWatch = context.AfterFunc(parent, s.Close)
 
 	// 先挂上响应监听，再真正启动浏览器，保证第一个请求的响应也能收到。
 	s.Capture = newCapture(tabCtx)
@@ -110,10 +116,20 @@ func Start(parent context.Context, o Options) (*Session, error) {
 // Context 返回标签页的上下文，给流程代码调用 chromedp 用。
 func (s *Session) Context() context.Context { return s.ctx }
 
-// Close 关闭浏览器。登录状态保存在配置目录里，下次启动还在。
+// Close 关闭浏览器。先用 Browser.close 正常关闭，让 Chrome 把 Cookie 和配置写回配置目录，下次启动登录状态还在；
+// 直接取消上下文会强制结束进程，最近写入的 Cookie 可能丢失。10 秒内关不掉再强制结束。
+// 可以重复调用。
 func (s *Session) Close() {
-	s.cancelTab()
-	s.cancelAlloc()
+	s.closeOnce.Do(func() {
+		if s.stopWatch != nil {
+			s.stopWatch()
+		}
+		ctx, cancel := context.WithTimeout(s.ctx, 10*time.Second)
+		chromedp.Cancel(ctx)
+		cancel()
+		s.cancelTab()
+		s.cancelAlloc()
+	})
 }
 
 // Navigate 在当前标签页打开网址，等到 DOMContentLoaded 就返回（和上游一样，不等图片等资源全部加载完）。
