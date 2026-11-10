@@ -37,7 +37,7 @@
   - **不加** `--disable-dev-shm-usage`：Chromium 在 Linux 上已经改用 memfd，不依赖 `/dev/shm`，实测加了反而多占约 175MB 内存（`DECISIONS.md` 第 38 条）。
   - **不加** `--no-sandbox`：会出现网页能看到的警告条；容器里靠 seccomp 设置让沙盒正常工作（`DECISIONS.md` 第 38 条）。
   - 加 `--lang`，按设置项的语言；时区由容器的 `TZ` 决定。
-  - `disable-breakpad` 能不能挡住 `chrome_crashpad_handler` 还没确认（上游 #497 里它占了大量内存），实验第 5 项确认；挡不住就再加关闭崩溃上报的参数（`DECISIONS.md` 第 46 条）。
+  - `chrome_crashpad_handler` 在 Linux 上用参数关不掉，不去关它，改为保证它不出问题：给它可写的目录，关浏览器时把残留进程一起结束（`DECISIONS.md` 第 59 条）。
   - 另加 `--disk-cache-size`，按配置项限制每个账号浏览器的磁盘缓存（`DOMAIN.md` 第 3 节，默认 256MB）。
   - **不加** `--disable-blink-features=AutomationControlled`：它本质上就是在改 webdriver，有界面时还会弹出「不受支持的命令行标记」提示条。
 - **不往页面注入任何脚本**：读数据靠 CDP 网络事件（`Network.getResponseBody`），找元素靠 DOM 查询，点击和输入用 `Input.dispatchMouseEvent` 和 `Input.dispatchKeyEvent`，坐标取元素中心附近的随机点。
