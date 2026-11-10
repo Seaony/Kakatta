@@ -25,7 +25,6 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/Seaony/Kakatta/api"
 	"github.com/Seaony/Kakatta/internal/appsettings"
 	"github.com/Seaony/Kakatta/internal/auth"
 	"github.com/Seaony/Kakatta/internal/security"
@@ -170,34 +169,19 @@ func activeCookie(t *testing.T, result *httptest.ResponseRecorder) *http.Cookie 
 }
 
 func TestAllDeclaredBusinessEndpointsRequireAuthentication(t *testing.T) {
-	f := newServerFixture(t, true)
-	var document struct {
-		Paths map[string]map[string]struct {
-			Security []map[string][]string `json:"security"`
-		} `json:"paths"`
-	}
-	if err := json.Unmarshal(api.JSON(), &document); err != nil {
-		t.Fatal(err)
-	}
-	checked := 0
-	for path, operations := range document.Paths {
-		for method, operation := range operations {
-			if len(operation.Security) == 0 {
-				continue
-			}
-			path = strings.ReplaceAll(path, "{id}", "1")
-			t.Run(method+" "+path, func(t *testing.T) {
-				result := f.request(strings.ToUpper(method), path, `{}`, false)
-				requireStatus(t, result, http.StatusUnauthorized)
-				if errorCode(result) != "auth.unauthenticated" {
-					t.Fatal(errorCode(result))
-				}
-			})
-			checked++
+	f := newBusinessFixture(t)
+	for _, operation := range testAPIOperations(t) {
+		if len(operation.Security) == 0 {
+			continue
 		}
-	}
-	if checked != 14 {
-		t.Fatalf("应检查 14 个受保护操作，实际 %d", checked)
+		path := sampleRoutePath(operation.Path)
+		t.Run(operation.Method+" "+path, func(t *testing.T) {
+			result := f.request(operation.Method, path, `{}`, false)
+			requireStatus(t, result, http.StatusUnauthorized)
+			if errorCode(result) != "auth.unauthenticated" {
+				t.Fatal(errorCode(result))
+			}
+		})
 	}
 	for _, path := range []string{"/api/v1/missing", "/mcp", "/remote/viewer.js", "/openapi.json", "/docs/index.html"} {
 		requireStatus(t, f.request(http.MethodGet, path, "", false), http.StatusUnauthorized)

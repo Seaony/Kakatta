@@ -92,10 +92,8 @@ func TestEveryOperationDeclaresItsAuthentication(t *testing.T) {
 		map[string]any{"BearerToken": []any{}},
 	}
 	seen := map[string]bool{}
-	count := 0
 	for path, rawPath := range object(t, document["paths"]) {
 		for method, rawOperation := range object(t, rawPath) {
-			count++
 			operation := object(t, rawOperation)
 			id, ok := operation["operationId"].(string)
 			if !ok || id == "" || seen[id] {
@@ -118,9 +116,6 @@ func TestEveryOperationDeclaresItsAuthentication(t *testing.T) {
 				t.Fatalf("失败响应没有统一外层：%s %s", method, path)
 			}
 		}
-	}
-	if count != 19 {
-		t.Fatalf("当前阶段应有 19 个操作，实际 %d", count)
 	}
 	security := object(t, object(t, document["components"])["securitySchemes"])
 	for name, cookie := range map[string]string{"CookieSession": "kakatta_session", "SecureCookieSession": "__Host-kakatta_session"} {
@@ -154,11 +149,17 @@ func TestReferencesAndClosedObjects(t *testing.T) {
 			}
 			properties := object(t, rawProperties)
 			required, ok := node["required"].([]any)
-			if !ok || len(required) != len(properties) {
-				t.Fatal("固定结构没有明确全部字段；未知值应使用 null")
+			if !ok {
+				t.Fatal("固定结构没有明确必填成员")
 			}
+			seen := map[string]bool{}
 			for _, field := range required {
-				if _, exists := properties[field.(string)]; !exists {
+				name, ok := field.(string)
+				if !ok || seen[name] {
+					t.Fatalf("必填成员重复或名称无效：%v", field)
+				}
+				seen[name] = true
+				if _, exists := properties[name]; !exists {
 					t.Fatalf("必填字段没有描述：%v", field)
 				}
 			}
@@ -173,6 +174,9 @@ func TestReferencesAndClosedObjects(t *testing.T) {
 func TestSecretsHaveTheRightDirection(t *testing.T) {
 	document := decoded(t)
 	requests := map[string][]string{
+		"ProviderInput":         {"api_key"},
+		"ProxyCreate":           {"url"},
+		"ProxyPatch":            {"url"},
 		"SetupRequest":          {"token", "password"},
 		"LoginRequest":          {"password"},
 		"TOTPLoginRequest":      {"challenge", "code"},

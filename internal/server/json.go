@@ -55,22 +55,11 @@ type requestError struct {
 func (e *requestError) Error() string { return e.code }
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, target any) error {
-	if len(r.Header.Values("Content-Type")) != 1 {
-		return &requestError{status: http.StatusUnsupportedMediaType, code: "http.unsupported_media_type"}
-	}
-	media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-	if err != nil || media != "application/json" {
-		return &requestError{status: http.StatusUnsupportedMediaType, code: "http.unsupported_media_type"}
-	}
-	data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBody))
+	data, err := readJSONObject(w, r)
 	if err != nil {
-		var tooLarge *http.MaxBytesError
-		if errors.As(err, &tooLarge) {
-			return &requestError{status: http.StatusRequestEntityTooLarge, code: "http.body_too_large"}
-		}
-		return &requestError{status: http.StatusBadRequest, code: "http.invalid_json"}
+		return err
 	}
-	if !utf8.Valid(data) || !uniqueJSONObject(data) || !exactFields(data, target) {
+	if !exactFields(data, target) {
 		return &requestError{status: http.StatusBadRequest, code: "http.invalid_json"}
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
@@ -79,6 +68,28 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, target any) error {
 		return &requestError{status: http.StatusBadRequest, code: "http.invalid_json"}
 	}
 	return nil
+}
+
+func readJSONObject(w http.ResponseWriter, r *http.Request) ([]byte, error) {
+	if len(r.Header.Values("Content-Type")) != 1 {
+		return nil, &requestError{status: http.StatusUnsupportedMediaType, code: "http.unsupported_media_type"}
+	}
+	media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || media != "application/json" {
+		return nil, &requestError{status: http.StatusUnsupportedMediaType, code: "http.unsupported_media_type"}
+	}
+	data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBody))
+	if err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			return nil, &requestError{status: http.StatusRequestEntityTooLarge, code: "http.body_too_large"}
+		}
+		return nil, &requestError{status: http.StatusBadRequest, code: "http.invalid_json"}
+	}
+	if !utf8.Valid(data) || !uniqueJSONObject(data) {
+		return nil, &requestError{status: http.StatusBadRequest, code: "http.invalid_json"}
+	}
+	return data, nil
 }
 
 func exactFields(data []byte, target any) bool {
