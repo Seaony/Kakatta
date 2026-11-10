@@ -30,6 +30,9 @@ type Service struct {
 	closed bool
 	jobs   int
 	idle   chan struct{}
+
+	accounting accountingState
+	slots      slotState
 }
 
 func New(ctx context.Context, deps Dependencies) (_ *Service, err error) {
