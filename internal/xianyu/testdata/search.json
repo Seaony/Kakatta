@@ -1,0 +1,125 @@
+{
+  "api": "mtop.taobao.idlemtopsearch.pc.search",
+  "ret": ["SUCCESS::调用成功"],
+  "v": "1.0",
+  "data": {
+    "resultList": [
+      {
+        "data": {
+          "item": {
+            "main": {
+              "exContent": {
+                "itemId": "880000000001",
+                "title": "富士 X100V 银色 箱说全",
+                "price": [{"text": "¥"}, {"text": "1,299"}],
+                "oriPrice": "¥16999",
+                "area": "上海",
+                "userNickName": "卖家一号",
+                "picUrl": "//img.alicdn.com/bao/uploaded/x100v.jpg",
+                "fishTags": {
+                  "r1": {
+                    "tagList": [
+                      {"data": {"content": "验货宝"}},
+                      {"data": {"content": "验货宝·官方验"}}
+                    ]
+                  }
+                }
+              },
+              "clickParam": {"args": {"publishTime": 1710000000000, "wantNum": "7", "tag": "freeship"}},
+              "targetUrl": "fleamarket://item?id=880000000001"
+            }
+          }
+        }
+      },
+      {
+        "data": {
+          "item": {
+            "main": {
+              "exContent": {
+                "title": "没有商品 ID 的一项，要跳过",
+                "price": [{"text": "¥"}, {"text": "100"}]
+              },
+              "clickParam": {"args": {}},
+              "targetUrl": "fleamarket://item?id=1"
+            }
+          }
+        }
+      },
+      {
+        "data": {
+          "item": {
+            "main": {
+              "exContent": {
+                "itemId": 880000000002,
+                "title": "数字 ID，价格带万",
+                "price": [{"text": "¥"}, {"text": "1.2万"}],
+                "picUrl": "https://img.alicdn.com/b.jpg"
+              },
+              "clickParam": {"args": {"publishTime": "1710000000000", "wantNum": 3}},
+              "targetUrl": "https://www.goofish.com/item?id=880000000002"
+            }
+          }
+        }
+      },
+      {
+        "data": {
+          "item": {
+            "main": {
+              "exContent": {
+                "itemId": "880000000003",
+                "title": "当前价",
+                "price": [{"text": "当前价"}, {"text": "¥"}, {"text": 88}]
+              },
+              "clickParam": {"args": {"tag": "other"}},
+              "targetUrl": "fleamarket://item?id=880000000003"
+            }
+          }
+        }
+      },
+      {
+        "data": {
+          "item": {
+            "main": {
+              "exContent": {
+                "itemId": " 880000000004 ",
+                "title": "面议",
+                "price": [{"text": "面议"}],
+                "oriPrice": "暂无"
+              },
+              "clickParam": {"args": {"publishTime": "昨天", "wantNum": "很多"}}
+            }
+          }
+        }
+      },
+      {
+        "data": {
+          "item": {
+            "main": {
+              "exContent": {
+                "itemId": "880000000001",
+                "title": "重复 ID，要去掉"
+              }
+            }
+          }
+        }
+      },
+      {
+        "data": {
+          "item": {
+            "main": {
+              "exContent": {
+                "itemId": "880000000005",
+                "title": "价格不是数组",
+                "price": "¥10"
+              },
+              "clickParam": "坏掉的参数"
+            }
+          }
+        }
+      },
+      "坏掉的一项",
+      null,
+      {"data": {"item": {"main": "不是对象"}}}
+    ]
+  }
+}

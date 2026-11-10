@@ -1,0 +1,16 @@
+{
+  "api": "mtop.idle.web.trade.rate.list",
+  "ret": ["SUCCESS::调用成功"],
+  "data": {
+    "nextPage": false,
+    "cardList": [
+      {"cardData": {"rateId": "r1", "feedback": "东西不错，发货很快", "rate": 1, "rateTagList": [{"text": "来自卖家"}], "raterUserNick": "买家甲", "gmtCreate": "2024-01-01", "pictCdnUrlList": []}},
+      {"cardData": {"rateId": "r2", "feedback": "付款爽快", "rate": "1", "rateTagList": [{"text": "来自买家"}], "raterUserNick": "卖家乙", "gmtCreate": "2024-03-01 12:30:00", "pictCdnUrlList": ["//img.alicdn.com/rate.jpg", ""]}},
+      {"cardData": {"rateId": "r3", "feedback": "一般", "rate": 0, "rateTagList": [{"text": "卖家"}], "raterUserNick": "买家丙", "gmtCreate": 1717200000000}},
+      {"cardData": {"rateId": "r4", "feedback": "描述不符", "rate": -1, "rateTagList": [{"text": "卖家"}], "raterUserNick": "买家丁", "gmtCreate": "很久以前"}},
+      {"cardData": {"rateId": 5, "feedback": "没有身份标签", "rate": 1, "raterUserNick": "路人", "gmtCreate": "2024-02-01"}},
+      {"cardData": {"rateId": "r6", "feedback": "评分看不懂", "rate": 3, "rateTagList": [{"text": "买家"}], "gmtCreate": "2023-12-31"}},
+      "坏掉的一项"
+    ]
+  }
+}

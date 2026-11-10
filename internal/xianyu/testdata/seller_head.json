@@ -1,0 +1,21 @@
+{
+  "api": "mtop.idle.web.user.page.head",
+  "ret": ["SUCCESS::调用成功"],
+  "data": {
+    "module": {
+      "base": {
+        "displayName": "卖家一号",
+        "avatar": {"avatar": "//img.alicdn.com/avatar.jpg"},
+        "ylzTags": [
+          {"attributes": {"role": "seller", "level": 4}, "text": "卖家信用极好"},
+          {"attributes": {"role": "other"}, "text": "不相关"},
+          {"attributes": {"role": "buyer", "level": "2"}, "text": "买家信用良好"}
+        ]
+      },
+      "tabs": {
+        "item": {"number": "36"},
+        "rate": {}
+      }
+    }
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "api": "mtop.taobao.idle.pc.detail",
+  "ret": ["SUCCESS::调用成功"],
+  "data": {
+    "itemDO": {
+      "itemId": "880000000001",
+      "wantCnt": 15,
+      "browseCnt": "321",
+      "desc": "九成新，快门数 3000，送原装电池。",
+      "description": "不该取到这一项",
+      "imageInfos": [
+        {"url": "//img.alicdn.com/bao/uploaded/1.jpg"},
+        {"url": ""},
+        {"widthSize": 800},
+        {"url": "https://img.alicdn.com/bao/uploaded/2.jpg"},
+        "坏掉的一项"
+      ]
+    },
+    "sellerDO": {
+      "sellerId": 2200000000123,
+      "userRegDay": 1000,
+      "zhimaLevelInfo": {"levelName": "芝麻信用极好", "levelCode": "5"}
+    }
+  }
+}

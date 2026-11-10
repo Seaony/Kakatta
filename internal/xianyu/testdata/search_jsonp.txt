@@ -1,0 +1,1 @@
+  mtopjsonp12({"ret":["SUCCESS::调用成功"],"data":{"resultList":[{"data":{"item":{"main":{"exContent":{"itemId":"990001","title":"JSONP 里的商品","price":[{"text":"¥"},{"text":"50"}]},"clickParam":{"args":{"publishTime":"1710000000000"}},"targetUrl":"fleamarket://item?id=990001"}}}}]}});

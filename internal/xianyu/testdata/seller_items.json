@@ -1,0 +1,15 @@
+{
+  "api": "mtop.idle.web.xyh.item.list",
+  "ret": ["SUCCESS::调用成功"],
+  "data": {
+    "nextPage": true,
+    "cardList": [
+      {"cardData": {"id": "10001", "title": "镜头 24-70", "itemStatus": 0, "priceInfo": {"price": "3500"}, "picInfo": {"picUrl": "//img.alicdn.com/lens.jpg"}}},
+      {"cardData": {"id": 10002, "title": "手柄", "itemStatus": "1", "priceInfo": {"price": "599.9"}, "picInfo": {"picUrl": "https://img.alicdn.com/grip.jpg"}}},
+      {"cardData": {"id": "10003", "title": "状态未知", "itemStatus": 2, "priceInfo": {"price": "面议"}}},
+      {"cardData": {"title": "没有 ID，要跳过", "itemStatus": 0}},
+      {"cardData": {"id": "10004", "title": "没有状态"}},
+      "坏掉的一项"
+    ]
+  }
+}

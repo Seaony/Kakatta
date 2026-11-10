@@ -1,0 +1,15 @@
+{
+  "ret": ["SUCCESS::调用成功"],
+  "data": {
+    "itemDO": {
+      "desc": {"type": "rich"},
+      "richTextDesc": "只有富文本描述是字符串",
+      "imageInfos": "不是数组"
+    },
+    "sellerDO": {
+      "sellerId": " 2200000000456 ",
+      "userRegDay": "365",
+      "zhimaLevelInfo": "不是对象"
+    }
+  }
+}
