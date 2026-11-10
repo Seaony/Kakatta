@@ -8,6 +8,25 @@ import (
 
 func TestModelBoundaryKeepsSecretsAndMoneySeparate(t *testing.T) {
 	document := decoded(t)
+	generation := schema(t, document, "GenerateProfileInput")
+	taskID := object(t, object(t, generation["properties"])["task_id"])
+	if slices.Contains(stringsIn(t, generation["required"]), "task_id") || !allowsNull(taskID) {
+		t.Fatal("生成草稿的任务引用应保留可省略和 null")
+	}
+	integerTaskID := false
+	for _, raw := range taskID["anyOf"].([]any) {
+		branch := object(t, raw)
+		if branch["type"] != "integer" {
+			continue
+		}
+		integerTaskID = true
+		if integerBound(t, branch, "minimum") != 1 || integerBound(t, branch, "maximum") != 9007199254740991 {
+			t.Fatal("生成草稿的任务引用必须是安全范围内的正整数")
+		}
+	}
+	if !integerTaskID {
+		t.Fatal("生成草稿的任务引用缺少整数分支")
+	}
 	properties := object(t, schema(t, document, "ProviderView")["properties"])
 	for _, field := range []string{"api_key", "api_key_enc", "uuid", "config_token"} {
 		if _, exists := properties[field]; exists {

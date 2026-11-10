@@ -17006,7 +17006,7 @@
               {
                 "format": "int64",
                 "type": "integer",
-                "minimum": -9007199254740991,
+                "minimum": 1,
                 "maximum": 9007199254740991
               },
               {

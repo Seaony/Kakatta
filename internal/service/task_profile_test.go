@@ -295,9 +295,9 @@ func TestNormalizeTaskProfileUsesServerIDsAndRevisions(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := got.Profile
-	if p.Musts[0].Rev != 4 || p.Musts[1].ID != "m10" || p.Musts[1].Rev != 1 || p.Bonuses[0].ID != "b11" ||
-		p.Risks[0].Rev != 4 || p.Risks[1].ID != "c12" || p.NextNo != 13 || len(p.Risks) != 2 {
-		t.Fatalf("编号、版本或通用项被客户端影响：%#v", p)
+	if p.Musts[0].Rev != 4 || p.Musts[1].ID != "m700" || p.Musts[1].Rev != 1 || p.Bonuses[0].ID != "b900" ||
+		p.Risks[0].Rev != 4 || p.Risks[1].ID != "c1000" || p.NextNo != 9000 || len(p.Risks) != 2 {
+		t.Fatalf("草稿编号、服务端版本或水位不正确：%#v", p)
 	}
 	after, _ := json.Marshal(fields)
 	if string(before) != string(after) || old.Profile.Musts[0].Rev != 3 {
@@ -305,7 +305,7 @@ func TestNormalizeTaskProfileUsesServerIDsAndRevisions(t *testing.T) {
 	}
 	fields.Profile.NextNo = -100
 	got, _, err = normalizeTaskFields(&old, fields, TaskPatch{}, global)
-	if err != nil || got.Profile.NextNo != 13 {
+	if err != nil || got.Profile.NextNo != 1001 {
 		t.Fatalf("客户端回拨改变了服务端水位：%#v %v", got.Profile, err)
 	}
 }
@@ -329,8 +329,8 @@ func TestNormalizeTaskProfileRejectsDeletedAndMalformedIDs(t *testing.T) {
 	taskProfileTestError(t, err, "profile", "analysis.profile_invalid")
 	fields.Profile.Musts = fields.Profile.Musts[:1]
 	got, _, err := normalizeTaskFields(nil, fields, TaskPatch{}, global)
-	if err != nil || got.Profile.Musts[0].ID != "m1" || got.Profile.Musts[0].Rev != 1 || got.Profile.NextNo != 2 {
-		t.Fatalf("创建任务信任了客户端编号：%#v %v", got.Profile, err)
+	if err != nil || got.Profile.Musts[0].ID != "m20" || got.Profile.Musts[0].Rev != 1 || got.Profile.NextNo != 21 {
+		t.Fatalf("创建任务改写了合法草稿编号或信任了草稿版本：%#v %v", got.Profile, err)
 	}
 }
 
@@ -341,11 +341,45 @@ func TestNormalizeTaskProfileWarningsDoNotRestoreCommonItems(t *testing.T) {
 		Musts: []analysis.Requirement{{ID: "m88", Text: "原盒", Source: analysis.SourceAI}},
 		Risks: []analysis.ProfileRisk{{ID: "c99", Name: "亮斑", Attitude: analysis.Reject, Source: analysis.SourceAI}}, NextNo: 999}
 	got, warnings, err := normalizeTaskFields(nil, fields, TaskPatch{}, taskProfileTestGlobal(t))
-	if err != nil || len(got.Profile.Musts) != 0 || len(got.Profile.Bonuses) != 1 || got.Profile.Bonuses[0].ID != "b1" ||
-		len(got.Profile.Risks) != 1 || got.Profile.Risks[0].ID != "c2" || got.Profile.Risks[0].Attitude != analysis.Mind ||
+	if err != nil || len(got.Profile.Musts) != 0 || len(got.Profile.Bonuses) != 1 || got.Profile.Bonuses[0].ID != "b999" ||
+		len(got.Profile.Risks) != 1 || got.Profile.Risks[0].ID != "c99" || got.Profile.NextNo != 1000 || got.Profile.Risks[0].Attitude != analysis.Mind ||
 		len(warnings) != 2 || warnings[0].Key != "profile" || warnings[0].Reason.Code != "analysis.must_downgraded" ||
 		warnings[1].Key != "profile" || warnings[1].Reason.Code != "analysis.risk_softened" {
 		t.Fatalf("整理规则、编号或警告不正确：%#v %#v %v", got.Profile, warnings, err)
+	}
+}
+
+func TestNormalizeTaskProfileKeepsDraftIDsAfterDeletingEarlierItem(t *testing.T) {
+	old := Task{TaskFields: taskProfileTestFields()}
+	old.JudgeMode, old.NotifyPolicy = analysis.ModeAI, "good"
+	old.Profile = analysis.Profile{NextNo: 10}
+	fields := old.TaskFields
+	fields.Profile = analysis.Profile{Specs: []analysis.ProfileSpec{{Name: "型号", Options: []string{"A"}, Values: []string{"A"}, Source: analysis.SourceUser}},
+		Bonuses: []analysis.Requirement{{ID: "b10", Text: "原盒", Source: analysis.SourceUser, Rev: 999}},
+		Risks:   []analysis.ProfileRisk{{ID: "c11", Name: "亮斑", Attitude: analysis.Mind, Source: analysis.SourceUser, Rev: 999}}, NextNo: 12}
+	first, _, err := normalizeTaskFields(&old, fields, TaskPatch{}, taskProfileTestGlobal(t))
+	if err != nil || first.Profile.Bonuses[0].ID != "b10" || first.Profile.Risks[0].ID != "c11" || first.Profile.NextNo != 12 {
+		t.Fatalf("初次生成草稿被重编号：%+v %v", first.Profile, err)
+	}
+	fields.Profile.Bonuses = nil
+	before, _ := json.Marshal(fields)
+	prepared, _, err := normalizeTaskFields(&old, fields, TaskPatch{}, taskProfileTestGlobal(t))
+	if err != nil || prepared.Profile.Risks[0].ID != "c11" || prepared.Profile.Risks[0].Rev != 1 || prepared.Profile.NextNo != 12 {
+		t.Fatalf("删掉较小编号后，未保存草稿编号改变：%+v %v", prepared.Profile, err)
+	}
+	after, _ := json.Marshal(fields)
+	if string(before) != string(after) {
+		t.Fatal("准备草稿改到了调用方输入")
+	}
+}
+
+func TestNormalizeTaskProfileRejectsUnsafeOrExhaustedDraftWatermark(t *testing.T) {
+	for _, next := range []int{int(limits.MaxSafeInteger), int(limits.MaxSafeInteger + 1), int(limits.MinSafeInteger - 1)} {
+		fields := taskProfileTestFields()
+		fields.JudgeMode, fields.NotifyPolicy = analysis.ModeAI, "good"
+		fields.Profile = analysis.Profile{Musts: []analysis.Requirement{{Text: "国行", Source: analysis.SourceUser}}, NextNo: next}
+		_, _, err := normalizeTaskFields(nil, fields, TaskPatch{}, taskProfileTestGlobal(t))
+		taskProfileTestError(t, err, "profile", "analysis.profile_invalid")
 	}
 }
 

@@ -139,8 +139,8 @@ func TestBusinessTaskProfileUsesServerIDsAndRevisions(t *testing.T) {
 	result := f.request(http.MethodPost, "/api/v1/tasks", string(body), true)
 	requireStatus(t, result, http.StatusCreated)
 	created := decodeBody[service.TaskSaveResult](t, result)
-	if len(created.Task.Profile.Musts) != 1 || created.Task.Profile.Musts[0].ID != "m1" || created.Task.Profile.Musts[0].Rev != 1 || created.Task.Profile.NextNo != 2 {
-		t.Fatal("新清单编号和版本必须由服务分配")
+	if len(created.Task.Profile.Musts) != 1 || created.Task.Profile.Musts[0].ID != "m999" || created.Task.Profile.Musts[0].Rev != 1 || created.Task.Profile.NextNo != 1000 {
+		t.Fatal("合法草稿编号应保留，版本和编号水位由服务核对")
 	}
 	profile = created.Task.Profile
 	profile.Musts[0].Text = "日版"
@@ -156,7 +156,7 @@ func TestBusinessTaskProfileUsesServerIDsAndRevisions(t *testing.T) {
 	updated := f.request(http.MethodPatch, path, string(patch), true)
 	requireStatus(t, updated, http.StatusOK)
 	saved := decodeBody[service.TaskSaveResult](t, updated)
-	if saved.Task.Profile.Musts[0].ID != "m1" || saved.Task.Profile.Musts[0].Rev != 2 || len(saved.Task.Profile.Bonuses) != 1 || saved.Task.Profile.Bonuses[0].ID != "b2" || saved.Task.Profile.Bonuses[0].Rev != 1 || saved.Task.Profile.NextNo != 3 {
+	if saved.Task.Profile.Musts[0].ID != "m999" || saved.Task.Profile.Musts[0].Rev != 2 || len(saved.Task.Profile.Bonuses) != 1 || saved.Task.Profile.Bonuses[0].ID != "b1000" || saved.Task.Profile.Bonuses[0].Rev != 1 || saved.Task.Profile.NextNo != 1001 {
 		t.Fatal("编辑不能回拨水位或伪造事实版本")
 	}
 	if saved.Task.SearchGeneration != 1 || saved.Effects.SearchReset {

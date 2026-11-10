@@ -335,6 +335,12 @@ func taskProfileID(id string, prefix byte) (int, bool) {
 }
 
 func taskProfileForRevision(old, proposed analysis.Profile) (analysis.Profile, error) {
+	invalid := func() error {
+		return invalidTaskField("profile", locales.Message{Code: "analysis.profile_invalid", Args: map[string]any{"field": "profile"}})
+	}
+	if int64(proposed.NextNo) < limits.MinSafeInteger || int64(proposed.NextNo) > limits.MaxSafeInteger {
+		return analysis.Profile{}, invalid()
+	}
 	watermark := max(1, old.NextNo)
 	oldIDs := map[string]bool{}
 	reserve := func(id string) {
@@ -353,30 +359,24 @@ func taskProfileForRevision(old, proposed analysis.Profile) (analysis.Profile, e
 	for _, item := range old.Risks {
 		reserve(item.ID)
 	}
-	proposed.NextNo = watermark
-	proposed.Musts = append([]analysis.Requirement{}, proposed.Musts...)
-	proposed.Bonuses = append([]analysis.Requirement{}, proposed.Bonuses...)
-	proposed.Risks = append([]analysis.ProfileRisk{}, proposed.Risks...)
+	proposed.NextNo = max(watermark, proposed.NextNo)
 	seen := map[string]bool{}
-	prepare := func(id *string, prefix byte) error {
-		if *id == "" {
+	prepare := func(id string, prefix byte) error {
+		if id == "" {
 			return nil
 		}
-		invalid := func() error {
-			return invalidTaskField("profile", locales.Message{Code: "analysis.profile_invalid", Args: map[string]any{"field": "profile"}})
-		}
-		if seen[*id] {
+		if seen[id] {
 			return invalid()
 		}
-		seen[*id] = true
-		if oldIDs[*id] {
+		seen[id] = true
+		if oldIDs[id] {
 			return nil
 		}
-		if n, valid := taskProfileID(*id, prefix); valid {
+		if n, valid := taskProfileID(id, prefix); valid {
 			if n < watermark {
 				return invalid()
 			}
-			*id = ""
+			proposed.NextNo = max(proposed.NextNo, n+1)
 		}
 		return nil
 	}
@@ -385,13 +385,13 @@ func taskProfileForRevision(old, proposed analysis.Profile) (analysis.Profile, e
 		prefix byte
 	}{{proposed.Musts, 'm'}, {proposed.Bonuses, 'b'}} {
 		for i := range set.items {
-			if err := prepare(&set.items[i].ID, set.prefix); err != nil {
+			if err := prepare(set.items[i].ID, set.prefix); err != nil {
 				return analysis.Profile{}, err
 			}
 		}
 	}
 	for i := range proposed.Risks {
-		if err := prepare(&proposed.Risks[i].ID, 'c'); err != nil {
+		if err := prepare(proposed.Risks[i].ID, 'c'); err != nil {
 			return analysis.Profile{}, err
 		}
 	}
