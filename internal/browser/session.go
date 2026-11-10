@@ -6,8 +6,11 @@ import (
 	"net"
 	"slices"
 	"strconv"
+	"time"
 
+	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/network"
+	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 	"github.com/chromedp/chromedp/remote"
 )
@@ -113,9 +116,25 @@ func (s *Session) Close() {
 	s.cancelAlloc()
 }
 
-// Navigate 在当前标签页打开网址，等页面加载完成。
-func (s *Session) Navigate(url string) error {
-	return chromedp.Do(s.ctx, chromedp.Navigate(url))
+// Navigate 在当前标签页打开网址，等到 DOMContentLoaded 就返回（和上游一样，不等图片等资源全部加载完）。
+func (s *Session) Navigate(url string, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(s.ctx, timeout)
+	defer cancel()
+	var navErr string
+	open := func(ctx context.Context, t *chromedp.Target) (page.NavigateResult, error) {
+		res, err := cdp.Call(ctx, t, page.Navigate, page.NavigateParams{URL: url})
+		navErr = res.ErrorText
+		return res, err
+	}
+	_, err := chromedp.Run(ctx, chromedp.WaitEvent(page.DomContentEventFired,
+		func(page.EventDomContentEventFired) bool { return true }, open))
+	if navErr != "" {
+		return fmt.Errorf("打开页面失败：%s", navErr)
+	}
+	if err != nil {
+		return fmt.Errorf("打开页面失败：%w", err)
+	}
+	return nil
 }
 
 // URL 返回当前页面的网址。

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -19,6 +20,8 @@ import (
 const testPage = `<!doctype html><meta charset="utf-8">
 <input id="q" style="width:300px;height:30px">
 <button id="go" style="width:120px;height:40px">搜索</button>
+<button id="slow" style="width:120px;height:40px">慢请求</button>
+<div id="ghost" style="width:100px;height:100px;opacity:0">透明遮罩</div>
 <div id="out"></div>
 <script>
 window.trusted = {key: null, click: null};
@@ -29,6 +32,7 @@ function search() {
     .then(r => r.json()).then(j => { document.getElementById('out').textContent = j.data.count; });
 }
 q.addEventListener('keydown', e => { if (e.key === 'Enter') search(); });
+document.getElementById('slow').addEventListener('click', () => fetch('/h5/mtop.taobao.idlemtopsearch.pc.search/1.0/?slow=1'));
 document.getElementById('go').addEventListener('click', e => { window.trusted.click = e.isTrusted; search(); });
 </script>`
 
@@ -40,7 +44,14 @@ func startTestServer(t *testing.T) (*httptest.Server, *[]string) {
 		fmt.Fprint(w, testPage)
 	})
 	mux.HandleFunc("/h5/mtop.taobao.idlemtopsearch.pc.search/1.0/", func(w http.ResponseWriter, r *http.Request) {
-		queries = append(queries, r.URL.Query().Get("q"))
+		if r.URL.Query().Get("slow") == "1" {
+			time.Sleep(300 * time.Millisecond) // 在下一次操作之后才返回
+		} else {
+			queries = append(queries, r.URL.Query().Get("q"))
+		}
+		if r.URL.Query().Get("q") == "late" {
+			time.Sleep(time.Second)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{"ret": []string{"SUCCESS::调用成功"}, "data": map[string]any{"count": 30}})
 	})
@@ -48,6 +59,8 @@ func startTestServer(t *testing.T) (*httptest.Server, *[]string) {
 	t.Cleanup(srv.Close)
 	return srv, &queries
 }
+
+var searchAPI = Match{URL: "idlemtopsearch.pc.search", Method: "GET"}
 
 // 需要本机装有 Chrome；没有就跳过。只访问本机的测试服务器。
 func TestSessionAgainstLocalPage(t *testing.T) {
@@ -65,7 +78,7 @@ func TestSessionAgainstLocalPage(t *testing.T) {
 	defer s.Close()
 	s.Capture.Watch("mtop.taobao.idlemtopsearch.pc.search")
 
-	if err := s.Navigate(srv.URL); err != nil {
+	if err := s.Navigate(srv.URL, 15*time.Second); err != nil {
 		t.Fatal(err)
 	}
 
@@ -95,7 +108,7 @@ func TestSessionAgainstLocalPage(t *testing.T) {
 	if err := h.Press(ctx, "Enter"); err != nil {
 		t.Fatal(err)
 	}
-	resp, err := s.Capture.WaitAfter(ctx, mark, "idlemtopsearch.pc.search", 10*time.Second)
+	resp, err := s.Capture.WaitAfter(ctx, mark, searchAPI, 10*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +137,7 @@ func TestSessionAgainstLocalPage(t *testing.T) {
 	if err := h.Click(ctx, btn); err != nil {
 		t.Fatal(err)
 	}
-	resp2, err := s.Capture.WaitAfter(ctx, mark, "idlemtopsearch.pc.search", 10*time.Second)
+	resp2, err := s.Capture.WaitAfter(ctx, mark, searchAPI, 10*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +166,7 @@ func TestFindReportsMissingElement(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	if err := s.Navigate(srv.URL); err != nil {
+	if err := s.Navigate(srv.URL, 15*time.Second); err != nil {
 		t.Fatal(err)
 	}
 	h := NewHuman(s, pacer.New(nil), pacer.Between(0, 0))
@@ -189,5 +202,106 @@ func TestPipeModeIsMarkedAsAutomation(t *testing.T) {
 	}
 	if !webdriver {
 		t.Fatal("pipe 方式下 navigator.webdriver 应该是 true，检查方法可能失效了")
+	}
+}
+
+// 操作之前就发出、操作之后才返回的旧请求，不能被当成这次操作的结果；请求方法不对的也不能算。
+func TestCaptureIgnoresRequestsSentBeforeMark(t *testing.T) {
+	if _, err := FindChrome(); err != nil {
+		t.Skip("本机没有 Chrome：", err)
+	}
+	srv, _ := startTestServer(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	s, err := Start(ctx, Options{ProfileDir: t.TempDir(), Width: 1280, Height: 800})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	s.Capture.Watch("mtop.taobao.idlemtopsearch.pc.search")
+	if err := s.Navigate(srv.URL, 15*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	h := NewHuman(s, pacer.New(nil), pacer.Between(5*time.Millisecond, 15*time.Millisecond))
+
+	// 慢请求先发出（300 毫秒后返回），然后打标记，再发一次 1 秒后才返回的请求。
+	before := s.Capture.Mark()
+	slow, err := h.FirstVisible(ctx, "#slow", 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Click(ctx, slow); err != nil {
+		t.Fatal(err)
+	}
+	// 等慢请求真正发出去再打标记。
+	for !s.Capture.SentAfter(before, searchAPI) {
+		if ctx.Err() != nil {
+			t.Fatal("慢请求一直没有发出")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	mark := s.Capture.Mark()
+
+	box, err := h.FirstVisible(ctx, "#q", 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Click(ctx, box); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Type(ctx, "late"); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Press(ctx, "Enter"); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := s.Capture.WaitAfter(ctx, mark, searchAPI, 10*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(resp.URL, "q=late") {
+		t.Fatalf("拿到的是打标记之前发出的旧请求：%s", resp.URL)
+	}
+
+	// 页面发的是 GET，按 POST 等不应该等到。
+	post := Match{URL: searchAPI.URL, Method: "POST"}
+	if s.Capture.SentAfter(0, post) {
+		t.Fatal("页面没有发过 POST 请求，却被认成发过")
+	}
+	if _, err := s.Capture.WaitAfter(ctx, 0, post, 300*time.Millisecond); err != ErrResponseTimeout {
+		t.Fatalf("按 POST 等应该超时，实际：%v", err)
+	}
+}
+
+// 完全透明的元素不算可见，避免把透明遮罩当成风控弹层。
+func TestTransparentElementIsNotVisible(t *testing.T) {
+	if _, err := FindChrome(); err != nil {
+		t.Skip("本机没有 Chrome：", err)
+	}
+	srv, _ := startTestServer(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	s, err := Start(ctx, Options{ProfileDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err := s.Navigate(srv.URL, 15*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	h := NewHuman(s, pacer.New(nil), pacer.Between(0, 0))
+	nodes, err := h.Find(ctx, "#ghost", 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h.Visible(nodes[0]) {
+		t.Fatal("透明度为 0 的元素被当成了可见")
+	}
+	btn, err := h.Find(ctx, "#go", 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !h.Visible(btn[0]) {
+		t.Fatal("正常的按钮应该可见")
 	}
 }

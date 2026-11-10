@@ -7,6 +7,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/chromedp/cdproto/css"
 	"github.com/chromedp/cdproto/dom"
 	"github.com/chromedp/cdproto/input"
 	"github.com/chromedp/chromedp"
@@ -55,10 +56,26 @@ func (h *Human) Find(ctx context.Context, sel string, timeout time.Duration) ([]
 	return nodes, nil
 }
 
-// Visible 判断元素当前是否显示在页面上：拿得到盒模型且宽高都大于 0。
+// Visible 判断元素当前是否显示在页面上：有位置、宽高大于 0，并且自身没有被隐藏或设为完全透明。
+// 只看元素自身的样式；父元素透明的情况交给具体流程按需要再查。
 func (h *Human) Visible(n *chromedp.Node) bool {
 	_, _, w, ht, err := h.box(n)
-	return err == nil && w > 0 && ht > 0
+	if err != nil || w <= 0 || ht <= 0 {
+		return false
+	}
+	res, err := chromedp.Call(h.s.ctx, css.GetComputedStyleForNode, css.GetComputedStyleForNodeParams{NodeID: n.NodeID})
+	if err != nil {
+		return false
+	}
+	for _, p := range res.ComputedStyle {
+		switch {
+		case p.Name == "display" && p.Value == "none",
+			p.Name == "visibility" && (p.Value == "hidden" || p.Value == "collapse"),
+			p.Name == "opacity" && p.Value == "0":
+			return false
+		}
+	}
+	return true
 }
 
 // FirstVisible 返回第一个可见的匹配元素。
