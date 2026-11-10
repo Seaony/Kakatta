@@ -35,8 +35,7 @@ const Keep = 48 * time.Hour
 // 「今天」按 now 所在的时区算。
 func Check(visits []Visit, now time.Time, kind Kind, l Limits) error {
 	hourAgo := now.Add(-time.Hour)
-	y, m, d := now.Date()
-	today := time.Date(y, m, d, 0, 0, 0, 0, now.Location())
+	today, _ := DayBounds(now)
 	var hour, day int
 	for _, v := range visits {
 		if v.At.After(hourAgo) {

@@ -164,8 +164,7 @@ func validState(b []byte, state *visitState) bool {
 }
 
 func dayBounds(now time.Time) (time.Time, time.Time) {
-	y, m, d := now.Date()
-	return time.Date(y, m, d, 0, 0, 0, 0, now.Location()), time.Date(y, m, d+1, 0, 0, 0, 0, now.Location())
+	return quota.DayBounds(now)
 }
 
 func (j *journal) broken() error {
