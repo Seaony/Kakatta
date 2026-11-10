@@ -14,15 +14,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Seaony/Kakatta/internal/appsettings"
-	"github.com/Seaony/Kakatta/internal/auth"
+	"github.com/Seaony/Kakatta/internal/backup"
 	"github.com/Seaony/Kakatta/internal/config"
-	"github.com/Seaony/Kakatta/internal/eventstore"
-	"github.com/Seaony/Kakatta/internal/locales"
-	"github.com/Seaony/Kakatta/internal/security"
-	"github.com/Seaony/Kakatta/internal/server"
-	"github.com/Seaony/Kakatta/internal/store"
-	"github.com/Seaony/Kakatta/web"
 )
 
 func main() {
@@ -54,84 +47,137 @@ func run(ctx context.Context, args []string, input io.Reader, output io.Writer, 
 	return serve(ctx, cfg, lookup, slog.New(slog.NewJSONHandler(output, nil)))
 }
 
-func serve(ctx context.Context, cfg config.Config, lookup config.Lookup, logger *slog.Logger) error {
-	paths, err := config.CreateDataDirectories(cfg.DataDir)
-	if err != nil {
+func serve(ctx context.Context, cfg config.Config, lookup config.Lookup, logger *slog.Logger) (result error) {
+	if err := os.MkdirAll(cfg.DataDir, 0700); err != nil {
 		return err
+	}
+	if info, err := os.Lstat(cfg.DataDir); err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return errors.New("数据路径必须是真实目录")
 	}
 	serverLock, err := config.AcquireServerLock(cfg.DataDir)
 	if err != nil {
 		return err
 	}
 	defer serverLock.Close()
-	key, err := config.LoadMasterKey(paths, lookup)
+	restoreLock, err := config.AcquireRestoreLock(cfg.DataDir, true)
 	if err != nil {
 		return err
 	}
-	cipher, err := security.NewCipher(key)
-	clear(key)
-	if err != nil {
-		return err
-	}
-	db, err := store.Open(ctx, paths.Database)
-	if err != nil {
-		return err
-	}
-	defer db.Close()
-	preferences, err := appsettings.New(ctx, db.DB(), cfg.Environment, nil)
-	if err != nil {
-		return err
-	}
-	authentication, bootstrap, err := auth.New(ctx, auth.Dependencies{DB: db.DB(), Cipher: cipher})
-	if err != nil {
-		return err
-	}
-	events := eventstore.Store{DB: db.DB()}
-	handler, err := server.New(server.Dependencies{
-		Auth: authentication, Settings: preferences, Health: db.DB().PingContext, Web: web.Assets(),
-		LoginFailure: func(ctx context.Context, event server.LoginFailureEvent) error {
-			if event.Active {
-				_, err := events.Raise(ctx, "login_failures", 0, locales.Message{Code: "security.login_failures", Args: map[string]any{"count": event.Limit, "ip": event.IP}})
-				return err
-			}
-			_, err := events.Resolve(ctx, "login_failures", 0)
+	defer restoreLock.Close()
+	keyConfig := readRuntimeKeyConfig(lookup)
+	if keyConfig.fileSet {
+		if err := checkExternalKeyPaths(keyConfig.file, cfg.DataDir, ".restore", backup.WorkDirName); err != nil {
 			return err
-		},
-	})
+		}
+	}
+	pendingCleanup, err := recoverRestoreFiles(ctx, cfg.DataDir)
 	if err != nil {
 		return err
 	}
-	defer handler.Close()
+	if pendingCleanup {
+		logger.Error("恢复已提交，旧副本等待清理", "reason", "restore.storage_failure")
+	}
+	if err := backup.CleanupInterrupted(cfg.DataDir); err != nil {
+		return err
+	}
+	paths, err := config.CreateDataDirectories(cfg.DataDir)
+	if err != nil {
+		return err
+	}
+	key, source, keyFile, err := keyConfig.load(paths)
+	if err != nil {
+		return err
+	}
+	defer clear(key[:])
 	listener, err := net.Listen("tcp", cfg.Listen)
 	if err != nil {
 		return err
 	}
+	defer listener.Close()
+	runtime, err := newRuntimeManager(ctx, cfg, paths, key, source, keyFile, logger)
+	clear(key[:])
+	if err != nil {
+		return err
+	}
+	if err := restoreLock.Close(); err != nil {
+		cleanup, stop := context.WithTimeout(context.Background(), 30*time.Second)
+		defer stop()
+		return errors.Join(err, runtime.Close(cleanup))
+	}
 	httpServer := &http.Server{
-		Handler: handler, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: time.Minute,
+		Handler: runtime, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: time.Minute,
 		MaxHeaderBytes: 1 << 20, BaseContext: func(net.Listener) context.Context { return ctx },
 	}
+	bootstrap := runtime.graph.bootstrap
 	if bootstrap.Token != "" {
 		logger.Info("首次初始化令牌，只显示这一次", "token", bootstrap.Token, "expires_at", bootstrap.ExpiresAt)
 	}
 	logger.Info("服务已启动", "listen", listener.Addr().String())
 	finished := make(chan error, 1)
 	go func() { finished <- httpServer.Serve(listener) }()
+	ended := false
 	select {
-	case err := <-finished:
-		if errors.Is(err, http.ErrServerClosed) {
-			return nil
+	case result = <-finished:
+		ended = true
+		if errors.Is(result, http.ErrServerClosed) {
+			result = nil
 		}
-		return err
+	case result = <-runtime.failed:
 	case <-ctx.Done():
-		_ = handler.Close()
-		shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := httpServer.Shutdown(shutdown); err != nil {
-			_ = httpServer.Close()
-			<-finished
-			return err
-		}
-		<-finished
-		return nil
 	}
+	shutdown, stop := context.WithTimeout(context.Background(), 30*time.Second)
+	defer stop()
+	result = errors.Join(result, runtime.Close(shutdown))
+	if err := httpServer.Shutdown(shutdown); err != nil {
+		_ = httpServer.Close()
+		result = errors.Join(result, err)
+	}
+	if !ended {
+		<-finished
+	}
+	return result
+}
+
+type runtimeKeyConfig struct {
+	inline, file       string
+	inlineSet, fileSet bool
+}
+
+func readRuntimeKeyConfig(lookup config.Lookup) runtimeKeyConfig {
+	if lookup == nil {
+		lookup = os.LookupEnv
+	}
+	inline, inlineSet := lookup("KAKATTA_SECRET_KEY")
+	file, fileSet := lookup("KAKATTA_SECRET_KEY_FILE")
+	return runtimeKeyConfig{inline: inline, inlineSet: inlineSet, file: file, fileSet: fileSet}
+}
+
+func (c runtimeKeyConfig) load(paths config.Paths) (key [backup.MasterKeyBytes]byte, source backup.KeySource, keyFile string, err error) {
+	loaded, err := config.LoadMasterKey(paths, func(name string) (string, bool) {
+		switch name {
+		case "KAKATTA_SECRET_KEY":
+			return c.inline, c.inlineSet
+		case "KAKATTA_SECRET_KEY_FILE":
+			return c.file, c.fileSet
+		default:
+			return "", false
+		}
+	})
+	if err != nil {
+		return key, "", "", err
+	}
+	defer clear(loaded)
+	copy(key[:], loaded)
+	source = backup.KeyDefaultFile
+	if c.inlineSet {
+		source = backup.KeyEnvironment
+	} else if c.fileSet {
+		source = backup.KeyExternalFile
+		keyFile, err = absoluteKeyPath(c.file)
+		if err != nil {
+			clear(key[:])
+			return key, "", "", err
+		}
+	}
+	return key, source, keyFile, nil
 }

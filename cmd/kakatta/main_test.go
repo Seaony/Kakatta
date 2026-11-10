@@ -52,8 +52,10 @@ func TestServeStartsWithEmbeddedPageAndShutsDown(t *testing.T) {
 	finished := make(chan error, 1)
 	data := t.TempDir()
 	trusted := "127.0.0.0/8"
+	environment := settings.Environment{TZ: "UTC", TrustedProxies: &trusted}
+	prepareOfflineRuntime(t, data, environment)
 	go func() {
-		finished <- serve(ctx, config.Config{DataDir: data, Listen: "127.0.0.1:0", Environment: settings.Environment{TZ: "UTC", TrustedProxies: &trusted}},
+		finished <- serve(ctx, config.Config{DataDir: data, Listen: "127.0.0.1:0", Environment: environment},
 			func(string) (string, bool) { return "", false }, slog.New(slog.NewJSONHandler(logs, nil)))
 	}()
 	var address string
