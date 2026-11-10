@@ -89,7 +89,7 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 | token_hash | BLOB NOT NULL UNIQUE | 令牌的 SHA-256，明文只在发放时返回一次 |
 | name | TEXT NOT NULL | 设备名，网页会话取浏览器的 User-Agent 摘要 |
 | platform | TEXT | `web` / `macos` / `windows` / `linux` / `ios` / `android` |
-| push_key_enc | BLOB | 手机端配对时交换的推送密钥，跟手机端一起做（`DECISIONS.md` 第 11 条），1.0 为空 |
+| push_key_enc | BLOB | 原来留给手机端推送用；客户端先不考虑（`DECISIONS.md` 第 36 条），1.0 为空 |
 | created_at / last_used_at | INTEGER | |
 | expires_at | INTEGER | 网页会话 30 天不用就过期；客户端令牌为空，直到吊销 |
 | revoked_at | INTEGER | |
@@ -1433,7 +1433,7 @@ next_run_at = 结束时间 + interval_minutes × (1 + 随机[0, interval_jitter_
 | 模型 | 每个服务商一个模型 | 每个服务商一个多模态模型，可再配一个便宜的文字模型 | 第二层要用便宜模型 |
 | 密钥保存 | macOS 钥匙串 | AES-256-GCM 加密存在数据库里，主密钥是数据目录里的文件或环境变量 | 服务端跑在 Docker 和 NAS 上，没有钥匙串 |
 | 推送渠道 | 系统通知加 6 种，每种只能配一个 | 10 种，同一种可以配多个，不同任务推到不同渠道；加了系统事件推送 | `PRODUCT.md` 第 7 节 |
-| 系统通知 | macOS 通知中心，带操作按钮 | 服务端没有；跟桌面端、手机端一起做 | `PRODUCT.md` 第 12、13 节 |
+| 系统通知 | macOS 通知中心，带操作按钮 | 服务端没有；客户端以后再定 | `PRODUCT.md` 第 12 节 |
 | 运行时段 | 「运行时段」，时段外不运行 | 「不运行的时段」，默认 01:00–07:30 | `CRAWL-POLICY.md` 第六节 |
 | 睡眠和唤醒 | Mac 睡眠时取消运行，唤醒后等 60 秒 | 服务端常驻，没有睡眠；重启时把未结束的运行记为失败 | 部署方式不同 |
 | 不感兴趣 | 不再通知 | 不再通知，别的任务搜到时直接跳过、不分析 | 省 AI 费用和详情额度 |

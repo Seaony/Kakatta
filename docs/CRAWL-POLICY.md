@@ -24,7 +24,7 @@
 
 - **Google Chrome 正式版，开有界面的窗口。** 不用 Chromium，因为 Chromium 缺少 H.264/AAC 解码器，本身就和普通 Chrome 不一样。也不用任何无头模式：旧版 chrome-headless-shell 和完整 Chrome 的 `--headless=new` 都会在 UA 里带上 `HeadlessChrome`（Chromium `components/embedder_support/user_agent_utils.cc`）。goofish-cli 等至少 3 个项目记录了无头模式会被闲鱼判为「非法访问」，上游作者也建议关闭无头（`scraper.py:753`）。
 - **服务器、NAS 和 Docker**：Chrome 跑在 Xvfb 虚拟屏幕上，屏幕设为 `1920x1080x24`。Xvfb 默认是 8 位色深，很不正常，必须显式设置。Google 从 2026-07-30 起提供 Linux ARM64 的正式版 Chrome，所以 amd64 和 arm64 镜像用的都是同一款浏览器。
-- **桌面端**：用电脑上已经安装的 Google Chrome，Windows 上没有 Chrome 就用 Edge。都没有时，引导用户安装 Chrome，不自带浏览器（`DECISIONS.md` 第 16 条）。
+- 桌面端先不考虑（`DECISIONS.md` 第 36 条）。注意：如果以后做桌面端本机模式，Chrome 要开在用户真实的屏幕上，每次抓取都会弹出窗口，到时候要先解决这个问题。
 - 每个闲鱼账号有一份独立、长期保留的浏览器配置目录（user-data-dir），和用户自己日常用的浏览器完全分开。
 
 ### 怎么连浏览器（chromedp）
@@ -103,8 +103,7 @@
 ## 五、登录和人机验证交给用户
 
 - **登录**：在这个账号自己的浏览器里打开闲鱼登录页，用户扫码。登录状态由浏览器自己保存、自己续期，不导入导出 Cookie。上游靠导入 Cookie 文件，登录状态「快的时候不到半小时，慢的时候也就几个小时」就失效（#492）；我们这种方式能撑多久，要放进实验里验证。
-- **服务器、NAS 和 Docker**：需要用户操作时，临时启动 x11vnc 加 noVNC，用户在任何一个客户端里直接看到并操作这个 Xvfb 窗口。鼠标操作经过 X 服务器送进浏览器，和真人操作走同一条路，不经过 CDP。用户操作完就关掉。noVNC 是静态网页文件，x11vnc 只有几 MB，平时不运行。
-- **桌面端**：直接把那个 Chrome 窗口调到最前面，让用户自己操作。
+- **服务器、NAS 和 Docker**：需要用户操作时，临时启动 x11vnc 加 noVNC，用户在网页端里直接看到并操作这个 Xvfb 窗口。鼠标操作经过 X 服务器送进浏览器，和真人操作走同一条路，不经过 CDP。用户操作完就关掉。noVNC 是静态网页文件，x11vnc 只有几 MB，平时不运行。
 - **在同一个浏览器里完成验证**：有 issue 报告，验证通过后拿到的 `x5sec` 和完成验证的浏览器绑定（xianyu-super-butler #62）。
 - **风险**：上游作者确认「playwright的chromium 即使手动拖动滑动条做验证也无法通过」（#62）。我们的环境不同：正式版 Chrome、没有自动化标记、鼠标走 X 服务器，但能不能通过，仍然要用实验验证。
 

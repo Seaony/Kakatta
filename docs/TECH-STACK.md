@@ -1,12 +1,12 @@
 # 技术栈分析
 
-2026-11-10 整理。结论：服务端用 Go，浏览器自动化用 chromedp，前端用 React + Vite + TypeScript，桌面端用 MyGo。
+2026-11-10 整理。结论：服务端用 Go，浏览器自动化用 chromedp，前端用 React + Vite + TypeScript。现在只做 Docker 加网页端（`DECISIONS.md` 第 36 条），下文关于桌面端的内容是当初选型时的考虑，客户端以后再定。
 
 ## 选型要满足什么
 
 1. **抓闲鱼要稳**：浏览器自动化库要成熟、一直有人维护；能读到页面自己请求的数据、点筛选、截屏传画面、转发用户的鼠标操作。
 2. **能跑在各种环境里，并且尽可能轻量**：NAS（常见 ARM64、内存 2GB 左右）、云服务器、用户自己电脑上的 Docker。要省内存、镜像小、支持 amd64 和 arm64；不另外带运行时（`DECISIONS.md` 第 15、16 条）。
-3. **桌面端能把服务端直接带进去**：本机模式不另外下载服务端（`VISION.md`）。
+3. **（已搁置）桌面端能把服务端直接带进去**：客户端先不考虑（`DECISIONS.md` 第 36 条），这条现在不作为选型理由。
 4. **长期常驻**：7×24 小时运行，不能有内存一直涨、需要定期重启的问题。
 5. **开源项目能吸引贡献者**：语言要常见，工程要简单。
 
@@ -35,17 +35,16 @@ go-rod 的接口比 chromedp 好写，但维护基本停了：最后一个版本
 ## 其他选择
 
 - **SQLite**：用纯 Go 的 `modernc.org/sqlite`，不用 cgo。Dalibre 这个真实的 MyGo 应用也在用它（v1.62.0），见 `REFERENCES.md`。
-- **前端**（网页端和桌面端共用，`DECISIONS.md` 第 34 条）：
+- **前端**（网页端）：
   - React + Vite + TypeScript；
   - 路由用 TanStack Router，接口数据用 TanStack Query；
   - 接口调用代码由服务端的 OpenAPI 描述自动生成（openapi-typescript + openapi-fetch），Go 和 TypeScript 之间不用手动同步；
   - 样式用 Tailwind CSS，颜色、字号、间距、圆角全部做成 CSS 变量；交互组件用 Radix UI 的无样式基础组件，在仓库里包一层自己的组件，页面只组合这些组件。第一版不做设计、之后要整体 Redesign（`DECISIONS.md` 第 30 条），这样换皮时只改变量和组件，不动页面；
   - 多语言文件和服务端共用同一套 JSON；
   - 用 Bun 做包管理和构建，Bun 只在开发和构建时用到，不进运行时；构建产物用 `go:embed` 嵌进 Go 程序，Docker 镜像里不需要 Node 或 Bun；
-  - 要兼容三种网页引擎：Safari 内核（macOS 的 WKWebView、Linux 的 WebKitGTK）和 Chromium 内核（Windows 的 WebView2、普通浏览器），构建目标按 Safari 16 来定。
+  - 要兼容主流浏览器，包括手机上的 Safari（用户会在手机浏览器里打开网页端），构建目标按 Safari 16 来定。
 - **Docker 镜像**：Go 程序 + Google Chrome 正式版 + Xvfb（需要用户操作时再临时启动 x11vnc 和 noVNC），同时发布 amd64 和 arm64。浏览器为什么这样选，见 `CRAWL-POLICY.md`。
 
 ## 有什么证据会推翻这个结论
 
 - 动工前的实验（`CRAWL-POLICY.md` 第八节）发现 chromedp 在闲鱼的某个流程上明显做不到、而 Playwright 能做到。
-- MyGo 在实际使用中有严重问题，并且 Wails 也不合适。这种情况下 Go 的优势会少一大块，需要重新比较。

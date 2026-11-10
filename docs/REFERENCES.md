@@ -24,6 +24,6 @@
 - **界面测试不需要开窗口，还能保存截图**（`DALIBRE_SHOTS=<目录> go test`），适合做界面自检。
 - **系统接口用 purego 调用**，不用 cgo。
 
-**还要讨论的**：桌面端界面用原生还是网页、MCP 服务、设计流程，见 `OPEN-QUESTIONS.md`；插件见 `DECISIONS.md` 第 25 条。
+**说明**：桌面端先不考虑（`DECISIONS.md` 第 36 条），上面和 MyGo、桌面安装包有关的部分以后做客户端时再参考；现在参考的是 SQLite、CHANGELOG、多语言文件、样例数据生成器和 Docker 镜像构建。插件见 `DECISIONS.md` 第 25 条。
 
 **不同之处**：Dalibre 只有桌面端，不需要网页界面；Kakatta 必须有网页端（Docker 部署后用浏览器访问），这是选界面方案时最大的区别。
