@@ -227,6 +227,7 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 | is_dismissed | INTEGER NOT NULL DEFAULT 0 | 不感兴趣 |
 | last_drop_amount | INTEGER | 最近一次降价的幅度（分），涨价时清空 |
 | last_drop_at | INTEGER | |
+| sale_status | TEXT | `on_sale` / `sold` / `offline`，空 = 不知道。只在打开详情时顺便更新，不为它额外访问闲鱼（详情接口里的字段路径待用真实页面确认，`XIANYU.md` 第十一节）。不是 `on_sale` 时卡片和详情打「已卖出」「已下架」标签 |
 
 索引：`(last_seen_at)`、`(seller_id)`、`(is_favorite)`。
 
@@ -289,6 +290,7 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 | retryable | INTEGER NOT NULL DEFAULT 0 | 失败时能不能下次重试 |
 | is_read | INTEGER NOT NULL | 基线发现创建时就是已读，其余是未读 |
 | notified_at | INTEGER | 至少一个渠道发送成功的时间 |
+| notify_skip_reason | TEXT | 判断完、确定不发通知时写原因（13.7），发了的为空 |
 | recommended_price | INTEGER | 判为推荐时的价格 |
 | last_drop_notified_price | INTEGER | 上一次发降价通知时的价格 |
 | drop_notified_at | INTEGER | |
@@ -296,6 +298,7 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 - 唯一约束：`(task_id, item_id)`。
 - 索引：`(task_id, found_at)`、`(task_id, decision)`、`(is_read)`、`(item_id)`。
 - 「分析失败（已放弃）」不另存字段：`decision = failed` 且 `retryable = 0`。
+- 「等待分析」也不另存字段：`decision = pending` 且 `reason` 以「等待分析」开头（8.5）。
 
 ### 2.9 AI 服务商
 
@@ -315,7 +318,7 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 | error_state | TEXT | 出了需要用户处理的错（Key 无效、余额不足、模型不存在、模型不支持图片）时写原因，有值就不参与自动使用 |
 | error_at | INTEGER | |
 
-用户保存或测试成功时清空 `error_state`。
+用户保存或试分析成功时清空 `error_state`。`error_state` 是「余额不足」或「当天额度用完」时，`general.timezone` 的第二天 0 点后自动用文字模型发一次最小请求（`Reply with OK`），成功就清空；其他原因（Key 无效、模型不存在、不支持图片、思考太长）要用户处理。
 
 **ai_compat**：每个「地址 + 模型」的兼容标记，见 8.3。
 
@@ -326,11 +329,12 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 | json_mode TEXT NOT NULL DEFAULT 'schema' | `schema` / `object` / `text` |
 | send_temperature INTEGER NOT NULL DEFAULT 1 | |
 | max_tokens_param TEXT NOT NULL DEFAULT 'max_tokens' | `max_tokens` / `max_completion_tokens` |
+| max_tokens_floor INTEGER | 回复被截断后调大的输出上限（8.3），为空时按 8.1 表里的值；有值时各用途取两者中较大的 |
 | updated_at | |
 
 主键 `(provider_id, model)`。服务商的地址或模型改了，删掉它的兼容标记重新试。
 
-**ai_calls**：每次请求一条，不存请求和回复的内容。字段：`id`、`at`、`provider_id`、`model`、`purpose`（`title_screen` / `analysis` / `criteria` / `market` / `test`）、`task_id`、`ok`、`http_status`、`error_kind`、`json_mode`、`input_tokens`、`output_tokens`、`duration_ms`。索引 `(at)`。
+**ai_calls**：每次请求一条，不存请求和回复的内容。字段：`id`、`at`、`provider_id`、`model`、`purpose`（`title_screen` / `analysis` / `criteria` / `market` / `test` / `probe`）、`task_id`、`ok`、`http_status`、`error_kind`、`json_mode`、`input_tokens`、`output_tokens`、`reasoning_tokens`（返回的 `usage.completion_tokens_details.reasoning_tokens`，没有为空）、`finish_reason`、`duration_ms`。索引 `(at)`。
 
 ### 2.10 推送渠道
 
@@ -339,7 +343,7 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | id | INTEGER PK | |
-| type | TEXT NOT NULL | `bark` / `telegram` / `ntfy` / `gotify` / `wecom` / `dingtalk` / `feishu` / `pushplus` / `webhook` / `email` |
+| type | TEXT NOT NULL | `bark` / `telegram` / `ntfy` / `gotify` / `wecom` / `dingtalk` / `feishu` / `pushplus` / `serverchan` / `webhook` / `email` |
 | name | TEXT NOT NULL | 同一种渠道配多个时用来区分，如「Telegram · 家人群」 |
 | enabled | INTEGER NOT NULL DEFAULT 1 | |
 | config_json | TEXT NOT NULL | 不敏感的配置（见 13.6 各渠道的配置项） |
@@ -348,7 +352,9 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 
 `UNIQUE (type, name)`。
 
-**deliveries**：每次实际发送一条。字段：`id`、`at`、`channel_id`、`task_id`、`kind`（`recommended` / `all_new` / `price_drop` / `summary` / `system` / `test`）、`item_count`、`ok`、`error`（固定格式、带渠道名的说明，不含地址、Token 或响应正文）。索引 `(at)`。
+**deliveries**：每次实际发送一条。字段：`id`、`at`、`channel_id`、`task_id`、`kind`（`recommended` / `all_new` / `price_drop` / `summary` / `system` / `test`）、`item_count`、`ok`、`error`（固定格式、带渠道名的说明，不含地址、Token 或响应正文）。索引 `(at)`、`(channel_id, at)`。
+
+**delivery_items**：一次发送里包含哪些发现。字段：`delivery_id REFERENCES deliveries ON DELETE CASCADE`、`finding_id INTEGER`，主键 `(delivery_id, finding_id)`，索引 `(finding_id)`。合并消息里的每个发现都写一行。用来在发现上显示推送状态（13.7），随 `deliveries` 一起清理。
 
 ### 2.11 运行记录与系统事件
 
@@ -379,12 +385,12 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 | 字段 | 说明 |
 |---|---|
 | id INTEGER PK | |
-| kind TEXT | `account_verify` / `account_login` / `account_deny` / `ai_error` / `task_failure_pause` |
+| kind TEXT | `account_verify` / `account_login` / `account_deny` / `ai_error` / `ai_budget` / `task_failure_pause` |
 | subject_id INTEGER | 账号、服务商或任务的 id |
 | message TEXT | |
 | created_at、resolved_at、notified_at | |
 
-同一个 `(kind, subject_id)` 有未解决的事件时，不再新建、不再推送。解决的时机：账号恢复可用、服务商下一次请求成功或被用户保存、任务暂停结束。
+同一个 `(kind, subject_id)` 有未解决的事件时，不再新建、不再推送。解决的时机：账号恢复可用、服务商下一次请求成功或被用户保存、任务暂停结束、第二天 0 点或用户调高每日上限（`ai_budget`，`subject_id` 为 0）。
 
 ### 2.12 市场行情
 
@@ -440,6 +446,7 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 | `ai.max_concurrent_requests` | 2 | 整个服务端同时进行的 AI 请求数 |
 | `ai.request_timeout_seconds` | 90 | |
 | `ai.proxy_id` | 空 | AI 请求专用的代理，只影响 AI，不影响闲鱼和推送 |
+| `ai.daily_token_limit` | 0 | 每天最多用多少 token（输入加输出，所有服务商合计），0 = 不限，见 8.8 |
 
 **通知**
 
@@ -488,7 +495,7 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 3. 不在 `crawl.quiet_hours` 里。
 4. 账号的每小时额度和每天的搜索额度都至少还剩 2 次（首页加搜索；这只是入口估算，真正的限制在每次访问前检查）。
 5. 距离这个账号上次运行结束，已经过了 `next_gap_seconds`。
-6. AI 任务至少有一个可用的 AI 服务商；分析标准不为空。
+6. AI 任务至少有一个可用的 AI 服务商；分析标准不为空；今天的 AI 用量没到 `ai.daily_token_limit`（8.8）。
 7. 有空闲的页面名额：全局不超过 `crawl.global_pages`，这个账号不超过 `crawl.pages_per_account`。没有名额时不记跳过，排队等。
 
 ### 4.2 取补处理队列
@@ -562,12 +569,13 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 
 - 通过 → `stage = detail`，记 `title_screen_reason`。
 - 不通过 → `rejected`，`decided_layer = 2`。
-- 所有服务商都出错 → `failed`，按 8.5 决定能不能重试。不打开详情。
+- 所有服务商都出错 → 按 8.5 记为 `failed` 或「等待分析」。不打开详情。
 
 ### 4.9 打开详情和判断
 
 对 P 里 `stage = detail` 的发现，按 Q 在前、新发现在后的顺序逐个处理。本次运行打开的详情页和卖家主页合计不超过 `max_details_per_run`（任务覆盖值或全局值）。每处理一个，`attempts` 加 1。
 
+0. 商品的 `detail_fetched_at` 在 24 小时以内（之前打开过但没判断完，比如上次在等待分析）：直接用已有的详情，跳过第 1、2、7 步，不占详情上限。
 1. 打开详情页**之前**，申请一次详情额度。申请不到，或本次的详情上限已用完：P 里剩下的都保持 `pending`，结束这一步，本次运行仍算成功。
 2. 等 `crawl.detail_pre_wait_seconds`，打开详情页，读详情。解析失败或加载失败只影响这一件：记为 `failed`、`retryable = 1`（第 3 次失败后为 0），继续下一件。风控、登录失效、取消不在这里处理，照常往外抛。
 3. 拿到 `seller_id` 后**再检查一次屏蔽列表**，命中就 `skipped`：不打开卖家主页、不判断、不通知。
@@ -576,7 +584,7 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 6. AI 任务：
    - 卖家资料在缓存里且没过期 → 直接用。
    - 否则先申请一次详情额度并占用一个详情上限名额，再打开卖家主页。申请不到，或卖家主页的普通错误（不是风控、不是登录失效）：卖家资料留空继续判断，在运行记录的提示里写一句，同一次运行里去重。
-   - 第三层判断（5.3）。判断可以和下一件的抓取同时进行，同时最多 `ai.max_concurrent_requests` 个；浏览器仍然一次只开一个页面。
+   - 第三层判断（5.3）。所有服务商都出错时按 8.5 记为 `failed` 或「等待分析」；记为等待分析的，这一次的 `attempts` 不加。判断可以和下一件的抓取同时进行，同时最多 `ai.max_concurrent_requests` 个；浏览器仍然一次只开一个页面。
 7. 看完详情后停留 `crawl.detail_stay_seconds`。
 
 判断得出结论后：推荐时写 `recommended_price` 为当前价格。
@@ -687,6 +695,14 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 - 需要详情时：商品 `detail_fetched_at` 在 24 小时以内就用已有的详情，不打开闲鱼；否则作为一次手动运行排队（遵守第 6 节的全部限制），只处理这一件。
 - 重新分析不发「发现推荐」通知，结论变成推荐后，之后的降价照常通知。
 
+### 5.6 长期没有推荐的提示
+
+AI 任务最近 30 个第三层得出结论的发现（不含基线）里一个推荐都没有时，任务卡片和结果页顶部显示提示：
+
+- 统计这 30 个发现 `criteria_results_json` 里 `status = fail` 的检查项，按 `name` 规整（NFKC、去首尾空白）后计数，取次数最多的 3 项。
+- 文案：「最近 30 个商品都没有推荐。最常见的不通过项：卖家信用极好（22 次）、成色九五新以上（9 次）。可能是分析标准太严。」后面是「编辑分析标准」按钮，打开 Prompt 页里这个任务的标准。
+- 只读已有数据，不调 AI、不访问闲鱼。改了分析标准、或出现新的推荐后提示消失；用户点「知道了」后，直到再积累 30 个都没推荐才再显示。
+
 ---
 
 ## 6. 调度
@@ -790,7 +806,8 @@ next_run_at = 结束时间 + interval_minutes × (1 + 随机[0, interval_jitter_
 - 接口：`POST {base_url}/chat/completions`，请求头 `Authorization: Bearer <key>`（没填 Key 时不发这个头）、`Content-Type: application/json`。超时 `ai.request_timeout_seconds`。
 - 所有用途共用一个信号量，同时最多 `ai.max_concurrent_requests` 个请求。兼容重试持有原来的名额。
 - 回复文本取 `choices[0].message.content`；它是数组时把每段的 `text` 拼起来；为空时改取 `choices[0].message.reasoning_content`（参考上游 `src/services/ai_response_parser.py:28-42`）。再去掉闭合的 `<think>…</think>`。
-- 每次请求写一条 `ai_calls`，token 数取返回的 `usage`。
+- 每次请求写一条 `ai_calls`，token 数取返回的 `usage`，同时记下 `choices[0].finish_reason`。
+- 实际发的 max_tokens 取下表的值和 `ai_compat.max_tokens_floor` 中较大的。
 
 各用途的参数：
 
@@ -800,7 +817,8 @@ next_run_at = 结束时间 + interval_minutes × (1 + 随机[0, interval_jitter_
 | 第三层 `analysis` | vision_model | 0.1，解析重试时 0.05 | 2000 | 有 |
 | 生成分析标准 `criteria` | text_model | 0.5 | 2000 | 不发 |
 | 行情解读 `market` | text_model | 不发 | 400 | 不发 |
-| 测试连接 `test` | 两个模型各测一次 | 不发 | 5 | 不发 |
+| 试分析 `test` | 两步，见 8.7 | 同第二层、第三层 | 同第二层、第三层 | 同第二层、第三层 |
+| 第二天自动再试 `probe`（2.9） | text_model | 不发 | 5 | 不发 |
 
 ### 8.2 结构化输出逐级降级
 
@@ -888,6 +906,10 @@ next_run_at = 结束时间 + interval_minutes × (1 + 随机[0, interval_jitter_
 
 - 返回内容提到 `temperature`，并带有 `not supported`、`unsupported`、`invalid` 或「参数错误」→ 以后不发 `temperature`（上游 `src/services/ai_request_compat.py:160-168`）。
 - 返回 400，内容同时提到 `max_tokens` 和 `max_completion_tokens` → 以后改用 `max_completion_tokens`。
+- **回复被截断**：`finish_reason = "length"`（思考模型常见：推理也算在输出上限里，上游 #499 里 DeepSeek 4000 个输出 token 有 3849 个花在思考上）。不当成解析失败，也不换服务商：
+  1. `max_tokens_floor` 为空或小于 8000 → 设为 8000，立刻重发。
+  2. 已经是 8000 还截断 → 这个服务商写 `error_state`「回复被截断：这个模型思考太长，不适合」，新建 `ai_error` 事件并推送，换下一个服务商。
+  生成分析标准同样适用；它原来「没闭合的 `<think>`」的报错保留，作为没有 `finish_reason` 的服务商的兜底。
 
 不做 Responses API 回退：Kakatta 只支持 Chat Completions 接口，设置页写明这一点。
 
@@ -910,11 +932,14 @@ next_run_at = 结束时间 + interval_minutes × (1 + 随机[0, interval_jitter_
    - 兼容调整（8.2、8.3）后重发，不算重试。
    - 返回成功但解析失败：同一个服务商再试一次（第三层用 temperature 0.05）。还是失败就换下一个。
    - 401、403、402、返回内容说余额不足、404 模型不存在、400 且内容说模型不支持图片：写 `error_state`，新建 `ai_error` 系统事件并推送，换下一个。
-   - 429、5xx、网络错误、超时：换下一个，不在同一个服务商上立刻重试。
-3. 全部失败：发现记为 `failed`，`reason` 写最后一个错误的说明（遮掉 Key）。只要有一个服务商的失败属于临时错误（429、5xx、网络、超时），`retryable = 1`；否则为 0。`attempts` 达到 3 后不再自动重试，界面显示「分析失败（已放弃）」，仍可手动重新分析。
-4. 有任何一次请求成功，就解决这个服务商的 `ai_error` 事件。
+   - 429 且返回内容提到 `quota`、`额度`、`exceeded today`、`insufficient`、`balance`：当天额度用完，写 `error_state`「当天额度用完」（第二天自动再试，2.9），新建 `ai_error` 事件并推送，换下一个。
+   - 其他 429、5xx、网络错误、超时：换下一个，不在同一个服务商上立刻重试。
+   - 今天的用量到了 `ai.daily_token_limit`（8.8）：不再发请求，按「没有可用的服务商」处理。
+3. 失败全是服务商这边不能用（候选为空；或每个服务商的失败都写了 `error_state`；或到了每日上限）：发现保持 `pending`、`stage` 不变，`reason` 写「等待分析：没有可用的 AI 服务商」或「等待分析：今天的 AI 用量已到上限」，`attempts` 不加。之后服务商恢复（试分析成功、用户保存、第二天自动再试成功）或第二天用量清零，下一次运行从补处理队列里接着处理。
+4. 其他情况全部失败：发现记为 `failed`，`reason` 写最后一个错误的说明（遮掉 Key）。只要有一个服务商的失败属于临时错误（429、5xx、网络、超时），`retryable = 1`；否则为 0。`attempts` 达到 3 后不再自动重试，界面显示「分析失败（已放弃）」，仍可手动重新分析。
+5. 有任何一次请求成功，就解决这个服务商的 `ai_error` 事件。
 
-生成分析标准、行情解读、测试连接不换服务商：生成标准和行情解读用第一个可用的服务商，测试连接只测被点的那个。
+生成分析标准、行情解读、试分析不换服务商：生成标准和行情解读用第一个可用的服务商，试分析只测被点的那个。
 
 ### 8.6 提示词原文
 
@@ -1003,11 +1028,45 @@ next_run_at = 结束时间 + interval_minutes × (1 + 随机[0, interval_jitter_
 只输出这段话，不要标题、列表、Markdown 或寒暄。
 ```
 
-### 8.7 测试连接
+### 8.7 试分析
 
-- 文字测试：发 `Reply with OK`，`max_tokens: 5`，返回 2xx 就算成功。
-- 图片测试：带一张程序内置的 16×16 PNG 再发一次。返回 400 且内容提到图片时，提示「这个模型不支持图片，不能用于第三层」。
-- 失败时显示 HTTP 状态码和返回内容的前 200 字（先遮掉 Key）。成功时清空 `error_state`。
+代替「测试连接」。上游的测试只让模型回一个 OK，真实分析带结构化输出、更长的输出和多张大图，所以 20 多条 issue 是「测试成功、实际全失败」（#200、#252、#287、#499）。
+
+- **样例**：程序自带一件虚构的样例商品（标题、价格、描述、卖家资料），一份固定的分析标准，一张正常尺寸的商品照片（最长边 1024 像素的 JPEG，打包进程序）。
+- **两步**，都按真实用途的参数发（8.1 的表、8.2 和 8.3 的兼容处理照常进行，结果写进 `ai_compat`，所以试分析之后第一次真实运行就不用再摸索）：
+  1. `text_model` 按第二层发一次（标题初筛模板）。`text_model` 为空时用 `vision_model`。
+  2. `vision_model` 按第三层发一次（通用分析模板，带那张图）。
+- **通过**：两步都返回 2xx、没有被截断、按 8.4 能解析出合法结果。
+- **结果逐项显示**：
+  - 文字模型：通过 / 失败及原因。
+  - 看图：通过 / 「这个模型不能看图，只能用来看标题」。
+  - 结构化输出：用的是 `schema`、`object` 还是 `text`。
+  - 思考模型：`reasoning_tokens` 大于 0、有 `reasoning_content` 或回复里有 `<think>` 时显示「是」，并写这次思考用了多少 token。
+  - 两步各用了多少 token、耗时多久。
+- **失败时说人话**，原始返回放在可以展开的「详细信息」里（HTTP 状态码和返回内容的前 200 字，先遮掉 Key）：
+
+  | 情况 | 显示 |
+  |---|---|
+  | 401、403 | API Key 不对或没有权限 |
+  | 402、返回内容说余额不足 | 余额不足 |
+  | 404 | 地址或模型名不对：地址一般以 `/v1` 结尾，模型名要和服务商控制台里的一致 |
+  | 400 且提到图片 | 这个模型不能看图，只能用来看标题（填在「文字模型」里） |
+  | 截断后调到 8000 还截断 | 这个模型思考太长，不适合 |
+  | 解析失败 | 模型没按要求输出 JSON，建议换一个模型 |
+  | 连接被拒绝，且地址的主机是 `localhost`、`127.0.0.1` 或 `::1` | 容器里的 localhost 指容器自己。本机的 Ollama 等服务请填宿主机的局域网 IP，或 `host.docker.internal` |
+  | 其他网络错误、超时 | 连不上这个地址，检查地址和 AI 专用代理 |
+
+- 成功时清空 `error_state`。试分析的请求记为 `purpose = test`，算进当天用量，但到了每日上限也允许试分析。
+- **地址自动修正**：保存服务商时，`base_url` 去掉末尾的 `/`，再去掉末尾的 `/chat/completions`（上游 #214：用户把完整接口地址填进来），并在表单上提示「已去掉结尾的 /chat/completions」。
+
+### 8.8 用量和每日上限
+
+- **用量**：当天用量 = `general.timezone` 今天 0 点以来 `ai_calls` 的 `input_tokens + output_tokens` 之和，所有服务商和用途合计；没返回 `usage` 的请求按 0 算，并在 AI 设置页注明「部分服务商不返回用量，实际可能更多」。
+- **显示**：AI 设置页显示今天、近 7 天、近 30 天的用量，按任务和用途（标题初筛、看图分析、生成标准、行情解读、试分析）分开；概览的 AI 小卡显示合计（第 16 节）。
+- **每日上限** `ai.daily_token_limit`（0 = 不限）：
+  - 发每个 AI 请求之前检查，到了就不发（试分析除外）。请求已经发出去的照常完成，所以实际用量可能略超上限。
+  - 到了上限：新建 `ai_budget` 系统事件并推送「今天的 AI 用量已到上限 N，AI 任务暂停到明天 0 点；关键词任务照常运行」；AI 任务在前置检查里跳过（4.1），已经在跑的运行把剩下的商品记为「等待分析」（8.5）。
+  - 第二天 0 点，或用户调高、取消上限时，解决 `ai_budget` 事件，AI 任务照常运行，等待分析的商品从补处理队列接着处理。
 
 ---
 
@@ -1054,6 +1113,12 @@ next_run_at = 结束时间 + interval_minutes × (1 + 随机[0, interval_jitter_
 - **删除结果**：
   - 删除全部：删除这个任务的全部发现，收藏商品的发现保留；`seen_items` 不动，老商品不会再变成新商品。没被引用、没收藏的商品之后由清理删掉。
   - 单个删除：删掉这一条发现。商品被收藏的话收藏仍在。
+- **批量操作**：结果列表可以多选（当前筛选结果「全选」最多 200 条），批量删除、重新分析、标为不感兴趣。
+  - 批量重新分析按 5.5 逐个排队。其中需要重新打开详情的（`detail_fetched_at` 超过 24 小时），确认框里写明「其中 N 个需要重新打开详情，会占用详情额度，按访问限制排队，可能要分几次运行才处理完」。
+  - 结果页的「分析失败」筛选下有「重新分析全部失败的」，等于全选后批量重新分析。
+- **新加的排除词补判已有结果**：保存任务时排除词有新增，统计这个任务现有的发现里，商品标题（打开过详情的加上描述）命中新增排除词、没收藏、结论不是 `rejected` 的有几条。有的话在保存后提示「已有 N 条结果命中新的排除词，要不要一起隐藏？」，选项「隐藏」「保留」：
+  - 隐藏：这些发现改为 `rejected`，`decided_layer = 1`，原因「命中排除词：xx（后来添加）」，从默认列表里隐藏，可以在「未推荐」筛选里看到。记录保留，`seen_items` 不动，不会被当成新商品重新分析；已经发过的通知不撤回。
+  - 保留：什么都不改，只对之后的新商品生效。
 - **已读**：打开详情就标为已读，可以手动标为未读。基线发现创建时就是已读。
 
 ---
@@ -1062,7 +1127,7 @@ next_run_at = 结束时间 + interval_minutes × (1 + 随机[0, interval_jitter_
 
 ### 12.1 统计口径
 
-输入：本任务 `task_sightings` 里近 14 天的记录（每个商品每天一个价格，就是当天最后一次看到的价格），包括没推荐、第一层没通过的。
+输入：本任务 `task_sightings` 里近 14 天的记录（每个商品每天一个价格，就是当天最后一次看到的价格），包括没推荐、第一层没通过的；但不包括标题命中任务**当前**排除词的商品（按 `listings.title` 现算，改了排除词立刻生效）和标为不感兴趣的商品，避免无关型号拉偏行情（上游 #479）。
 
 | 指标 | 算法 |
 |---|---|
@@ -1125,7 +1190,7 @@ next_run_at = 结束时间 + interval_minutes × (1 + 随机[0, interval_jitter_
 
 - 发到任务勾选的渠道（`task_channels`）里启用的那些。
 - 渠道之间同时发，同一渠道内按顺序发。企业微信和钉钉每个机器人每分钟最多 20 条，所以同一渠道两条之间至少隔 3 秒；飞书至少隔 1 秒。
-- 任一渠道发送成功就算已通知，写 `notified_at`。全部失败的保持未通知，下次运行再发。每次发送写一条 `deliveries`。
+- 任一渠道发送成功就算已通知，写 `notified_at`。全部失败的保持未通知，下次运行再发。每次发送写一条 `deliveries`，消息里包含的每个发现写一条 `delivery_items`（合并消息包含被合并的全部发现）。
 - 失败只记日志，不影响其他渠道和运行结果。错误信息只写固定格式、带渠道名的说明，不写含 Token 的地址、请求头或响应正文。
 - 先保存已经成功的送达标记，再处理取消，避免部分成功后重复推送。
 - 「发送测试」用固定的示例消息，标题「Kakatta 测试通知」，带一张示例商品图地址和一个闲鱼首页链接。
@@ -1139,7 +1204,8 @@ next_run_at = 结束时间 + interval_minutes × (1 + 随机[0, interval_jitter_
 | 需要人机验证 | `[账号名] 闲鱼需要验证` | `这个账号上的 N 个任务已暂停。请打开 Kakatta，在远程画面里完成验证。` |
 | 直接拒绝访问 | `[账号名] 闲鱼拒绝访问` | `这个账号暂停 24 小时，到 HH:mm 自动恢复。` |
 | 登录失效 | `[账号名] 闲鱼登录已失效` | `请打开 Kakatta 重新扫码登录。`（自动分配的任务已换到别的账号时加一句「N 个任务已换到 xx」） |
-| AI 接口出错 | `AI 接口出错：服务商名` | 错误说明，如「API Key 无效」「余额不足」 |
+| AI 接口出错 | `AI 接口出错：服务商名` | 错误说明，如「API Key 无效」「余额不足」「当天额度用完」「这个模型思考太长」 |
+| AI 用量到上限 | `今天的 AI 用量已到上限` | `已用 N token，AI 任务暂停到明天 0 点；关键词任务照常运行。` |
 | 任务连续失败暂停 | `[任务名] 连续失败 N 次` | `已暂停 30 分钟，最近一次的原因：xx` |
 
 系统事件没有商品图，链接是 `kakatta_url`（账号页、AI 设置页或任务的日志），没设置 `public_url` 时不带链接。
@@ -1265,6 +1331,19 @@ next_run_at = 结束时间 + interval_minutes × (1 + 随机[0, interval_jitter_
   没填 topic 时不带这个字段。内容是 HTML：`<b>item_title</b><br>body<br><img src="image_url" style="max-width:100%"><br><a href="link">在闲鱼打开</a>`，所有插入的文字做 HTML 转义，换行用 `<br>`。上游用 `txt` 模板（因为 html 模板会吃掉换行），我们用 `html` 是为了带商品图，换行显式写成 `<br>`。
 - 成功：2xx 且返回的 `code == 200`。PushPlus 在 Token 无效或额度用完时 HTTP 仍返回 200，失败写在 `code` 里（上游 `pushplus_client.py:60-63`）。`code == 200` 只表示收到了，实际送达是异步的。
 
+**Server 酱**（上游没有；参考官方 SDK <https://github.com/easychen/serverchan-sdk-golang> 的 `serverchan.go`，同时支持 Server 酱 Turbo 和 Server 酱³）
+
+- 配置：SendKey（加密）。
+- 地址按 SendKey 选：以 `sctp` 开头时，用正则 `^sctp(\d+)t` 取出数字 N，地址是 `https://N.push.ft07.com/send/<sendkey>.send`（Server 酱³），取不出数字就在保存时报「SendKey 格式不对」；其他的是 `https://sctapi.ftqq.com/<sendkey>.send`（Turbo）。
+- 请求：`POST`，`Content-Type: application/json;charset=utf-8`：
+
+  ```json
+  {"title": "<title>", "desp": "<Markdown 内容>", "short": "<item_title>"}
+  ```
+
+  `title` 超过 32 个字时截短（Turbo 的标题上限）。`desp` 是 Markdown：`**item_title**`、空行、`body`、空行、`![](image_url)`（图片地址是 https 时才放）、空行、`[在闲鱼打开](link)`；插入的文字里的 Markdown 符号转义。系统事件不带 `short` 和图片。
+- 成功：2xx 且返回的 `code == 0`。
+
 **Webhook**（照上游 `notification_clients/webhook_client.py`）
 
 - 配置：地址（加密）、方法 `GET` / `POST`、请求头（JSON 对象，加密）、查询参数（JSON 对象）、内容类型 `JSON` / `FORM`、请求体模板（JSON）。
@@ -1290,6 +1369,26 @@ next_run_at = 结束时间 + interval_minutes × (1 + 随机[0, interval_jitter_
 - 认证用 PLAIN，只在 TLS 连接上发送；选了 `none` 时不认证（只给局域网里的转发服务用）。
 - 邮件：`Subject` 是通知标题，按 RFC 2047 编码；`From`、`To`、`Date`、`Message-ID` 齐全；`Content-Type: multipart/alternative`，一份纯文本（正文和链接各一行），一份 HTML（标题加粗、正文、宽 300 像素的商品图、「在闲鱼打开」链接，插入的文字做 HTML 转义），都用 UTF-8。
 - 超时 30 秒。成功：服务器接受了 `DATA`。
+
+### 13.7 推送状态
+
+用户最常问的是「为什么没收到」，所以每条发现都要能看出推没推、为什么。
+
+- **判断完、确定不发通知时**写 `findings.notify_skip_reason`，取第一条符合的：
+  1. 基线发现：「首次运行只记录，不提醒」。
+  2. 任务的通知策略是 `none`：「这个任务设置了不通知」。
+  3. 策略是 `recommended` 而发现不是推荐：「没被推荐，任务只通知推荐的商品」。
+  4. 商品标为不感兴趣，或卖家被屏蔽：「已标为不感兴趣」或「卖家已屏蔽」。
+  5. 任务没有勾选启用的渠道：「这个任务没有选推送渠道」。
+  6. 重新分析才变成推荐：「重新分析的结果不发推荐通知」。
+  分析失败、跳过、还在等待的不写，界面按结论显示。
+- **卡片和详情页显示**：
+  - 有 `delivery_items`：每个渠道最近一次的结果，例如「已推送 · Bark、Telegram · 14:32」；合并发送的写「合并在一条『还有 N 个推荐』里」；某个渠道失败时写「Telegram 发送失败：返回 401」，并说明「下次运行会再发」。
+  - 没有 `delivery_items`、有 `notify_skip_reason`：「没有推送：原因」。
+  - 都没有、但应该推送：「等待推送」（本次运行还没到发送那一步，或上次全部失败）。
+  - 降价通知同样显示在详情页的价格走势旁。
+- **渠道的发送记录**：通知设置页每个渠道显示最近 20 条 `deliveries`：时间、类型、任务、成功或失败原因；失败的可以点开看是哪几个发现。
+- 「发送测试」成功只说明渠道能用，测试结果旁固定写一句「真实提醒只在商品符合任务的通知设置时发送」（上游 #437、#451 的作者回复反复解释的就是这一点）。
 
 ---
 
