@@ -1,0 +1,101 @@
+:root {
+  --color-surface: 245 245 247;
+  --color-raised: 255 255 255;
+  --color-inset: 236 236 240;
+  --color-sidebar: 236 236 239;
+  --color-sidebar-selection: 235 225 201;
+  --color-control: 239 239 242;
+  --color-control-hover: 232 232 236;
+  --color-control-pressed: 224 224 228;
+  --color-button-fill: 255 255 255;
+  --color-segment-selected: 255 255 255;
+  --color-text-primary: 29 29 31;
+  --color-text-body: 58 58 60;
+  --color-text-label: 94 94 99;
+  --color-text-secondary: 95 95 101;
+  --color-accent: 255 204 0;
+  --color-accent-text: 138 97 0;
+  --color-accent-fill: 255 243 196;
+  --color-on-accent: 28 28 30;
+  --color-border: 0 0 0;
+  --opacity-border: 0.08;
+  --color-positive: 23 115 53;
+  --color-positive-fill: 225 243 229;
+  --color-warning: 166 83 0;
+  --color-warning-fill: 255 240 217;
+  --color-danger: 215 0 21;
+  --color-danger-fill: 253 231 230;
+  --color-info: 0 100 210;
+  --color-info-fill: 214 233 255;
+  --color-focus: 138 97 0;
+  --color-overlay: 0 0 0;
+  --opacity-overlay: 0.4;
+  --font-family-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-caption: 0.75rem;
+  --font-body: 0.875rem;
+  --font-input: 1rem;
+  --font-section: 1.125rem;
+  --font-page: 1.5rem;
+  --line-body: 1.5;
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 0.75rem;
+  --space-lg: 1rem;
+  --space-group: 1.25rem;
+  --space-xl: 1.5rem;
+  --space-xxl: 2rem;
+  --radius-minimum: 0.25rem;
+  --radius-thumb: 0.375rem;
+  --radius-control: 0.5rem;
+  --radius-banner: 0.625rem;
+  --radius-card: 0.875rem;
+  --radius-panel: 1rem;
+  --control-min-height: 2.75rem;
+  --focus-width: 2px;
+  --focus-offset: 2px;
+  --motion-hover: 140ms;
+  --motion-state: 200ms;
+  --motion-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --shadow-overlay: 0 12px 36px rgb(0 0 0 / 0.16);
+  --layer-overlay: 40;
+  --layer-dialog: 50;
+  --layer-popover: 60;
+}
+
+:root[data-theme="dark"] {
+  --color-surface: 28 28 30;
+  --color-raised: 35 35 37;
+  --color-inset: 42 42 44;
+  --color-sidebar: 25 25 26;
+  --color-sidebar-selection: 57 51 24;
+  --color-control: 44 44 47;
+  --color-control-hover: 48 48 51;
+  --color-control-pressed: 43 43 46;
+  --color-button-fill: 44 44 46;
+  --color-segment-selected: 58 58 61;
+  --color-text-primary: 242 242 247;
+  --color-text-body: 209 209 214;
+  --color-text-label: 174 174 178;
+  --color-text-secondary: 152 152 158;
+  --color-accent: 255 214 10;
+  --color-accent-text: 255 214 10;
+  --color-accent-fill: 58 52 32;
+  --color-border: 255 255 255;
+  --opacity-border: 0.07;
+  --color-positive: 74 222 128;
+  --color-positive-fill: 37 59 44;
+  --color-warning: 255 179 64;
+  --color-warning-fill: 70 55 33;
+  --color-danger: 255 105 97;
+  --color-danger-fill: 66 40 40;
+  --color-info: 100 168 255;
+  --color-info-fill: 31 51 73;
+  --color-focus: 255 214 10;
+  --opacity-overlay: 0.6;
+  --shadow-overlay: 0 12px 36px rgb(0 0 0 / 0.4);
+}
+
+@media (prefers-contrast: more) {
+  :root { --opacity-border: 0.25; }
+  :root[data-theme="dark"] { --opacity-border: 0.3; }
+}
