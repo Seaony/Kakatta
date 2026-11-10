@@ -10,6 +10,8 @@ services:
       TZ: "${TZ:-Asia/Shanghai}"
     volumes:
       - ./data:/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     security_opt:
       - seccomp=unconfined
     stop_grace_period: 30s

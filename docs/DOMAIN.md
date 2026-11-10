@@ -213,7 +213,7 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 
 索引：`(enabled, next_run_at)`、`(account_id)`。
 
-切换成关键词判断时，保存前确认「切换成关键词判断会清空需求清单（包括你改过的项），无法恢复」；保存后 `profile_json = {}`，不另藏旧清单。切回 AI 判断仍按 AI 清单要求校验。已有结论保留、按当时的判断字段显示；要按新规则判断就重新分析。待处理发现切成关键词时从 `title` 改为 `detail`，切成 AI 时从 `detail` 改为 `title`。切换判断方式不重置搜索基线（第 77 条）。
+切换成关键词判断时，保存前确认「切换成关键词判断会清空需求清单（包括你改过的项），无法恢复」；保存后 `profile_json = {}`，不另藏旧清单。切回 AI 判断仍按 AI 清单要求校验。已有结论保留、按当时的判断字段显示；要按新规则判断就重新分析。待处理发现切成关键词时从 `title` 改为 `detail`，切成 AI 时从 `detail` 改为 `title`。切换判断方式不重置搜索基线（第 77 条）。已有结论尚未判定推送、或判定了尚未成功送出的，同事务清空 `notify_kind`，写不推原因「判断方式已修改」并取消待发意图，已发送历史保留（第 92 条）。
 
 **需求清单 `profile_json`**（`DECISIONS.md` 第 48 条）：
 
@@ -681,6 +681,8 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 - 这个任务正在运行时：直接取消这次运行（`cancelled`，4.11），不做 4.10 的第 1、2 步（重算、发通知）。这次运行已经建的发现属于旧代次，按上一条处理；已经写进 `seen_items` 的保留，价格点照常保留。之后各次运行的 4.10 只给当前代次的发现发通知。
 
 改名称、间隔、判断规则、通知设置不重置基线。改了间隔时，`next_run_at` 重算为「保存时间 + 新间隔」。
+
+切换判断方式时，沿用本节对未完成推送的处理：原结论保留，同事务停止尚未判定或尚未成功的推荐，原因「判断方式已修改」；重新分析仍按 5.5 不发首次推荐（第 92 条）。
 
 ### 4.7 第二层：批量整理标题
 
@@ -1170,6 +1172,8 @@ next_run_at = 结束时间 + interval_minutes × (1 + 随机[0, interval_jitter_
 - 回复文本取 `choices[0].message.content`；它是数组时把每段的 `text` 拼起来；为空时改取 `choices[0].message.reasoning_content`（参考上游 `src/services/ai_response_parser.py:28-42`）。再去掉闭合的 `<think>…</think>`。
 - 每次请求写一条 `ai_calls`，token 数取返回的 `usage`，同时记下 `choices[0].finish_reason`。
 - 实际发的 max_tokens 取下表的值和 `ai_compat.max_tokens_floor` 中较大的；`probe` 除外，固定 5。
+
+服务商预设只预填兼容地址，不改模型、Key 或其他配置，也不主动探测。Anthropic 使用 `https://api.anthropic.com/v1`，接入提示要求 workspace-scoped Key；当前不新增额外请求头配置。Ollama 预填 `http://host.docker.internal:11434/v1`，Compose 默认提供 `host-gateway` 映射；宿主 Ollama 要设置 `OLLAMA_HOST=0.0.0.0` 并允许容器访问，同一 Compose 网络内可改填实际服务名。自定义预设保留手填地址。官方来源和条件见第 93 条。
 
 各用途的参数：
 
