@@ -48,12 +48,12 @@ func TestSellerProgramFactsAndCredit(t *testing.T) {
 		bonus        bool
 		bad, partial CheckStatus
 	}{
-		{"three active items", SellerInput{Available: true, RecentItems: items, CreditExcellent: ptr(true)}, nil, SellerDealerSuspect, false, CheckOK, CheckOK},
-		{"dealer words", SellerInput{Available: true}, []SellerSignal{{Key: "dealer_words", Evidence: "工作室"}}, SellerDealerSuspect, false, CheckOK, CheckOK},
-		{"personal excellent", SellerInput{Available: true, CreditExcellent: ptr(true)}, nil, SellerPersonal, true, CheckOK, CheckOK},
-		{"credit not mapped", SellerInput{Available: true}, nil, SellerPersonal, false, CheckOK, CheckOK},
-		{"buyer negative does not block", SellerInput{Available: true, CreditExcellent: ptr(true), RecentRates: []SellerRate{{Negative: true}}}, nil, SellerPersonal, true, CheckOK, CheckOK},
-		{"seller negative blocks bonus", SellerInput{Available: true, CreditExcellent: ptr(true), RecentRates: []SellerRate{{AsSeller: true, Negative: true}}}, nil, SellerPersonal, false, CheckOK, CheckOK},
+		{"three active items", SellerInput{Available: true, RatesAvailable: true, RecentItems: items, CreditExcellent: ptr(true)}, nil, SellerDealerSuspect, false, CheckOK, CheckOK},
+		{"dealer words without rates", SellerInput{Available: true}, []SellerSignal{{Key: "dealer_words", Evidence: "工作室"}}, SellerDealerSuspect, false, CheckUnknown, CheckUnknown},
+		{"personal excellent with empty rates", SellerInput{Available: true, RatesAvailable: true, RecentRates: []SellerRate{}, CreditExcellent: ptr(true)}, nil, SellerPersonal, true, CheckOK, CheckOK},
+		{"credit not mapped", SellerInput{Available: true, RatesAvailable: true}, nil, SellerPersonal, false, CheckOK, CheckOK},
+		{"buyer negative does not block", SellerInput{Available: true, RatesAvailable: true, CreditExcellent: ptr(true), RecentRates: []SellerRate{{Negative: true}}}, nil, SellerPersonal, true, CheckOK, CheckOK},
+		{"seller negative blocks bonus", SellerInput{Available: true, RatesAvailable: true, CreditExcellent: ptr(true), RecentRates: []SellerRate{{AsSeller: true, Negative: true}}}, nil, SellerPersonal, false, CheckOK, CheckOK},
 		{"verified signals", SellerInput{Available: true}, []SellerSignal{{Key: "slow_ship", Evidence: "十天才寄"}, {Key: "partial_refund", Evidence: "到手刀"}}, SellerPersonal, false, CheckRisk, CheckRisk},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -75,7 +75,46 @@ func TestSellerProgramFactsAndCredit(t *testing.T) {
 	}
 	rates := make([]SellerRate, 11)
 	rates[10] = SellerRate{AsSeller: true, Negative: true}
-	if got := JudgeSeller(SellerInput{Available: true, RecentRates: rates, CreditExcellent: ptr(true)}, nil, "ipad mini"); !got.BonusEligible {
+	if got := JudgeSeller(SellerInput{Available: true, RatesAvailable: true, RecentRates: rates, CreditExcellent: ptr(true)}, nil, "ipad mini"); !got.BonusEligible {
 		t.Fatal("used ratings after first 10")
+	}
+}
+
+func TestSellerUnavailableRatesDoNotConfirmOrReward(t *testing.T) {
+	got := JudgeSeller(SellerInput{Available: true, CreditExcellent: ptr(true)}, nil, "ipad")
+	if got.Type != SellerPersonal || got.BonusEligible {
+		t.Fatalf("ratings were not obtained: %+v", got)
+	}
+	for _, key := range []string{"seller_bad_reviews", "seller_partial_refund"} {
+		if c := sellerCheck(t, got, key); c.Status != CheckUnknown || c.Source != EvidenceUnknown {
+			t.Fatalf("unavailable ratings confirmed %s: %+v", key, c)
+		}
+	}
+}
+
+func TestSellerVerifiedRateEvidenceRemainsProgramRisk(t *testing.T) {
+	for _, tc := range []struct {
+		name, signal, key, other string
+	}{
+		{"description mismatch", "desc_mismatch", "seller_bad_reviews", "seller_partial_refund"},
+		{"after sale", "after_sale", "seller_bad_reviews", "seller_partial_refund"},
+		{"slow shipping", "slow_ship", "seller_bad_reviews", "seller_partial_refund"},
+		{"partial refund", "partial_refund", "seller_partial_refund", "seller_bad_reviews"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, available := range []bool{false, true} {
+				got := JudgeSeller(SellerInput{Available: true, RatesAvailable: available}, []SellerSignal{{Key: tc.signal, Evidence: "已经核对的评价原文"}}, "")
+				if c := sellerCheck(t, got, tc.key); c.Status != CheckRisk || c.Source != EvidenceProgram || c.Evidence == nil || *c.Evidence != "已经核对的评价原文" {
+					t.Fatalf("verified signal was lost: %+v", c)
+				}
+				want := CheckUnknown
+				if available {
+					want = CheckOK
+				}
+				if c := sellerCheck(t, got, tc.other); c.Status != want {
+					t.Fatalf("unrelated check=%+v want %s", c, want)
+				}
+			}
+		})
 	}
 }

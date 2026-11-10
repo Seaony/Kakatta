@@ -333,7 +333,9 @@ type SellerRate struct {
 	Negative bool `json:"negative"`
 }
 type SellerInput struct {
-	Available        bool         `json:"available"`
+	Available bool `json:"available"`
+	// 已取得评价时才为 true，空列表也算取得。
+	RatesAvailable   bool         `json:"rates_available"`
 	RegistrationDays *int         `json:"registration_days"`
 	CreditExcellent  *bool        `json:"credit_excellent"`
 	RecentItems      []SellerItem `json:"recent_items"`
@@ -537,6 +539,10 @@ func validCheck(s CheckStatus) bool {
 	return s == CheckOK || s == CheckRisk || s == CheckSuspect || s == CheckUnknown
 }
 func configText(s string) string { return strings.TrimSpace(norm.NFKC.String(s)) }
+
+// RiskNameKey 用同一套文字规整规则检查清单外发现是否重名。
+func RiskNameKey(s string) string { return evidenceText(s) }
+
 func evidenceText(s string) string {
 	return strings.Map(func(r rune) rune {
 		if unicode.IsSpace(r) || strings.ContainsRune("，。、！？；：,.!?;:\"'“”‘’「」（）()", r) {

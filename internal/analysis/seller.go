@@ -15,7 +15,10 @@ func JudgeSeller(in SellerInput, verifiedSignals []SellerSignal, keyword string)
 	}
 	if in.Available {
 		out.Type = SellerPersonal
-		statuses["seller_dealer"], statuses["seller_bad_reviews"], statuses["seller_partial_refund"] = CheckOK, CheckOK, CheckOK
+		statuses["seller_dealer"] = CheckOK
+		if in.RatesAvailable {
+			statuses["seller_bad_reviews"], statuses["seller_partial_refund"] = CheckOK, CheckOK
+		}
 		matching := 0
 		for _, item := range in.RecentItems[:min(len(in.RecentItems), 20)] {
 			if item.OnSale && keyword != "" && len(MatchingKeywords(item.Title, []string{keyword})) > 0 {
@@ -53,7 +56,7 @@ func JudgeSeller(in SellerInput, verifiedSignals []SellerSignal, keyword string)
 		for _, rate := range in.RecentRates[:min(len(in.RecentRates), 10)] {
 			bad = bad || rate.AsSeller && rate.Negative
 		}
-		out.BonusEligible = out.Type == SellerPersonal && in.CreditExcellent != nil && *in.CreditExcellent && !bad
+		out.BonusEligible = in.RatesAvailable && out.Type == SellerPersonal && in.CreditExcellent != nil && *in.CreditExcellent && !bad
 	} else {
 		out.Reasons = append(out.Reasons, message("analysis.seller_unavailable", nil))
 	}
