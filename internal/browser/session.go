@@ -3,6 +3,7 @@ package browser
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -17,6 +18,7 @@ import (
 	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/cdproto/page"
+	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 	"github.com/chromedp/chromedp/remote"
 )
@@ -148,7 +150,7 @@ func Start(parent context.Context, o Options) (*Session, error) {
 		s.Close()
 		return nil, err
 	}
-	err = chromedp.Do(tabCtx)
+	err = initializeTarget(tabCtx)
 	if err == nil {
 		_, err = chromedp.Call(tabCtx, page.SetLifecycleEventsEnabled, page.SetLifecycleEventsEnabledParams{Enabled: true})
 	}
@@ -167,6 +169,15 @@ func Start(parent context.Context, o Options) (*Session, error) {
 	s.stopWatch = context.AfterFunc(parent, s.Close)
 	s.watchMu.Unlock()
 	return s, nil
+}
+
+func initializeTarget(ctx context.Context) error {
+	if err := chromedp.Do(ctx); err != nil {
+		return err
+	}
+	// 驱动在空白页识别目标类型后，不再保留脚本执行上下文的事件。
+	_, err := chromedp.Call(ctx, runtime.Disable, cdp.Empty{})
+	return err
 }
 
 func normalizeOptions(o *Options) error {
@@ -242,65 +253,113 @@ func (s *Session) Close() {
 		chromedp.Cancel(ctx)
 		cancel()
 		terminateProcessGroup(pid)
-		s.cancelTab()
+		// 没分配成功时，Cancel 已取走一次性信号，不能再等第二次。
+		if chromedp.FromContext(s.ctx).Browser != nil {
+			s.cancelTab()
+		}
 		s.cancelAlloc()
 	})
 }
 
-// Navigate 只接受这次主框架加载的 DOMContentLoaded，忽略旧页面和 iframe 的事件。
+// Navigate 保留原调用入口，单次操作应使用 NavigateContext。
 func (s *Session) Navigate(url string, timeout time.Duration) error {
-	ctx, cancel := context.WithTimeout(s.ctx, timeout)
-	defer cancel()
-	_, err := chromedp.Run(ctx, func(ctx context.Context, t *chromedp.Target) (cdp.Empty, error) {
+	_, err := s.NavigateContext(s.ctx, url, timeout)
+	return err
+}
+
+// NavigateContext 只等本次主框架加载，取消本次操作不会关掉浏览器。
+func (s *Session) NavigateContext(caller context.Context, url string, timeout time.Duration) (string, error) {
+	lifetime, cancelLifetime := s.operationContext(caller)
+	defer cancelLifetime()
+	ctx, cancelTimeout := context.WithTimeout(lifetime, timeout)
+	defer cancelTimeout()
+	if err := ctx.Err(); err != nil {
+		return "", fmt.Errorf("打开页面失败：%w", operationError(ctx, err))
+	}
+	result, err := chromedp.Run(ctx, func(ctx context.Context, t *chromedp.Target) (string, error) {
 		events, stop := t.Subscribe(page.LifecycleEvent.Method)
 		defer stop()
 		res, err := cdp.Call(ctx, t, page.Navigate, page.NavigateParams{URL: url})
 		if err != nil {
-			return cdp.Empty{}, err
+			return "", err
 		}
 		if res.ErrorText != "" {
-			return cdp.Empty{}, fmt.Errorf("%s", res.ErrorText)
+			return "", fmt.Errorf("%s", res.ErrorText)
 		}
 		if res.IsDownload {
-			return cdp.Empty{}, fmt.Errorf("页面跳转成了下载")
+			return "", fmt.Errorf("页面跳转成了下载")
 		}
-		if res.LoaderID == "" {
-			return cdp.Empty{}, nil
-		}
-		for {
+		loaded := res.LoaderID == ""
+		for !loaded {
 			select {
 			case raw, ok := <-events:
 				if !ok {
-					return cdp.Empty{}, fmt.Errorf("页面事件连接已关闭")
+					return "", fmt.Errorf("页面事件连接已关闭")
 				}
 				var event page.EventLifecycleEvent
 				if err := json.Unmarshal(raw, &event); err != nil {
-					return cdp.Empty{}, err
+					return "", err
 				}
-				if event.FrameID == res.FrameID && event.LoaderID == res.LoaderID && event.Name == "DOMContentLoaded" {
-					return cdp.Empty{}, nil
-				}
+				loaded = event.FrameID == res.FrameID && event.LoaderID == res.LoaderID && event.Name == "DOMContentLoaded"
 			case <-ctx.Done():
-				return cdp.Empty{}, ctx.Err()
+				return "", ctx.Err()
 			}
 		}
+		tree, err := cdp.Call(ctx, t, page.GetFrameTree, cdp.Empty{})
+		if err != nil {
+			return "", err
+		}
+		if tree.FrameTree == nil || tree.FrameTree.Frame == nil {
+			return "", fmt.Errorf("读不到主框架网址")
+		}
+		frame := tree.FrameTree.Frame
+		return frame.URL + frame.URLFragment, nil
 	})
 	if err != nil {
-		return fmt.Errorf("打开页面失败：%w", err)
+		return "", fmt.Errorf("打开页面失败：%w", operationError(ctx, err))
 	}
-	return nil
+	return result, nil
 }
 
 func (s *Session) URL() (string, error) {
-	res, err := chromedp.Call(s.ctx, page.GetFrameTree, cdp.Empty{})
+	return s.URLContext(s.ctx)
+}
+
+// URLContext 只读当前网址，不让卡住的协议请求挡住运行收尾。
+func (s *Session) URLContext(caller context.Context) (string, error) {
+	ctx, cancel := s.operationContext(caller)
+	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return "", operationError(ctx, err)
+	}
+	res, err := chromedp.Call(ctx, page.GetFrameTree, cdp.Empty{})
 	if err != nil {
-		return "", err
+		return "", operationError(ctx, err)
 	}
 	if res.FrameTree == nil || res.FrameTree.Frame == nil {
 		return "", fmt.Errorf("读不到主框架网址")
 	}
 	f := res.FrameTree.Frame
 	return f.URL + f.URLFragment, nil
+}
+
+func (s *Session) operationContext(caller context.Context) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancelCause(s.ctx)
+	if caller.Err() != nil {
+		cancel(context.Cause(caller))
+	}
+	stop := context.AfterFunc(caller, func() { cancel(context.Cause(caller)) })
+	return ctx, func() { stop(); cancel(nil) }
+}
+
+func operationError(ctx context.Context, err error) error {
+	if current := ctx.Err(); current != nil && !errors.Is(err, current) {
+		err = errors.Join(err, current)
+	}
+	if cause := context.Cause(ctx); cause != nil && !errors.Is(err, cause) {
+		err = errors.Join(err, cause)
+	}
+	return err
 }
 
 // HasCookie 运行前只查 Cookie 名字，不查看值。

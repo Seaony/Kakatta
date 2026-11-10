@@ -42,16 +42,28 @@ func uncheckedBrowserCalls(path string, source any) ([]string, error) {
 	}
 	var bad []string
 	pkgName := "chromedp"
+	runtimeName := ""
 	for _, imp := range f.Imports {
 		path, _ := strconv.Unquote(imp.Path.Value)
 		if strings.Contains(path, "cdproto/runtime") {
-			bad = append(bad, "页面脚本协议")
+			runtimeName = "runtime"
+			if imp.Name != nil {
+				runtimeName = imp.Name.Name
+				if runtimeName == "." || runtimeName == "_" {
+					bad = append(bad, "页面脚本协议")
+				}
+			}
 		}
 		if path == "github.com/chromedp/chromedp" && imp.Name != nil {
 			pkgName = imp.Name.Name
 		}
 	}
 	ast.Inspect(f, func(node ast.Node) bool {
+		if selector, ok := node.(*ast.SelectorExpr); ok {
+			if pkg, ok := selector.X.(*ast.Ident); ok && runtimeName != "" && pkg.Name == runtimeName && selector.Sel.Name != "Disable" {
+				bad = append(bad, "页面脚本协议."+selector.Sel.Name)
+			}
+		}
 		call, ok := node.(*ast.CallExpr)
 		if !ok {
 			return true
@@ -90,6 +102,24 @@ func TestScriptCheckDetectsOrdinaryAndGenericHelpers(t *testing.T) {
 		bad, err := uncheckedBrowserCalls("sample.go", source)
 		if err != nil || len(bad) != tc.want {
 			t.Fatalf("静态检查没识别 %s：%v %v", tc.body, bad, err)
+		}
+	}
+}
+
+func TestScriptCheckAllowsOnlyRuntimeDisable(t *testing.T) {
+	for _, tc := range []struct {
+		body string
+		want int
+	}{
+		{`cd.Call(ctx, rt.Disable, cdp.Empty{})`, 0},
+		{`cd.Call(ctx, rt.Enable, cdp.Empty{})`, 1},
+		{`cd.Call(ctx, rt.Evaluate, rt.EvaluateParams{Expression:"self"})`, 2},
+		{`cd.Call(ctx, rt.CallFunctionOn, params)`, 1},
+	} {
+		source := "package sample; import cd \"github.com/chromedp/chromedp\"; import rt \"github.com/chromedp/cdproto/runtime\"; func test(){" + tc.body + "}"
+		bad, err := uncheckedBrowserCalls("sample.go", source)
+		if err != nil || len(bad) != tc.want {
+			t.Fatalf("运行时域静态检查没识别 %s：%v %v", tc.body, bad, err)
 		}
 	}
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/chromedp/cdproto/css"
 	"github.com/chromedp/cdproto/dom"
 	"github.com/chromedp/cdproto/input"
+	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 
 	"github.com/Seaony/Kakatta/internal/pacer"
@@ -337,15 +338,45 @@ func (h *Human) FirstVisible(ctx context.Context, sel string, timeout time.Durat
 
 // Click 把鼠标移到元素上并点一下。元素不在可视区域时先滚过去。
 func (h *Human) Click(ctx context.Context, n *chromedp.Node) error {
-	if _, err := chromedp.Call(h.s.ctx, dom.ScrollIntoViewIfNeeded, dom.ScrollIntoViewIfNeededParams{BackendNodeID: n.BackendNodeID}); err != nil {
-		return fmt.Errorf("滚动到元素失败：%w", err)
-	}
-	if err := h.p.Wait(ctx, pacer.Between(150*time.Millisecond, 400*time.Millisecond)); err != nil {
+	return h.click(ctx, n, true)
+}
+
+// ClickNoScroll 只点击完整处于当前画面内的元素，绝不滚动页面。
+func (h *Human) ClickNoScroll(ctx context.Context, n *chromedp.Node) error {
+	return h.click(ctx, n, false)
+}
+
+func (h *Human) click(caller context.Context, n *chromedp.Node, scroll bool) (err error) {
+	ctx, cancel := h.s.operationContext(caller)
+	defer cancel()
+	defer func() { err = operationError(ctx, err) }()
+	if err := ctx.Err(); err != nil {
 		return err
 	}
-	x, y, w, ht, err := h.box(n)
+	if scroll {
+		if _, err := chromedp.Call(ctx, dom.ScrollIntoViewIfNeeded, dom.ScrollIntoViewIfNeededParams{BackendNodeID: n.BackendNodeID}); err != nil {
+			return fmt.Errorf("滚动到元素失败：%w", err)
+		}
+		if err := h.p.Wait(ctx, pacer.Between(150*time.Millisecond, 400*time.Millisecond)); err != nil {
+			return err
+		}
+	}
+	x, y, w, ht, err := h.boxContext(ctx, n)
 	if err != nil {
 		return err
+	}
+	if !scroll {
+		metrics, err := chromedp.Call(ctx, page.GetLayoutMetrics, cdp.Empty{})
+		if err != nil {
+			return fmt.Errorf("读取当前画面大小失败：%w", err)
+		}
+		viewport := metrics.CSSVisualViewport
+		if viewport == nil || viewport.ClientWidth <= 0 || viewport.ClientHeight <= 0 {
+			return fmt.Errorf("无法读取当前画面大小")
+		}
+		if w <= 0 || ht <= 0 || x < viewport.OffsetX || y < viewport.OffsetY || x+w > viewport.OffsetX+viewport.ClientWidth || y+ht > viewport.OffsetY+viewport.ClientHeight {
+			return fmt.Errorf("%w（元素不在当前画面内）", ErrNotFound)
+		}
 	}
 	// 落点在元素中间 60% 的范围里随机。
 	tx := x + w*(0.2+0.6*h.rand())
@@ -353,13 +384,13 @@ func (h *Human) Click(ctx context.Context, n *chromedp.Node) error {
 	if err := h.moveTo(ctx, tx, ty); err != nil {
 		return err
 	}
-	if err := h.mouse(input.DispatchMouseEventParams{Type: chromedp.MousePressed, X: tx, Y: ty, Button: input.MouseButtonLeft, Buttons: 1, ClickCount: 1}); err != nil {
+	if err := h.mouseContext(ctx, input.DispatchMouseEventParams{Type: chromedp.MousePressed, X: tx, Y: ty, Button: input.MouseButtonLeft, Buttons: 1, ClickCount: 1}); err != nil {
 		return err
 	}
 	if err := h.p.Wait(ctx, pacer.Between(60*time.Millisecond, 160*time.Millisecond)); err != nil {
 		return err
 	}
-	return h.mouse(input.DispatchMouseEventParams{Type: chromedp.MouseReleased, X: tx, Y: ty, Button: input.MouseButtonLeft, ClickCount: 1})
+	return h.mouseContext(ctx, input.DispatchMouseEventParams{Type: chromedp.MouseReleased, X: tx, Y: ty, Button: input.MouseButtonLeft, ClickCount: 1})
 }
 
 // wheelParams 是滚轮事件的参数。cdproto 的结构体在值为 0 时会省略 deltaX，而 Chrome 要求 deltaX 和 deltaY 都必须给，所以单独定义。
@@ -451,7 +482,7 @@ func (h *Human) moveTo(ctx context.Context, tx, ty float64) error {
 		e := 1 - (1-t)*(1-t)
 		x := sx + (tx-sx)*e
 		y := sy + (ty-sy)*e
-		if err := h.mouse(input.DispatchMouseEventParams{Type: chromedp.MouseMoved, X: x, Y: y}); err != nil {
+		if err := h.mouseContext(ctx, input.DispatchMouseEventParams{Type: chromedp.MouseMoved, X: x, Y: y}); err != nil {
 			return err
 		}
 		if err := h.p.Wait(ctx, pacer.Between(8*time.Millisecond, 25*time.Millisecond)); err != nil {
@@ -461,8 +492,8 @@ func (h *Human) moveTo(ctx context.Context, tx, ty float64) error {
 	return nil
 }
 
-func (h *Human) mouse(p input.DispatchMouseEventParams) error {
-	if _, err := chromedp.Call(h.s.ctx, input.DispatchMouseEvent, p); err != nil {
+func (h *Human) mouseContext(ctx context.Context, p input.DispatchMouseEventParams) error {
+	if _, err := chromedp.Call(ctx, input.DispatchMouseEvent, p); err != nil {
 		return fmt.Errorf("鼠标操作失败：%w", err)
 	}
 	h.x, h.y = p.X, p.Y
@@ -476,7 +507,11 @@ func (h *Human) key(p input.DispatchKeyEventParams) error {
 
 // box 返回元素内容区在页面上的位置和大小。
 func (h *Human) box(n *chromedp.Node) (x, y, w, ht float64, err error) {
-	res, err := chromedp.Call(h.s.ctx, dom.GetBoxModel, dom.GetBoxModelParams{BackendNodeID: n.BackendNodeID})
+	return h.boxContext(h.s.ctx, n)
+}
+
+func (h *Human) boxContext(ctx context.Context, n *chromedp.Node) (x, y, w, ht float64, err error) {
+	res, err := chromedp.Call(ctx, dom.GetBoxModel, dom.GetBoxModelParams{BackendNodeID: n.BackendNodeID})
 	if err != nil || res.Model == nil || len(res.Model.Content) < 8 {
 		return 0, 0, 0, 0, fmt.Errorf("%w（没有位置）", ErrNotFound)
 	}
