@@ -82,6 +82,7 @@ func TestMalformedPHCRejectsBeforePasswordWork(t *testing.T) {
 		strings.Replace(valid, "argon2id", "argon2i", 1), strings.Replace(valid, "v=19", "v=16", 1),
 		strings.Replace(valid, "m=65536", "m=4294967295", 1), strings.Replace(valid, "m=65536", "m=00064", 1),
 		strings.Replace(valid, "t=3", "t=0", 1), strings.Replace(valid, "p=4", "p=0", 1),
+		strings.Replace(valid, "p=4", "p=1", 1),
 		strings.Replace(valid, "t=3,p=4", "p=4,t=3", 1), strings.Replace(valid, "t=3", "t=3,t=3", 1),
 		strings.Replace(valid, "p=4", "p=4,x=1", 1), strings.Replace(valid, parts[4], badSaltBits, 1),
 		strings.Replace(valid, parts[5], badHashBits, 1), strings.Replace(valid, parts[4], parts[4]+"==", 1),
@@ -91,6 +92,11 @@ func TestMalformedPHCRejectsBeforePasswordWork(t *testing.T) {
 		strings.Replace(valid, parts[4], "!"+parts[4][1:], 1), strings.Replace(valid, parts[5], "!"+parts[5][1:], 1),
 		strings.Replace(valid, parts[4], "\n"+parts[4][1:], 1),
 	}
+	for i, phc := range bad {
+		if err := ValidatePasswordHash(phc); !errors.Is(err, ErrPasswordHash) {
+			t.Fatalf("第 %d 个畸形 PHC 通过了格式校验：%v", i, err)
+		}
+	}
 	passwordSlot <- struct{}{}
 	defer func() { <-passwordSlot }()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -99,6 +105,35 @@ func TestMalformedPHCRejectsBeforePasswordWork(t *testing.T) {
 		if ok, err := VerifyPassword(ctx, "private-password-marker", phc); ok || !errors.Is(err, ErrPasswordHash) {
 			t.Fatalf("第 %d 个畸形 PHC 进入了计算或被接受：%v", i, err)
 		}
+	}
+}
+
+func TestValidatePasswordHashAcceptsRealHashWithoutPasswordWork(t *testing.T) {
+	phc, err := HashPassword(context.Background(), "仅用于格式校验的密码")
+	if err != nil {
+		t.Fatal(err)
+	}
+	passwordSlot <- struct{}{}
+	done := make(chan struct{})
+	result := make(chan error, 1)
+	defer func() {
+		select {
+		case <-passwordSlot:
+		default:
+		}
+		<-done
+	}()
+	go func() {
+		result <- ValidatePasswordHash(phc)
+		close(done)
+	}()
+	// 完成信号必须先于名额释放，等待期限只用于防止失败测试卡死。
+	waitPasswordEvent(t, done)
+	if err := <-result; err != nil {
+		t.Fatalf("真实哈希未通过格式校验：%v", err)
+	}
+	if len(passwordSlot) != 1 {
+		t.Fatal("格式校验改动了密码计算名额")
 	}
 }
 

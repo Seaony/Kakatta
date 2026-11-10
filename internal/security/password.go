@@ -47,6 +47,14 @@ func VerifyPassword(ctx context.Context, password, phc string) (bool, error) {
 	return subtle.ConstantTimeCompare(key, expected) == 1, nil
 }
 
+// ValidatePasswordHash 只检查现行 PHC 格式和参数，不执行密码计算。
+func ValidatePasswordHash(phc string) error {
+	salt, key, err := parsePasswordHash(phc)
+	clear(salt)
+	clear(key)
+	return err
+}
+
 func parsePasswordHash(phc string) ([]byte, []byte, error) {
 	// 参数和长度先限定，损坏的记录不能决定昂贵计算的资源开销。
 	if len(phc) != passwordPHCLength || !strings.HasPrefix(phc, passwordPrefix) {
