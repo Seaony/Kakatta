@@ -34,6 +34,7 @@
 - **启动参数**以 chromedp 的 `DefaultExecAllocatorOptions` 为基础（`allocate.go:90`）：
   - 去掉 `headless`（连同它附带的 `hide-scrollbars`、`mute-audio`）、`enable-automation`、`disable-extensions`、`disable-background-timer-throttling`、`disable-backgrounding-occluded-windows`、`disable-renderer-backgrounding`、`force-color-profile=srgb`、`disable-popup-blocking`、`disable-ipc-flooding-protection`、`enable-features=NetworkService,NetworkServiceInProcess`。这些会改变浏览器的行为或者本身就是自动化特征。
   - 保留 `no-first-run`、`no-default-browser-check`、`disable-background-networking`、`disable-breakpad`、`disable-sync`、`disable-default-apps`、`disable-client-side-phishing-detection`、`metrics-recording-only`、`safebrowsing-disable-auto-update`、`password-store=basic`、`use-mock-keychain`、`disable-hang-monitor`、`disable-prompt-on-repost`、`disable-dev-shm-usage`。页面基本读不到这些参数。保留 `disable-dev-shm-usage` 是因为有些 NAS 界面没法设置 shm 大小。
+  - 另加 `--disk-cache-size`，按配置项限制每个账号浏览器的磁盘缓存（`DOMAIN.md` 第 3 节，默认 256MB）。
   - **不加** `--disable-blink-features=AutomationControlled`：它本质上就是在改 webdriver，有界面时还会弹出「不受支持的命令行标记」提示条。
 - **不往页面注入任何脚本**：读数据靠 CDP 网络事件（`Network.getResponseBody`），找元素靠 DOM 查询，点击和输入用 `Input.dispatchMouseEvent` 和 `Input.dispatchKeyEvent`，坐标取元素中心附近的随机点。
 - **chromedp 的坑**（实现时必须处理）：
@@ -113,6 +114,10 @@
 
 「每个账号」指一个闲鱼账号。
 
+**一次「访问」怎么算**：只算会让闲鱼产生请求的动作，比如打开首页、提交搜索、点一个筛选、翻页、打开详情页或卖家主页；失败和重试也算。逐项清单见 `DOMAIN.md` 第 0 节和 `XIANYU.md` 5.8 节。
+
+鼠标移动的步数、按下到松开的 60–160 毫秒、滚轮分几下滚这类操作内部的细节不做成配置项：它们只影响单个动作像不像手动操作，不影响访问频率，写在 `internal/browser/human.go` 里。
+
 | 配置项 | 默认值 | 推荐范围 | 为什么 | 调出推荐范围的风险 |
 |---|---|---|---|---|
 | 任务运行间隔 | 30 分钟，实际再随机延长 0–30% | 30–120 分钟 | 上游作者建议不要短于 15–30 分钟（#473）；网页版搜索本来就比 App 晚大约 30 分钟（#490），间隔再短也搜不到更新的商品 | 短于 15 分钟明显更容易触发验证；2 分钟一次一定会触发（#169） |
@@ -126,6 +131,7 @@
 | 打开详情前等待 | 3–6 秒 | ≥ 2 秒 | 模拟在列表上看了一会儿 | — |
 | 看完详情后停留 | 10–20 秒 | ≥ 8 秒 | 上游原来是 15–30 秒，2026-01 缩短到 5–10 秒后，验证报告集中出现（#348、#458、#465、#516；时间上相关，因果未证实） | 停留太短，更像机器 |
 | 普通操作之间等待 | 1–3 秒 | ≥ 1 秒 | 上游和 Mekke 都是这个值 | — |
+| 首页停留 | 2–5 秒，并随机滚动一次 | ≥ 2 秒 | 先在首页停一会儿再搜索，上游 PR #300 起就这样做 | 进首页立刻搜索，不像真人 |
 | 搜索框输入每个字的间隔 | 50–130 毫秒 | — | voltwake/xianyu-monitor | — |
 | 卖家信息缓存 | 24 小时 | ≥ 12 小时 | Mekke 的做法，上游是 30 分钟 | 反复打开同一个卖家的主页 |
 | 每天不运行的时段 | 01:00–07:30 | 按自己的作息设 | 真人半夜很少刷闲鱼（推测，没有直接证据）；半夜新上架的商品也少 | 设为全天运行：没有证据说一定有害，但不像真人 |

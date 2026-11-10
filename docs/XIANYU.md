@@ -277,7 +277,7 @@ Mekke 的注入脚本额外处理了 JSONP（mtop 有时用 `<script>` 标签加
 
 ### 5.4 关广告
 
-在 3 秒内找可见的 `div[class*='closeIconBg']`，找到就点，找不到就跳过（`scraper.py:788-792`）。点之前申请额度。
+在 3 秒内找可见的 `div[class*='closeIconBg']`，找到就点，找不到就跳过（`scraper.py:788-792`）。关广告一般不产生接口请求（5.8 节），不计入访问额度（`DOMAIN.md` 第 0 节）。
 
 ### 5.5 筛选
 
