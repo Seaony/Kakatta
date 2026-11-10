@@ -69,11 +69,18 @@ type SnapshotSource struct {
 
 // Plan 只由完整验证过的候选产生，根入口负责保护记录合并和整套文件事务。
 type RestorePlan struct {
-	Manifest           Manifest             `json:"-"`
-	DatabasePath       string               `json:"-"`
-	MasterKey          [MasterKeyBytes]byte `json:"-"`
-	KeySource          KeySource            `json:"-"`
-	ExpectedGeneration string               `json:"-"`
+	Manifest           Manifest                    `json:"-"`
+	DatabasePath       string                      `json:"-"`
+	MasterKey          [MasterKeyBytes]byte        `json:"-"`
+	KeySource          KeySource                   `json:"-"`
+	ExpectedGeneration string                      `json:"-"`
+	Authorize          func(context.Context) error `json:"-"`
+}
+
+type RestorePreview struct {
+	Ticket    string   `json:"ticket"`
+	Manifest  Manifest `json:"manifest"`
+	ExpiresAt int64    `json:"expires_at"`
 }
 
 type Runtime interface {
@@ -84,11 +91,12 @@ type Runtime interface {
 }
 
 type Dependencies struct {
-	DataDir       string
-	AppVersion    string
-	SchemaVersion int
-	Runtime       Runtime
-	Now           func() time.Time
+	DataDir           string
+	AppVersion        string
+	SchemaVersion     int
+	Runtime           Runtime
+	Now               func() time.Time
+	ValidateCandidate func(context.Context, string, [MasterKeyBytes]byte, int) error
 }
 
 func (SnapshotSource) String() string   { return "备份源" }
