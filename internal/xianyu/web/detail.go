@@ -17,7 +17,7 @@ func (r *Runner) OpenDetail(ctx context.Context, webURL string) (xianyu.Detail, 
 	if err != nil {
 		return d, err
 	}
-	if err := r.acquire(quota.Detail, "详情页"); err != nil {
+	if err := r.acquire(ctx, quota.Detail, "详情页"); err != nil {
 		return d, err
 	}
 	if err := r.wait(ctx, "打开详情前", r.Pace.PreDetail); err != nil {
@@ -29,7 +29,7 @@ func (r *Runner) OpenDetail(ctx context.Context, webURL string) (xianyu.Detail, 
 	}
 	mark := r.S.Capture.Mark()
 	start := time.Now()
-	if err := r.S.Navigate(target, rules.timeout("detail")); err != nil {
+	if err := r.navigate(ctx, target, "打开详情页", rules.timeout("detail")); err != nil {
 		if cerr := r.check(ctx, "打开详情页"); cerr != nil {
 			return d, cerr
 		}

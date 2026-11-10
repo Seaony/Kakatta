@@ -66,7 +66,7 @@ func (r *Runner) ApplyFilters(ctx context.Context, options FilterOptions) (*brow
 
 func (r *Runner) selectRegion(ctx context.Context, options FilterOptions) (*browser.Response, error) {
 	for attempt := 0; attempt < 2; attempt++ {
-		if err := r.acquire(quota.Search, "打开地区筛选"); err != nil {
+		if err := r.acquire(ctx, quota.Search, "打开地区筛选"); err != nil {
 			return nil, err
 		}
 		if err := r.clickText(ctx, rules.Text.Region); err != nil {
@@ -86,7 +86,7 @@ func (r *Runner) selectRegion(ctx context.Context, options FilterOptions) (*brow
 			if skip {
 				continue
 			}
-			if err := r.acquire(quota.Search, "地区选项："+name); err != nil {
+			if err := r.acquire(ctx, quota.Search, "地区选项："+name); err != nil {
 				return nil, err
 			}
 			if err := r.clickFilterNode(ctx, node, "地区选项："+name); err != nil {
@@ -104,7 +104,7 @@ func (r *Runner) selectRegion(ctx context.Context, options FilterOptions) (*brow
 		for _, node := range matchingNodes(scope.popover, func(n *chromedp.Node) bool {
 			return strings.Contains(n.AttributeValue("class"), rules.Selectors.RegionSubmitClass) && rules.regionSubmit.MatchString(strings.TrimSpace(nodeText(n)))
 		}) {
-			visible, err := r.H.VisibleChecked(node)
+			visible, err := r.H.VisibleCheckedContext(ctx, node)
 			if err != nil {
 				return nil, err
 			}
@@ -115,7 +115,7 @@ func (r *Runner) selectRegion(ctx context.Context, options FilterOptions) (*brow
 		if submit == nil {
 			return nil, fmt.Errorf("%w：地区提交按钮", browser.ErrNotFound)
 		}
-		if err := r.acquire(quota.Search, "提交地区筛选"); err != nil {
+		if err := r.acquire(ctx, quota.Search, "提交地区筛选"); err != nil {
 			return nil, err
 		}
 		mark := r.S.Capture.Mark()
@@ -160,7 +160,7 @@ func (r *Runner) regionArea(ctx context.Context) (*regionScope, error) {
 		var chosen *chromedp.Node
 		for priority := 0; priority < 3 && chosen == nil; priority++ {
 			for _, node := range popovers {
-				visible, err := r.H.VisibleChecked(node)
+				visible, err := r.H.VisibleCheckedContext(ctx, node)
 				if err != nil {
 					return nil, err
 				}
@@ -191,7 +191,7 @@ func (r *Runner) regionArea(ctx context.Context) (*regionScope, error) {
 			for _, node := range matchingNodes(chosen, func(n *chromedp.Node) bool {
 				return strings.Contains(n.AttributeValue("class"), rules.Selectors.RegionAreaClass)
 			}) {
-				visible, err := r.H.VisibleChecked(node)
+				visible, err := r.H.VisibleCheckedContext(ctx, node)
 				if err != nil {
 					return nil, err
 				}
@@ -219,7 +219,7 @@ func (r *Runner) regionOption(ctx context.Context, level int, name string) (*chr
 		}
 		columns := []*chromedp.Node{}
 		for _, child := range scope.area.Children {
-			if child.NodeType == 1 {
+			if child.NodeType == 1 && strings.EqualFold(child.NodeName, "div") {
 				columns = append(columns, child)
 			}
 		}
@@ -230,7 +230,7 @@ func (r *Runner) regionOption(ctx context.Context, level int, name string) (*chr
 		for _, node := range matchingNodes(columns[level], func(n *chromedp.Node) bool {
 			return strings.Contains(n.AttributeValue("class"), rules.Selectors.RegionOptionClass)
 		}) {
-			visible, err := r.H.VisibleChecked(node)
+			visible, err := r.H.VisibleCheckedContext(ctx, node)
 			if err != nil {
 				return nil, false, err
 			}
@@ -261,7 +261,7 @@ func (r *Runner) selectPrice(ctx context.Context, minimum, maximum *int64) (*bro
 	}
 	before := [2]string{}
 	for i, node := range inputs {
-		before[i], err = r.H.Value(node)
+		before[i], err = r.H.ValueContext(ctx, node)
 		if err != nil {
 			return nil, err
 		}
@@ -289,7 +289,7 @@ func (r *Runner) selectPrice(ctx context.Context, minimum, maximum *int64) (*bro
 		}
 		last = i
 	}
-	if err := r.acquire(quota.Search, "价格提交"); err != nil {
+	if err := r.acquire(ctx, quota.Search, "价格提交"); err != nil {
 		return nil, err
 	}
 	mark := r.S.Capture.Mark()
@@ -306,7 +306,7 @@ func (r *Runner) selectPrice(ctx context.Context, minimum, maximum *int64) (*bro
 			if err := r.clickFilterNode(ctx, inputs[last], "价格回车前重新聚焦"); err != nil {
 				return nil, err
 			}
-			if err := r.acquire(quota.Search, "价格回车提交"); err != nil {
+			if err := r.acquire(ctx, quota.Search, "价格回车提交"); err != nil {
 				return nil, err
 			}
 			mark = r.S.Capture.Mark()
@@ -330,7 +330,7 @@ func (r *Runner) selectPrice(ctx context.Context, minimum, maximum *int64) (*bro
 		return nil, err
 	}
 	for i, target := range []*int64{minimum, maximum} {
-		actual, err := r.H.Value(inputs[i])
+		actual, err := r.H.ValueContext(ctx, inputs[i])
 		if err != nil {
 			return nil, err
 		}
@@ -349,9 +349,17 @@ func (r *Runner) selectPrice(ctx context.Context, minimum, maximum *int64) (*bro
 }
 
 func (r *Runner) priceInputs(ctx context.Context) ([]*chromedp.Node, error) {
-	container, err := r.H.FirstVisible(ctx, rules.Selectors.PriceContainer, rules.timeout("element"))
+	containers, err := r.H.Find(ctx, rules.Selectors.PriceContainer, rules.timeout("element"))
 	if err != nil {
 		return nil, err
+	}
+	container := containers[0]
+	visible, err := r.H.VisibleCheckedContext(ctx, container)
+	if err != nil {
+		return nil, err
+	}
+	if !visible {
+		return nil, fmt.Errorf("%w：价格输入区不可见", browser.ErrNotFound)
 	}
 	all, err := r.H.FindNow(ctx, rules.Selectors.PriceInput)
 	if err != nil {
@@ -369,7 +377,7 @@ func (r *Runner) priceInputs(ctx context.Context) ([]*chromedp.Node, error) {
 		if !inside {
 			continue
 		}
-		visible, err := r.H.VisibleChecked(node)
+		visible, err := r.H.VisibleCheckedContext(ctx, node)
 		if err != nil {
 			return nil, err
 		}

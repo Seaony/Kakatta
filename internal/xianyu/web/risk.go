@@ -42,10 +42,10 @@ func IsStop(err error) bool {
 
 // checkPage 检查当前页面：网址是不是登录页、有没有可见的验证遮罩、有没有「非法访问」文字。
 func (r *Runner) checkPage(ctx context.Context, where string) error {
-	if err := ctx.Err(); err != nil {
+	if err := contextError(ctx); err != nil {
 		return err
 	}
-	current, err := r.S.URL()
+	current, err := r.S.URLContext(ctx)
 	if err != nil {
 		return fmt.Errorf("%s：读取当前网址失败：%w", where, err)
 	}
@@ -67,7 +67,7 @@ func (r *Runner) checkPage(ctx context.Context, where string) error {
 		}
 		for _, n := range nodes {
 			// 每个正常页面都预加载 baxia 脚本，只认真正显示出来的遮罩。
-			visible, err := r.H.VisibleChecked(n)
+			visible, err := r.H.VisibleCheckedContext(ctx, n)
 			if err != nil {
 				return fmt.Errorf("%s：检查验证遮罩是否可见失败：%w", where, err)
 			}
@@ -82,7 +82,7 @@ func (r *Runner) checkPage(ctx context.Context, where string) error {
 			return fmt.Errorf("%s：检查环境提示失败：%w", where, err)
 		}
 		for _, n := range nodes {
-			visible, err := r.H.VisibleChecked(n)
+			visible, err := r.H.VisibleCheckedContext(ctx, n)
 			if err != nil {
 				return fmt.Errorf("%s：检查环境提示是否可见失败：%w", where, err)
 			}
@@ -156,10 +156,31 @@ func (r *Runner) checkResponses(where string) error {
 
 // check 做一次完整的风控检查：先查接口，再查页面。
 func (r *Runner) check(ctx context.Context, where string) error {
-	if err := r.checkResponses(where); err != nil {
+	if err := contextError(ctx); err != nil {
 		return err
 	}
-	return r.checkPage(ctx, where)
+	responseErr := r.checkResponses(where)
+	if errors.Is(responseErr, ErrDenied) || errors.Is(responseErr, ErrEnvBlocked) {
+		return responseErr
+	}
+	return combinedRisk(responseErr, r.checkPage(ctx, where))
+}
+
+func combinedRisk(responseErr, pageErr error) error {
+	if errors.Is(responseErr, ErrDenied) || errors.Is(responseErr, ErrEnvBlocked) {
+		return responseErr
+	}
+	if errors.Is(pageErr, ErrDenied) || errors.Is(pageErr, ErrEnvBlocked) {
+		return pageErr
+	}
+	// 已有验证码也要继续检查页面，读取失败不能当成仍可人工处理。
+	if pageErr != nil && !IsStop(pageErr) {
+		return pageErr
+	}
+	if responseErr != nil {
+		return responseErr
+	}
+	return pageErr
 }
 
 // waitAPI 等 mark 之后的第一条有效接口响应：令牌过期的那条跳过、继续等；风控立即返回；业务失败算这一步失败。
@@ -175,7 +196,7 @@ func (r *Runner) waitAPIResponse(ctx context.Context, mark uint64, m browser.Mat
 		resp, err := r.waitResponse(ctx, after, m, where, time.Until(deadline), quiet)
 		if err != nil {
 			if ctx.Err() != nil {
-				return nil, ctx.Err()
+				return nil, contextError(ctx)
 			}
 			// 超时先看是不是掉了登录或出了验证（scraper.py:728-733）。
 			if cerr := r.check(ctx, where); cerr != nil {

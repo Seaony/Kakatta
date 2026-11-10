@@ -18,14 +18,14 @@ func (s Site) userHeadAPI() browser.Match {
 // 不带 userId 的 /personal 是不是显示自己的资料还没用真实页面确认，所以调用方拿不到昵称时只记警告。
 func (r *Runner) OwnProfile(ctx context.Context) (xianyu.SellerHead, error) {
 	var h xianyu.SellerHead
-	if err := r.acquire(quota.Detail, "自己的主页"); err != nil {
+	if err := r.acquire(ctx, quota.Detail, "自己的主页"); err != nil {
 		return h, err
 	}
 	if err := r.check(ctx, "打开自己的主页前"); err != nil {
 		return h, err
 	}
 	mark := r.S.Capture.Mark()
-	if err := r.S.Navigate(strings.TrimSuffix(r.Site.Home, "/")+"/personal", rules.timeout("profile")); err != nil {
+	if err := r.navigate(ctx, strings.TrimSuffix(r.Site.Home, "/")+"/personal", "打开自己的主页", rules.timeout("profile")); err != nil {
 		if cerr := r.check(ctx, "打开自己的主页"); cerr != nil {
 			return h, cerr
 		}

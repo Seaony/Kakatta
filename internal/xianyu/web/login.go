@@ -13,6 +13,31 @@ import (
 // loginCookie 是表示已登录的 Cookie 名。Mekke 用它判断，上游里没有依据，待用真实页面确认（XIANYU.md 8.3 节）。
 const loginCookie = "unb"
 
+// OpenLogin 只打开一次首页，失效和验证码留给用户，拒绝或环境异常立即结束。
+func (r *Runner) OpenLogin(ctx context.Context) error {
+	if err := contextError(ctx); err != nil {
+		return err
+	}
+	if err := r.CheckVerification(ctx); err != nil {
+		return err
+	}
+	if r.Budget != nil {
+		if err := r.Budget.Acquire(quota.Search, "登录首页"); err != nil {
+			return err
+		}
+	}
+	start := time.Now()
+	err := r.watchChecked(ctx, r.CheckVerification, func(navCtx context.Context) error {
+		_, err := r.S.NavigateContext(navCtx, r.Site.Home, rules.timeout("home"))
+		return err
+	})
+	if err != nil {
+		return fmt.Errorf("打开登录首页：%w", err)
+	}
+	r.Log("登录首页已打开", map[string]any{"耗时毫秒": time.Since(start).Milliseconds()})
+	return nil
+}
+
 // BeginVerification 只确认用户已接手的具体响应，在途请求后来返回的拒绝不能被跳过。
 func (r *Runner) BeginVerification() {
 	signals, _, _ := r.loginSignals()
@@ -27,7 +52,7 @@ func (r *Runner) BeginVerification() {
 
 // ConfirmVerification 不重新访问页面，用户接手后出现的新风控仍然要拦住。
 func (r *Runner) ConfirmVerification(ctx context.Context) error {
-	if err := ctx.Err(); err != nil {
+	if err := contextError(ctx); err != nil {
 		return err
 	}
 	pageErr := r.checkPage(ctx, "人工验证完成")
@@ -70,7 +95,7 @@ func (r *Runner) ConfirmVerification(ctx context.Context) error {
 
 // CheckVerification 检查人工窗口是否还能继续；验证码和待登录留给用户，直接拒绝不能继续。
 func (r *Runner) CheckVerification(ctx context.Context) error {
-	if err := ctx.Err(); err != nil {
+	if err := contextError(ctx); err != nil {
 		return err
 	}
 	_, _, responseErr := r.loginSignals()
@@ -88,20 +113,23 @@ func (r *Runner) CheckVerification(ctx context.Context) error {
 var ErrLoginTimeout = errors.New("等待登录超时")
 
 // LoggedIn 只在本地检查登录状态，不访问闲鱼：主框架不在登录页、没有可见的登录框和验证遮罩、登录 Cookie 存在（XIANYU.md 8.3 节）。
-// 只判断 Cookie 在不在，不读取它的值。
+// 只返回是否存在非空登录 Cookie，不返回或保存值。
 func (r *Runner) LoggedIn(ctx context.Context) (bool, error) {
 	loggedIn, _, err := r.loginState(ctx)
 	return loggedIn, err
 }
 
 func (r *Runner) loginState(ctx context.Context) (bool, bool, error) {
+	if err := contextError(ctx); err != nil {
+		return false, false, err
+	}
 	boxes, err := r.H.FindNow(ctx, rules.Selectors.LoginBox)
 	if err != nil {
 		return false, false, err
 	}
 	visibleBox := false
 	for _, box := range boxes {
-		visible, err := r.H.VisibleChecked(box)
+		visible, err := r.H.VisibleCheckedContext(ctx, box)
 		if err != nil {
 			return false, false, err
 		}
@@ -116,13 +144,20 @@ func (r *Runner) loginState(ctx context.Context) (bool, bool, error) {
 	if visibleBox {
 		return false, true, nil
 	}
-	present, err := r.S.LoginCookiePresent([]string{r.Site.Home}, loginCookie)
+	present, err := r.S.LoginCookiePresentContext(ctx, []string{r.Site.Home}, loginCookie)
 	return present, false, err
 }
 
 // HasLoginCookie 只查本地有没有这个名字，不读取 Cookie 的值。
 func (r *Runner) HasLoginCookie() (bool, error) {
-	return r.S.HasCookie([]string{r.Site.Home}, loginCookie)
+	return r.HasLoginCookieContext(r.S.Context())
+}
+
+func (r *Runner) HasLoginCookieContext(ctx context.Context) (bool, error) {
+	if err := contextError(ctx); err != nil {
+		return false, err
+	}
+	return r.S.HasCookieContext(ctx, []string{r.Site.Home}, loginCookie)
 }
 
 // WaitForLogin 等用户在这个浏览器窗口里自己点登录、扫码（XIANYU.md 8.2 节）。程序不点登录框里的任何东西。
@@ -132,7 +167,7 @@ func (r *Runner) WaitForLogin(ctx context.Context, timeout time.Duration) error 
 	var latestExpired, latestSuccess uint64
 	sawLoginBox := false
 	for {
-		if err := ctx.Err(); err != nil {
+		if err := contextError(ctx); err != nil {
 			return err
 		}
 		signals, success, responseErr := r.loginSignals()
@@ -163,6 +198,9 @@ func (r *Runner) WaitForLogin(ctx context.Context, timeout time.Duration) error 
 			return ErrLoginTimeout
 		}
 		if err := r.P.Wait(ctx, pacer.Between(rules.timeout("login_poll"), rules.timeout("login_poll"))); err != nil {
+			if ctxErr := contextError(ctx); ctxErr != nil {
+				return ctxErr
+			}
 			return err
 		}
 	}
@@ -170,7 +208,11 @@ func (r *Runner) WaitForLogin(ctx context.Context, timeout time.Duration) error 
 
 // RequireLoginCookie 做本地预检。这个名字还没在真实页面确认，缺失只记警告，不判登录失效。
 func (r *Runner) RequireLoginCookie() error {
-	ok, err := r.HasLoginCookie()
+	return r.RequireLoginCookieContext(r.S.Context())
+}
+
+func (r *Runner) RequireLoginCookieContext(ctx context.Context) error {
+	ok, err := r.HasLoginCookieContext(ctx)
 	if err != nil {
 		return fmt.Errorf("读取浏览器登录状态：%w", err)
 	}
@@ -194,13 +236,16 @@ func (r *Runner) RequireLoggedIn(ctx context.Context, where string) error {
 
 // CheckLogin 只打开首页确认登录还在，算一次搜索类访问。用来测登录状态能保持多久。
 func (r *Runner) CheckLogin(ctx context.Context) error {
-	if err := r.RequireLoginCookie(); err != nil {
+	if err := contextError(ctx); err != nil {
 		return err
 	}
-	if err := r.acquire(quota.Search, "检查登录时打开首页"); err != nil {
+	if err := r.RequireLoginCookieContext(ctx); err != nil {
 		return err
 	}
-	if err := r.S.Navigate(r.Site.Home, rules.timeout("home")); err != nil {
+	if err := r.acquire(ctx, quota.Search, "检查登录时打开首页"); err != nil {
+		return err
+	}
+	if err := r.navigate(ctx, r.Site.Home, "检查登录", rules.timeout("home")); err != nil {
 		if cerr := r.check(ctx, "检查登录"); cerr != nil {
 			return cerr
 		}

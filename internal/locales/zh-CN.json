@@ -479,5 +479,11 @@
   "analysis.risk_name.seller_dealer": "疑似商家",
   "analysis.risk_name.seller_new": "新号",
   "analysis.risk_name.seller_bad_reviews": "差评里有描述不符或售后差",
-  "analysis.risk_name.seller_partial_refund": "被评到手刀"
+  "analysis.risk_name.seller_partial_refund": "被评到手刀",
+  "run.seller_page_failed": "卖家主页未能打开，本次继续判断商品",
+  "run.seller_head_failed": "未能取得卖家头部资料，本次继续判断商品",
+  "run.seller_items_failed": "未能取得卖家商品列表，本次继续判断商品",
+  "run.seller_ratings_failed": "未能取得卖家评价，保留已取得的其他资料",
+  "run.seller_ratings_missing": "卖家主页没有可见的评价入口，未读取评价",
+  "run.seller_ratings_quota": "详情访问额度不足，未读取卖家评价"
 }

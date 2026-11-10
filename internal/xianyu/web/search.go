@@ -17,14 +17,17 @@ import (
 
 // OpenHome 打开首页，停留，滚动一次，再停留（XIANYU.md 5.1 节）。
 func (r *Runner) OpenHome(ctx context.Context) error {
-	if err := r.RequireLoginCookie(); err != nil {
+	if err := contextError(ctx); err != nil {
 		return err
 	}
-	if err := r.acquire(quota.Search, "首页"); err != nil {
+	if err := r.RequireLoginCookieContext(ctx); err != nil {
+		return err
+	}
+	if err := r.acquire(ctx, quota.Search, "首页"); err != nil {
 		return err
 	}
 	start := time.Now()
-	if err := r.S.Navigate(r.Site.Home, rules.timeout("home")); err != nil {
+	if err := r.navigate(ctx, r.Site.Home, "打开首页", rules.timeout("home")); err != nil {
 		if cerr := r.check(ctx, "打开首页"); cerr != nil {
 			return cerr
 		}
@@ -59,16 +62,26 @@ type InputFact struct {
 
 // InputFacts 列出页面顶部可见的输入框，给实验记录用（XIANYU.md 第十一节「首页搜索框的选择器」）。
 func (r *Runner) InputFacts(ctx context.Context) []InputFact {
+	if contextError(ctx) != nil {
+		return nil
+	}
 	nodes, err := r.H.FindNow(ctx, rules.Selectors.SearchCandidates)
 	if err != nil {
 		return nil
 	}
 	var out []InputFact
 	for _, n := range nodes {
-		if !r.H.Visible(n) {
+		visible, err := r.H.VisibleCheckedContext(ctx, n)
+		if err != nil {
+			return nil
+		}
+		if !visible {
 			continue
 		}
-		_, y, w, _, err := r.H.Box(n)
+		_, y, w, _, err := r.H.BoxContext(ctx, n)
+		if err != nil && contextError(ctx) != nil {
+			return nil
+		}
 		if err != nil || y > 300 {
 			continue
 		}
@@ -88,6 +101,9 @@ func (r *Runner) InputFacts(ctx context.Context) []InputFact {
 
 // findSearchInput 找首页搜索框：有指定的选择器就用它；没有就取页面顶部最宽的可见输入框（搜索框通常是顶部最宽的那个）。
 func (r *Runner) findSearchInput(ctx context.Context) (*chromedp.Node, string, error) {
+	if err := contextError(ctx); err != nil {
+		return nil, "", err
+	}
 	if r.SearchInput != "" {
 		n, err := r.H.FirstVisible(ctx, r.SearchInput, rules.timeout("search_input"))
 		return n, r.SearchInput, err
@@ -103,11 +119,18 @@ func (r *Runner) findSearchInput(ctx context.Context) (*chromedp.Node, string, e
 		if t != "" && t != "text" && t != "search" {
 			continue
 		}
-		if !r.H.Visible(n) {
+		visible, err := r.H.VisibleCheckedContext(ctx, n)
+		if err != nil {
+			return nil, "", err
+		}
+		if !visible {
 			continue
 		}
-		_, y, w, _, err := r.H.Box(n)
-		if err != nil || y > 300 {
+		_, y, w, _, err := r.H.BoxContext(ctx, n)
+		if err != nil {
+			return nil, "", err
+		}
+		if y > 300 {
 			continue
 		}
 		if w > bestW {
@@ -137,7 +160,7 @@ func (r *Runner) Search(ctx context.Context, keyword string) (*browser.Response,
 		return nil, err
 	}
 	// 搜索框里已经有文字（比如推荐词）时先清空，不然会和关键词拼在一起（XIANYU.md 5.2 节）。placeholder 读出来是空的，不受影响。
-	v, err := r.H.Value(input)
+	v, err := r.H.ValueContext(ctx, input)
 	if err != nil {
 		return nil, err
 	}
@@ -145,8 +168,12 @@ func (r *Runner) Search(ctx context.Context, keyword string) (*browser.Response,
 		if err := r.H.Clear(ctx); err != nil {
 			return nil, err
 		}
-		if v, err := r.H.Value(input); err != nil || v != "" {
-			return nil, fmt.Errorf("没能清空搜索框里原有的文字（%v）", err)
+		v, err := r.H.ValueContext(ctx, input)
+		if err != nil {
+			return nil, fmt.Errorf("读取清空后的搜索框：%w", err)
+		}
+		if v != "" {
+			return nil, fmt.Errorf("没能清空搜索框里原有的文字")
 		}
 		r.Log("清空了搜索框", nil)
 	}
@@ -156,7 +183,7 @@ func (r *Runner) Search(ctx context.Context, keyword string) (*browser.Response,
 	if err := r.wait(ctx, "输入关键词后", r.Pace.Action); err != nil {
 		return nil, err
 	}
-	if err := r.acquire(quota.Search, "提交搜索"); err != nil {
+	if err := r.acquire(ctx, quota.Search, "提交搜索"); err != nil {
 		return nil, err
 	}
 	if err := r.check(ctx, "提交搜索前"); err != nil {
@@ -164,7 +191,7 @@ func (r *Runner) Search(ctx context.Context, keyword string) (*browser.Response,
 	}
 	mark := r.S.Capture.Mark()
 	navMark := r.S.NavigationMark()
-	before, err := r.S.URL()
+	before, err := r.S.URLContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -267,7 +294,7 @@ func (r *Runner) filterStep(ctx context.Context, name string, repeatable bool, a
 
 func (r *Runner) searchStep(ctx context.Context, name string, repeatable bool, extraWait time.Duration, act func() error) (*browser.Response, error) {
 	api := r.Site.searchAPI()
-	if err := r.acquire(quota.Search, name); err != nil {
+	if err := r.acquire(ctx, quota.Search, name); err != nil {
 		return nil, err
 	}
 	if err := r.check(ctx, name+"前"); err != nil {
@@ -287,7 +314,7 @@ func (r *Runner) searchStep(ctx context.Context, name string, repeatable bool, e
 			if werr := r.wait(ctx, "重做前", r.Pace.Action); werr != nil {
 				return nil, werr
 			}
-			if aerr := r.acquire(quota.Search, name+"重试"); aerr != nil {
+			if aerr := r.acquire(ctx, quota.Search, name+"重试"); aerr != nil {
 				return nil, aerr
 			}
 			mark = r.S.Capture.Mark()

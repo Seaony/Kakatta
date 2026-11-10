@@ -479,5 +479,11 @@
   "analysis.risk_name.seller_dealer": "Possibly a dealer",
   "analysis.risk_name.seller_new": "New account",
   "analysis.risk_name.seller_bad_reviews": "Negative reviews report misleading descriptions or poor after-sales support",
-  "analysis.risk_name.seller_partial_refund": "Reviews report post-delivery bargaining or abusive refunds"
+  "analysis.risk_name.seller_partial_refund": "Reviews report post-delivery bargaining or abusive refunds",
+  "run.seller_page_failed": "Could not open the seller's profile; item analysis will continue",
+  "run.seller_head_failed": "Could not read the seller's profile details; item analysis will continue",
+  "run.seller_items_failed": "Could not read the seller's listings; item analysis will continue",
+  "run.seller_ratings_failed": "Could not read the seller's reviews; other retrieved details were retained",
+  "run.seller_ratings_missing": "No visible reviews link was found on the seller's profile; reviews were not read",
+  "run.seller_ratings_quota": "Not enough detail visits remain; seller reviews were not read"
 }

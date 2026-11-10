@@ -94,9 +94,12 @@ func NewRunner(s *browser.Session, p *pacer.Pacer, keyDelay pacer.Range, site Si
 	return &Runner{S: s, H: browser.NewHuman(s, p, keyDelay), P: p, Site: site, Pace: pace, Budget: budget, Log: log, since: s.Capture.Mark()}
 }
 
-// acquire 在每次访问闲鱼之前调用：先确认之前没有漏掉的风控响应，再申请额度。
-func (r *Runner) acquire(kind quota.Kind, what string) error {
-	if err := r.checkResponses(what + "之前"); err != nil {
+// acquire 在访问前检查接口和当前页面，再申请额度。
+func (r *Runner) acquire(ctx context.Context, kind quota.Kind, what string) error {
+	if err := r.check(ctx, what+"之前"); err != nil {
+		return err
+	}
+	if err := contextError(ctx); err != nil {
 		return err
 	}
 	if r.Budget == nil {
@@ -115,7 +118,16 @@ func (r *Runner) wait(ctx context.Context, what string, rg pacer.Range) error {
 
 // 等待期间接口仍可能返回风控，检查和后续页面操作在同一个调用里串行执行。
 func (r *Runner) watch(ctx context.Context, where string, wait func(context.Context) error) error {
-	if err := r.check(ctx, where); err != nil {
+	return r.watchChecked(ctx, func(checkCtx context.Context) error { return r.check(checkCtx, where) }, wait)
+}
+
+// Guard 在耗时处理期间继续检查风控，停止后等处理真正结束。
+func (r *Runner) Guard(ctx context.Context, where string, work func(context.Context) error) error {
+	return r.watch(ctx, where, work)
+}
+
+func (r *Runner) watchChecked(ctx context.Context, check func(context.Context) error, wait func(context.Context) error) error {
+	if err := check(ctx); err != nil {
 		return err
 	}
 	waitCtx, cancel := context.WithCancel(ctx)
@@ -131,18 +143,33 @@ func (r *Runner) watch(ctx context.Context, where string, wait func(context.Cont
 	}()
 	for {
 		changed := r.S.Capture.Changes()
-		if err := r.check(ctx, where); err != nil {
+		if err := check(ctx); err != nil {
 			return err
 		}
 		select {
 		case err := <-completed:
-			if err != nil {
-				return err
+			if checkErr := check(ctx); checkErr != nil {
+				return checkErr
 			}
-			return r.check(ctx, where)
+			return err
 		case <-changed:
 		case <-ctx.Done():
-			return ctx.Err()
+			return contextError(ctx)
 		}
 	}
+}
+
+func contextError(ctx context.Context) error {
+	err := ctx.Err()
+	if cause := context.Cause(ctx); err != nil && !errors.Is(err, cause) {
+		return errors.Join(err, cause)
+	}
+	return err
+}
+
+func (r *Runner) navigate(ctx context.Context, target, where string, timeout time.Duration) error {
+	return r.watch(ctx, where, func(navCtx context.Context) error {
+		_, err := r.S.NavigateContext(navCtx, target, timeout)
+		return err
+	})
 }
