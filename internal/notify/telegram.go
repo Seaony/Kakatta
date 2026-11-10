@@ -62,6 +62,11 @@ func telegramHTML(message Message, itemTitle string) string {
 	return strings.Join(lines, "\n")
 }
 
+// TelegramContentUnits 按实际 HTML 拼接计算长度，格式化层据此缩短规格。
+func TelegramContentUnits(message Message) int {
+	return UTF16Len(telegramHTML(message, message.ItemTitle))
+}
+
 func (s *Sender) sendTelegram(ctx context.Context, config ChannelConfig, message Message) Result {
 	options, secrets, err := readTelegram(config)
 	if err != nil {

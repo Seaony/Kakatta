@@ -16,32 +16,47 @@ import (
 )
 
 type Dependencies struct {
-	DB       *sql.DB
-	Settings *appsettings.Store
-	Cipher   *security.Cipher
-	Sender   *notify.Sender
-	Now      func() time.Time
-	Publish  func(kind string, reason *locales.Message, data json.RawMessage) error
+	DB                    *sql.DB
+	Settings              *appsettings.Store
+	Cipher                *security.Cipher
+	Sender                *notify.Sender
+	Now                   func() time.Time
+	Publish               func(kind string, reason *locales.Message, data json.RawMessage) error
+	VerificationHeldUntil func(accountID int64, nowMS int64) *int64
 }
 
 type Service struct {
-	db       *sql.DB
-	settings *appsettings.Store
-	cipher   *security.Cipher
-	sender   *notify.Sender
-	now      func() time.Time
-	publish  func(string, *locales.Message, json.RawMessage) error
+	db                    *sql.DB
+	settings              *appsettings.Store
+	cipher                *security.Cipher
+	sender                *notify.Sender
+	now                   func() time.Time
+	publish               func(string, *locales.Message, json.RawMessage) error
+	verificationHeldUntil func(int64, int64) *int64
 
 	mu             sync.Mutex
 	ctx            context.Context
 	cancel         context.CancelFunc
 	closed         bool
 	storageErr     error
-	jobs           sync.WaitGroup
+	activeJobs     int
+	jobsIdle       chan struct{}
+	paused         int
 	intentInFlight map[int64]struct{}
 	eventInFlight  map[int64]struct{}
 	queues         channelQueues
+	channelJobs    map[channelIdentity]*channelJobs
+	receipts       []func(context.Context) error
+	settlementGate chan struct{}
 }
+
+type channelJobs struct {
+	blocked bool
+	active  map[*channelJob]struct{}
+	idle    chan struct{}
+}
+
+type channelJob struct{ cancel context.CancelFunc }
 
 type Channel struct {
 	ID         int64            `json:"id"`
@@ -68,6 +83,12 @@ type ChannelTestResult struct {
 	At         int64            `json:"at"`
 	OK         bool             `json:"ok"`
 	Error      *locales.Message `json:"error"`
+}
+
+type DeliveryItem struct {
+	FindingID int64   `json:"finding_id"`
+	TaskID    *int64  `json:"task_id"`
+	Title     *string `json:"title"`
 }
 
 type channelIdentity struct {
@@ -156,6 +177,7 @@ type formatOptions struct {
 	LinkTarget     string
 	FindingURL     func(int64) string
 	TaskResultsURL string
+	PublicURL      string
 }
 
 type titleParts struct {
@@ -176,6 +198,8 @@ type firstDecision struct {
 
 type channelOutcome struct {
 	ChannelID    int64
+	ChannelName  string
+	IntentIDs    []int64
 	Attempted    bool
 	CalledSender bool
 	StartedAt    int64
