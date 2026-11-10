@@ -15,7 +15,7 @@ func TestParseSellerHead(t *testing.T) {
 	}
 	want := SellerHead{
 		Nick: "卖家一号", Avatar: "https://img.alicdn.com/avatar.jpg",
-		ItemCount:    36,
+		ItemCount: 36, ItemCountKnown: true,
 		SellerCredit: "卖家信用极好", SellerCreditLevel: "4",
 		BuyerCredit: "买家信用良好", BuyerCreditLevel: "2",
 	}
@@ -32,7 +32,7 @@ func TestParseSellerHeadUpstreamFixture(t *testing.T) {
 	}
 	want := SellerHead{
 		Nick: "seller_01", Avatar: "https://img.example.com/avatar.jpg", Intro: "Trusted seller",
-		ItemCount: 12, RateCount: 88,
+		ItemCount: 12, ItemCountKnown: true, RateCount: 88, RateCountKnown: true,
 		SellerCredit: "S3", SellerCreditLevel: "3",
 		BuyerCredit: "B2", BuyerCreditLevel: "2",
 	}
@@ -53,7 +53,7 @@ func TestParseSellerItems(t *testing.T) {
 			{ID: "10003", Title: "状态未知", PriceText: "面议", Status: ItemStatusUnknown},
 			{ID: "10004", Title: "没有状态", Status: ItemStatusUnknown},
 		},
-		OnSale: 1, Sold: 1,
+		ListKnown: true, OnSale: 1, Sold: 1,
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("\n得到 %+v\n期望 %+v", got, want)
@@ -197,5 +197,123 @@ func TestSellerParsersRejectBadJSON(t *testing.T) {
 	}
 	if _, err := ParseSellerRatings(bad); err == nil {
 		t.Error("ParseSellerRatings 应当报错")
+	}
+}
+
+func TestParseSellerHeadCountsKnown(t *testing.T) {
+	for _, tc := range []struct {
+		value string
+		known bool
+		count int
+	}{
+		{`0`, true, 0},
+		{`"0"`, true, 0},
+		{`"12"`, true, 12},
+		{`null`, false, 0},
+		{`"未知"`, false, 0},
+		{`{}`, false, 0},
+		{`1.5`, false, 0},
+	} {
+		t.Run(tc.value, func(t *testing.T) {
+			body := `{"data":{"module":{"tabs":{"item":{"number":` + tc.value + `},"rate":{"number":` + tc.value + `}}}}}`
+			h, err := ParseSellerHead([]byte(body))
+			if err != nil || h.ItemCount != tc.count || h.RateCount != tc.count || h.ItemCountKnown != tc.known || h.RateCountKnown != tc.known {
+				t.Fatalf("计数是否已知不正确：%+v %v", h, err)
+			}
+		})
+	}
+	h, err := ParseSellerHead([]byte(`{"data":{"module":{"tabs":{"item":{},"rate":{}}}}}`))
+	if err != nil || h.ItemCountKnown || h.RateCountKnown {
+		t.Fatalf("缺失计数不能当作已知 0：%+v %v", h, err)
+	}
+}
+
+func TestSellerListsKnown(t *testing.T) {
+	for _, tc := range []struct {
+		name, body string
+		known      bool
+	}{
+		{"missing", `{}`, false},
+		{"null", `{"data":{"cardList":null}}`, false},
+		{"object", `{"data":{"cardList":{}}}`, false},
+		{"string", `{"data":{"cardList":""}}`, false},
+		{"empty", `{"data":{"cardList":[]}}`, true},
+		{"root array", `[]`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			items, err := ParseSellerItems([]byte(tc.body))
+			if err != nil || items.ListKnown != tc.known || len(items.Items) != 0 || items.OnSale != 0 || items.Sold != 0 {
+				t.Fatalf("商品列表是否已知不正确：%+v %v", items, err)
+			}
+			ratings, err := ParseSellerRatings([]byte(tc.body))
+			if err != nil || ratings.ListKnown != tc.known || len(ratings.Recent) != 0 || ratings.AsSeller != (RatingStats{}) || ratings.AsBuyer != (RatingStats{}) {
+				t.Fatalf("评价列表是否已知不正确：%+v %v", ratings, err)
+			}
+		})
+	}
+}
+
+func TestParseSellerHeadUsesRulePaths(t *testing.T) {
+	previous := rules
+	t.Cleanup(func() { rules = previous })
+	f := &rules.Fields.Seller.Head
+	f.Module, f.Base = []string{"payload", "header"}, []string{"person"}
+	f.Nick, f.Avatar, f.Intro = []string{"name"}, []string{"picture", "src"}, []string{"about"}
+	f.ItemCount, f.RateCount = []string{"counts", "items"}, []string{"counts", "ratings"}
+	f.Tags = []string{"credits"}
+	f.TagText, f.TagLevel, f.TagRole = []string{"label"}, []string{"rank"}, []string{"role"}
+	body := []byte(`{"payload":{"header":{"person":{"name":"规则卖家","picture":{"src":"//example.test/avatar.jpg"},"about":"简介","credits":[{"label":"卖家原文","rank":4,"role":"seller"},{"label":"买家原文","rank":"2","role":"buyer"}]},"counts":{"items":0,"ratings":"12"}}}}`)
+	got, err := ParseSellerHead(body)
+	want := SellerHead{
+		Nick: "规则卖家", Avatar: "https://example.test/avatar.jpg", Intro: "简介",
+		ItemCountKnown: true, RateCount: 12, RateCountKnown: true,
+		SellerCredit: "卖家原文", SellerCreditLevel: "4", BuyerCredit: "买家原文", BuyerCreditLevel: "2",
+	}
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("未使用头部字段规则：%+v %v", got, err)
+	}
+}
+
+func TestParseSellerItemsUsesRulePaths(t *testing.T) {
+	previous := rules
+	t.Cleanup(func() { rules = previous })
+	f := &rules.Fields.Seller
+	f.Cards, f.CardData = []string{"payload", "rows"}, []string{"entry"}
+	f.Items.ID, f.Items.Title = []string{"identifier"}, []string{"label"}
+	f.Items.Price, f.Items.Image, f.Items.Status = []string{"amount", "value"}, []string{"picture", "src"}, []string{"state"}
+	body := []byte(`{"payload":{"rows":[{"entry":{"identifier":9007199254740993,"label":"规则商品","amount":{"value":"12.345"},"picture":{"src":"//example.test/item.jpg"},"state":"0"}},{"entry":{"identifier":"sold","state":1}}]}}`)
+	got, err := ParseSellerItems(body)
+	want := SellerItems{
+		ListKnown: true, OnSale: 1, Sold: 1,
+		Items: []SellerItem{
+			{ID: "9007199254740993", Title: "规则商品", PriceText: "12.345", PriceCents: 1235, PriceKnown: true, Image: "https://example.test/item.jpg", Status: ItemOnSale},
+			{ID: "sold", Status: ItemSold},
+		},
+	}
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("未使用商品字段规则：%+v %v", got, err)
+	}
+}
+
+func TestParseSellerRatingsUsesRulePaths(t *testing.T) {
+	previous := rules
+	t.Cleanup(func() { rules = previous })
+	f := &rules.Fields.Seller
+	f.Cards, f.CardData = []string{"payload", "rows"}, []string{"entry"}
+	f.Ratings.ID, f.Ratings.Feedback, f.Ratings.Rater = []string{"identifier"}, []string{"body"}, []string{"author"}
+	f.Ratings.Created, f.Ratings.Kind = []string{"written"}, []string{"score"}
+	f.Ratings.Tags, f.Ratings.TagText, f.Ratings.Images = []string{"identities"}, []string{"label"}, []string{"pictures"}
+	body := []byte(`{"payload":{"rows":[{"entry":{"identifier":9007199254740993,"body":"原文不改","author":"评价人","written":"1717200000000","score":"1","identities":[{"label":"作为卖家"}],"pictures":["//example.test/rating.jpg"]}}]}}`)
+	got, err := ParseSellerRatings(body)
+	want := SellerRatings{
+		ListKnown: true, AsSeller: RatingStats{Good: 1, Total: 1},
+		Recent: []Rating{{
+			ID: "9007199254740993", Feedback: "原文不改", Summary: "原文不改", Rater: "评价人", Kind: RatingGood,
+			RoleText: "作为卖家", Role: RoleSeller, CreatedText: "1717200000000", CreatedKnown: true,
+			CreatedAt: time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC), Images: []string{"https://example.test/rating.jpg"},
+		}},
+	}
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("未使用评价字段规则：%+v %v", got, err)
 	}
 }

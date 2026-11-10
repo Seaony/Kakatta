@@ -1,9 +1,12 @@
 package web
 
 import (
-	"bytes"
 	"errors"
+	"reflect"
 	"testing"
+	"time"
+
+	"github.com/Seaony/Kakatta/internal/xianyu"
 )
 
 func TestPageURLRisk(t *testing.T) {
@@ -40,17 +43,16 @@ func TestKeywordComparisonNormalizesWidthAndWhitespace(t *testing.T) {
 }
 
 func TestBundledRulesAreVersionedData(t *testing.T) {
-	if _, err := decodeRules(bundledRules); err != nil {
-		t.Fatal(err)
+	if !reflect.DeepEqual(rules.WebRules, xianyu.WebProtocol()) {
+		t.Fatal("网页层未使用统一规则")
 	}
-	for _, bad := range [][]byte{
-		bytes.Replace(bundledRules, []byte(`"version": 1`), []byte(`"version": 2`), 1),
-		bytes.Replace(bundledRules, []byte(`"home": 30000`), []byte(`"home": 0`), 1),
-		append(append([]byte(nil), bundledRules...), []byte(`{}`)...),
-		bytes.Replace(bundledRules, []byte(`{`), []byte(`{"script":"throw 1",`), 1),
-	} {
-		if _, err := decodeRules(bad); err == nil {
-			t.Fatal("无效版本、等待时间、额外内容或脚本字段必须拒绝")
-		}
+	if rules.Version != 2 || rules.API.UserItems != "mtop.idle.web.xyh.item.list" ||
+		rules.API.UserRatings != "mtop.idle.web.trade.rate.list" ||
+		rules.Selectors.SellerRatings != "//div[text()='信用及评价']/ancestor::li" {
+		t.Fatal("卖家规则缺失或版本错误")
+	}
+	if rules.timeout("seller_items_response") != 8*time.Second || rules.timeout("seller_ratings_response") != 8*time.Second ||
+		rules.timeout("profile") != 20*time.Second || rules.timeout("profile_response") != 15*time.Second {
+		t.Fatal("卖家页面等待时间错误")
 	}
 }

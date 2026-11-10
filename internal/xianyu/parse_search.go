@@ -35,7 +35,7 @@ func ParseSearch(body []byte) ([]SearchItem, error) {
 	if err != nil {
 		return nil, err
 	}
-	list, ok := pathGet(root, "data", "resultList").([]any)
+	list, ok := pathGet(root, rules.Fields.Search.List...).([]any)
 	if !ok {
 		return nil, ErrSearchStructure
 	}
@@ -54,35 +54,36 @@ func ParseSearch(body []byte) ([]SearchItem, error) {
 
 // parseSearchItem 解析一项；不是对象或没有商品 ID 时 ok 为 false。
 func parseSearchItem(raw any) (SearchItem, bool) {
-	main := asMap(pathGet(raw, "data", "item", "main"))
-	ex := asMap(main["exContent"])
-	args := asMap(pathGet(main, "clickParam", "args"))
+	paths := rules.Fields.Search
+	main := asMap(pathGet(raw, paths.Main...))
+	ex := asMap(pathGet(main, paths.Content...))
+	args := asMap(pathGet(main, paths.Args...))
 
 	var it SearchItem
-	it.ID = strings.TrimSpace(asScalarText(ex["itemId"]))
+	it.ID = strings.TrimSpace(asScalarText(pathGet(ex, paths.ID...)))
 	if it.ID == "" {
 		return it, false
 	}
-	it.Title = asText(ex["title"])
-	it.PriceText = searchPriceText(ex["price"])
+	it.Title = asText(pathGet(ex, paths.Title...))
+	it.PriceText = searchPriceText(pathGet(ex, paths.Price...))
 	it.PriceCents, it.PriceKnown = ParsePriceCents(it.PriceText)
-	it.OriPriceText = asText(ex["oriPrice"])
+	it.OriPriceText = asText(pathGet(ex, paths.OriginalPrice...))
 	it.OriPriceCents, it.OriPriceKnown = ParsePriceCents(it.OriPriceText)
-	it.Image = FixImageURL(asText(ex["picUrl"]))
-	it.Area = asText(ex["area"])
-	it.SellerNick = asText(ex["userNickName"])
-	it.WebURL = WebLink(asText(main["targetUrl"]))
+	it.Image = FixImageURL(asText(pathGet(ex, paths.Image...)))
+	it.Area = asText(pathGet(ex, paths.Area...))
+	it.SellerNick = asText(pathGet(ex, paths.SellerNick...))
+	it.WebURL = WebLink(asText(pathGet(main, paths.URL...)))
 	it.AppURL = AppLink(it.ID)
 	if it.AppURL == "" {
 		it.AppURL = it.WebURL
 	}
-	it.PublishedAt, it.PublishedKnown = ParsePublishTime(args["publishTime"])
-	if n, ok := asInt(args["wantNum"]); ok {
+	it.PublishedAt, it.PublishedKnown = ParsePublishTime(pathGet(args, paths.Published...))
+	if n, ok := asInt(pathGet(args, paths.Want...)); ok {
 		it.WantNum, it.WantKnown = int(n), true
 	}
-	it.FreeShip = asText(args["tag"]) == "freeship"
-	for _, tag := range asSlice(pathGet(ex, "fishTags", "r1", "tagList")) {
-		if strings.Contains(asText(pathGet(tag, "data", "content")), "验货宝") {
+	it.FreeShip = asText(pathGet(args, paths.FreeShipTag...)) == "freeship"
+	for _, tag := range asSlice(pathGet(ex, paths.Tags...)) {
+		if strings.Contains(asText(pathGet(tag, paths.TagText...)), "验货宝") {
 			it.Inspected = true
 			break
 		}
@@ -95,7 +96,7 @@ func parseSearchItem(raw any) (SearchItem, bool) {
 func searchPriceText(v any) string {
 	var b strings.Builder
 	for _, p := range asSlice(v) {
-		b.WriteString(asScalarText(pathGet(p, "text")))
+		b.WriteString(asScalarText(pathGet(p, rules.Fields.Search.PriceText...)))
 	}
 	return strings.TrimSpace(strings.ReplaceAll(b.String(), "当前价", ""))
 }

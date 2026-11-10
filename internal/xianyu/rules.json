@@ -1,0 +1,131 @@
+{
+  "version": 2,
+  "api": {
+    "search": "/h5/mtop.taobao.idlemtopsearch.pc.search/1.0/",
+    "detail": "/h5/mtop.taobao.idle.pc.detail",
+    "user_head": "mtop.idle.web.user.page.head",
+    "mtop": "/h5/mtop.",
+    "user_items": "mtop.idle.web.xyh.item.list",
+    "user_ratings": "mtop.idle.web.trade.rate.list"
+  },
+  "selectors": {
+    "search_candidates": "input",
+    "search_ready": "//*[normalize-space(.)='新发布' and not(.//*[normalize-space(.)='新发布'])]",
+    "close_ad": "div[class*='closeIconBg']",
+    "next_page": "button[class*='search-pagination-arrow-container']:has([class*='search-pagination-arrow-right']):not([disabled])",
+    "region_popover": "div.ant-popover",
+    "region_area_class": "areaWrap",
+    "region_option_class": "provItem",
+    "region_submit_class": "searchBtn",
+    "price_container": "div[class*='search-price-input-container']",
+    "price_input": "[placeholder*='¥']",
+    "login_box": "#alibaba-login-box",
+    "verify_masks": ["div.baxia-dialog-mask", "div.J_MIDDLEWARE_FRAME_WIDGET"],
+    "blocked_texts": ["非法访问", "请使用正常浏览器访问"],
+    "seller_ratings": "//div[text()='信用及评价']/ancestor::li"
+  },
+  "text": {
+    "publish_menu": "新发布",
+    "publish_latest": "最新",
+    "personal": "个人闲置",
+    "shipping": "包邮",
+    "region": "区域",
+    "region_relocate": "重新定位",
+    "region_view": "查看",
+    "region_submit_pattern": "^查看(?:[0-9]+|999\\+)件宝贝$"
+  },
+  "timeouts_ms": {
+    "home": 30000,
+    "search_navigation": 60000,
+    "search_response": 30000,
+    "search_input": 10000,
+    "search_ready": 15000,
+    "advertisement": 3000,
+    "element": 10000,
+    "filter_response": 20000,
+    "filter_extra": 10000,
+    "page_extra": 20000,
+    "page_button": 5000,
+    "response_quiet": 1500,
+    "region_popover": 5000,
+    "region_area": 3000,
+    "region_option": 3000,
+    "price_fallback": 8000,
+    "detail": 25000,
+    "profile": 20000,
+    "profile_response": 15000,
+    "login_poll": 1000,
+    "element_poll": 50,
+    "seller_items_response": 8000,
+    "seller_ratings_response": 8000
+  },
+  "unconfirmed": ["首页搜索框", "地区筛选中间请求", "登录框", "详情描述字段", "卖家商品总数含义", "卖家信用等级映射", "评价时间格式", "卖家评价标签"],
+  "fields": {
+    "search": {
+      "list": ["data", "resultList"],
+      "main": ["data", "item", "main"],
+      "content": ["exContent"],
+      "args": ["clickParam", "args"],
+      "id": ["itemId"],
+      "title": ["title"],
+      "price": ["price"],
+      "original_price": ["oriPrice"],
+      "image": ["picUrl"],
+      "area": ["area"],
+      "seller_nick": ["userNickName"],
+      "url": ["targetUrl"],
+      "published": ["publishTime"],
+      "want": ["wantNum"],
+      "free_ship_tag": ["tag"],
+      "tags": ["fishTags", "r1", "tagList"],
+      "tag_text": ["data", "content"],
+      "price_text": ["text"]
+    },
+    "detail": {
+      "item": ["data", "itemDO"],
+      "seller": ["data", "sellerDO"],
+      "images": ["imageInfos"],
+      "image_url": ["url"],
+      "want": ["wantCnt"],
+      "browse": ["browseCnt"],
+      "seller_id": ["sellerId"],
+      "reg_days": ["userRegDay"],
+      "zhima": ["zhimaLevelInfo", "levelName"],
+      "descriptions": [["desc"], ["description"], ["richTextDesc"]]
+    },
+    "seller": {
+      "head": {
+        "module": ["data", "module"],
+        "base": ["base"],
+        "nick": ["displayName"],
+        "avatar": ["avatar", "avatar"],
+        "intro": ["introduction"],
+        "item_count": ["tabs", "item", "number"],
+        "rate_count": ["tabs", "rate", "number"],
+        "tags": ["ylzTags"],
+        "tag_text": ["text"],
+        "tag_level": ["attributes", "level"],
+        "tag_role": ["attributes", "role"]
+      },
+      "cards": ["data", "cardList"],
+      "card_data": ["cardData"],
+      "items": {
+        "id": ["id"],
+        "title": ["title"],
+        "price": ["priceInfo", "price"],
+        "image": ["picInfo", "picUrl"],
+        "status": ["itemStatus"]
+      },
+      "ratings": {
+        "id": ["rateId"],
+        "feedback": ["feedback"],
+        "rater": ["raterUserNick"],
+        "created": ["gmtCreate"],
+        "kind": ["rate"],
+        "tags": ["rateTagList"],
+        "tag_text": ["text"],
+        "images": ["pictCdnUrlList"]
+      }
+    }
+  }
+}

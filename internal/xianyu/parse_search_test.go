@@ -129,3 +129,51 @@ func TestParseSearchReportsChangedStructure(t *testing.T) {
 		}
 	}
 }
+
+func TestParseSearchUsesConfiguredPaths(t *testing.T) {
+	previous := rules.Fields.Search
+	t.Cleanup(func() { rules.Fields.Search = previous })
+	paths := &rules.Fields.Search
+	paths.List = []string{"payload", "goods"}
+	paths.Main = []string{"entry"}
+	paths.Content = []string{"content"}
+	paths.Args = []string{"metadata"}
+	paths.ID = []string{"key"}
+	paths.Title = []string{"name"}
+	paths.Price = []string{"amount"}
+	paths.OriginalPrice = []string{"old_amount"}
+	paths.Image = []string{"picture"}
+	paths.Area = []string{"location"}
+	paths.SellerNick = []string{"nick"}
+	paths.URL = []string{"href"}
+	paths.Published = []string{"created"}
+	paths.Want = []string{"wanted"}
+	paths.FreeShipTag = []string{"shipping"}
+	paths.Tags = []string{"labels"}
+	paths.TagText = []string{"label"}
+	paths.PriceText = []string{"part"}
+
+	body := []byte(`{"payload":{"goods":[{"entry":{
+		"content":{"key":9007199254740993,"name":"新路径商品","title":"旧标题",
+			"amount":[{"part":"当前价"},{"part":"¥"},{"part":0}],"old_amount":"¥0",
+			"picture":"//images.invalid/item.jpg","location":"杭州","nick":"卖家",
+			"labels":[{"label":"验货宝"}]},
+		"metadata":{"created":"1710000000000","wanted":0,"shipping":"freeship"},
+		"href":"fleamarket://item?id=9007199254740993"}}]}}`)
+	got, err := ParseSearch(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []SearchItem{{
+		ID: "9007199254740993", Title: "新路径商品", PriceText: "¥0", PriceKnown: true,
+		OriPriceText: "¥0", OriPriceKnown: true,
+		Image: "https://images.invalid/item.jpg", Area: "杭州", SellerNick: "卖家",
+		WebURL:      "https://www.goofish.com/item?id=9007199254740993",
+		AppURL:      "https://pages.goofish.com/sharexy?loadingVisible=false&bft=item&bfs=idlepc.item&spm=a21ybx.item.0.0&bfp=%7B%22id%22%3A9007199254740993%7D",
+		PublishedAt: time.UnixMilli(1710000000000).UTC(), PublishedKnown: true,
+		WantKnown: true, FreeShip: true, Inspected: true,
+	}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("新路径未被完整使用：\n得到 %+v\n期望 %+v", got, want)
+	}
+}
