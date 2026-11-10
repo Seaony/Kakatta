@@ -20,6 +20,7 @@ const dictionaries: Readonly<Record<Locale, Readonly<Record<string, string>>>> =
   en: Object.freeze({ ...en }),
 });
 const placeholder = /\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
+const namedRisks = new Set(['analysis.risk_confirmed', 'analysis.risk_penalty', 'analysis.risk_uncertain', 'analysis.risk_unknown']);
 
 export class TranslationError extends Error {
   constructor(readonly kind: 'unsupported_locale' | 'unknown_code' | 'missing_argument' | 'invalid_count') {
@@ -57,9 +58,14 @@ export function selectLocale(preference: LocalePreference, systemLocale = global
 
 export function formatMessage(message: Message, locale: Locale): string {
   const messages = dictionary(locale);
+  let args = message.args;
+  if (namedRisks.has(message.code) && typeof args.id === 'string' && typeof args.name === 'string') {
+    const nameKey = `analysis.risk_name.${args.id}`;
+    if (Object.hasOwn(messages, nameKey)) args = { ...args, name: messages[nameKey] };
+  }
   let code = message.code;
   if (Object.hasOwn(messages, `${code}_other`)) {
-    const count = message.args.count;
+    const count = args.count;
     if (typeof count !== 'number' || !Number.isFinite(count)) throw new TranslationError('invalid_count');
     code += count === 1 ? '_one' : '_other';
   }
@@ -67,10 +73,10 @@ export function formatMessage(message: Message, locale: Locale): string {
   if (typeof template !== 'string') throw new TranslationError('unknown_code');
   // 只替换原模板，参数中的花括号不能再次变成模板。
   return template.replace(placeholder, (_token, name: string) => {
-    if (!Object.hasOwn(message.args, name) || message.args[name] === null || message.args[name] === undefined) {
+    if (!Object.hasOwn(args, name) || args[name] === null || args[name] === undefined) {
       throw new TranslationError('missing_argument');
     }
-    return String(message.args[name]);
+    return String(args[name]);
   });
 }
 

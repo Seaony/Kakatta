@@ -67,3 +67,47 @@ test('网络失败使用固定原因，不保留 transport 的地址或凭据', 
   const api = createApiClient({ fetch: fetchStub(() => { throw new TypeError('private-address-token'); }) });
   await expect(api.GET('/api/v1/me')).rejects.toMatchObject({ status: 0, reason: { code: 'web.network_failed', args: {} } });
 });
+
+test('明确登录失效暂停受保护请求，凭据失败不误退出，完整登录后可恢复', async () => {
+  let calls = 0;
+  let reason = 'auth.invalid_credentials';
+  const api = createApiClient({ fetch: fetchStub(() => {
+    calls++;
+    return Response.json({ error: { code: reason, args: {} }, fields: [], request_id: 'auth-state' }, { status: 401 });
+  }) });
+  let lost = 0;
+  const unsubscribe = api.subscribeAuthenticationLost(() => { lost++; });
+  await expect(api.POST('/api/v1/auth/login', { body: { username: 'owner', password: 'local' } })).rejects.toMatchObject({ status: 401 });
+  expect(lost).toBe(0);
+  reason = 'auth.unauthenticated';
+  await expect(api.GET('/api/v1/me')).rejects.toMatchObject({ status: 401 });
+  expect(lost).toBe(1);
+  const before = calls;
+  await expect(api.GET('/api/v1/tasks')).rejects.toMatchObject({ status: 401 });
+  expect(calls).toBe(before);
+  api.restoreAuthentication();
+  unsubscribe();
+  await expect(api.GET('/api/v1/tasks')).rejects.toMatchObject({ status: 401 });
+  expect(calls).toBe(before + 1);
+  expect(lost).toBe(1);
+});
+
+test('已取消或重新登录前的旧401不让新登录再次失效', async () => {
+  const pending: ((response: Response) => void)[] = [];
+  const api = createApiClient({ fetch: () => new Promise<Response>((resolve) => pending.push(resolve)) });
+  let lost = 0;
+  api.subscribeAuthenticationLost(() => { lost++; });
+  const old = api.GET('/api/v1/me');
+  await Promise.resolve();
+  api.restoreAuthentication();
+  pending[0]?.(Response.json({ error: { code: 'auth.unauthenticated', args: {} }, fields: [], request_id: 'old' }, { status: 401 }));
+  await expect(old).rejects.toMatchObject({ status: 401 });
+  expect(lost).toBe(0);
+  const controller = new AbortController();
+  const canceled = api.GET('/api/v1/me', { signal: controller.signal });
+  await Promise.resolve();
+  controller.abort();
+  pending[1]?.(Response.json({ error: { code: 'auth.unauthenticated', args: {} }, fields: [], request_id: 'canceled' }, { status: 401 }));
+  await expect(canceled).rejects.toMatchObject({ status: 401 });
+  expect(lost).toBe(0);
+});

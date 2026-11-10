@@ -4,6 +4,7 @@ import { createI18n, I18nProvider, type Locale } from '../i18n';
 import type { AppRouter } from './router';
 import { ThemeProvider, type ThemeMode } from './theme';
 import { useState } from 'react';
+import { ApiProvider } from '../api/hooks';
 
 export type AppProvidersProps = {
   router: AppRouter;
@@ -18,7 +19,9 @@ export function AppProviders({ router, queryClient, initialLocale, initialTheme 
     <I18nProvider instance={i18n}>
       <ThemeProvider initialTheme={initialTheme}>
         <QueryClientProvider client={queryClient}>
-          <RouterProvider router={router} />
+          <ApiProvider api={router.options.context.api}>
+            <RouterProvider router={router} />
+          </ApiProvider>
         </QueryClientProvider>
       </ThemeProvider>
     </I18nProvider>

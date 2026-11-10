@@ -79,3 +79,15 @@ test('系统语言、显式偏好和 Accept-Language 权重与服务端约定一
   expect(selectLocale('en', 'zh-CN')).toBe('en');
   expect(selectLocale('zh-CN', 'en-US')).toBe('zh-CN');
 });
+
+test('只有四类风险原因按固定编号翻译名称，参数不被修改', () => {
+  const args = Object.freeze({ id: 'id_lock', name: 'ID 锁', attitude: 'confirm' });
+  for (const code of ['analysis.risk_confirmed', 'analysis.risk_penalty', 'analysis.risk_uncertain', 'analysis.risk_unknown']) {
+    expect(formatMessage({ code, args }, 'en')).toContain('ID lock');
+    expect(formatMessage({ code, args }, 'zh-CN')).toContain('ID 锁');
+  }
+  expect(args.name).toBe('ID 锁');
+  expect(formatMessage({ code: 'analysis.risk_unknown', args: { ...args, id: 'custom_17' } }, 'en')).toContain('ID 锁');
+  expect(formatMessage({ code: 'analysis.bonus_met', args }, 'en')).toContain('ID 锁');
+  expect(formatMessage({ code: 'analysis.risk_unknown', args: { ...args, id: 'custom_17', name: '{name}' } }, 'en')).toContain('{name}');
+});

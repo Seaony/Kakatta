@@ -6,7 +6,7 @@ import { routeTree } from '../routeTree.gen';
 export type RouterContext = { queryClient: QueryClient; api: ApiClient };
 
 export function createAppRouter(context: RouterContext, history?: RouterHistory) {
-  return createRouter({ routeTree, context, defaultPreload: false, ...(history ? { history } : {}) });
+  return createRouter({ routeTree, context, defaultPreload: false, scrollRestoration: true, ...(history ? { history } : {}) });
 }
 
 export type AppRouter = ReturnType<typeof createAppRouter>;

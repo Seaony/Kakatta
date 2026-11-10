@@ -1,0 +1,67 @@
+package locales
+
+import "testing"
+
+func TestReanalysisPreviewOnlyMessage(t *testing.T) {
+	for _, tc := range []struct {
+		lang Language
+		want string
+	}{
+		{ZhCN, "预览只估算当前需要的详情访问次数，不会预扣额度；实际访问详情时才计入用量。"},
+		{En, "Preview only estimates the detail visits currently needed and does not reserve quota. Usage is counted when detail pages are actually visited."},
+	} {
+		got, err := Format(tc.lang, Message{Code: "results.reanalyze.preview_only", Args: map[string]any{}})
+		if err != nil || got != tc.want {
+			t.Errorf("重分析预览提示%s：%q，期望%q，%v", tc.lang, got, tc.want, err)
+		}
+	}
+}
+
+func TestTaskReanalysisConfirmationMessagesHaveBothLanguages(t *testing.T) {
+	for _, tc := range []struct {
+		count, cached, detail int
+		zh, en                string
+	}{
+		{1, 1, 0, "将重新分析这 1 个受影响商品：1 个可使用缓存详情，0 个需要重新打开详情。确认后分批入队，由正常运行处理。", "Reanalyze this 1 affected listing. Cached details: 1; new detail visits: 0. After confirmation, the listing will be queued for a normal run."},
+		{215, 200, 15, "将重新分析这 215 个受影响商品：200 个可使用缓存详情，15 个需要重新打开详情。确认后分批入队，由正常运行处理。", "Reanalyze these 215 affected listings. Cached details: 200; new detail visits: 15. After confirmation, the listings will be queued in batches for normal runs."},
+		{215, 214, 1, "将重新分析这 215 个受影响商品：214 个可使用缓存详情，1 个需要重新打开详情。确认后分批入队，由正常运行处理。", "Reanalyze these 215 affected listings. Cached details: 214; new detail visits: 1. After confirmation, the listings will be queued in batches for normal runs."},
+	} {
+		message := Message{Code: "tasks.effects.reanalysis_confirm", Args: map[string]any{"count": tc.count, "cached": tc.cached, "detail": tc.detail}}
+		for _, lang := range []Language{ZhCN, En} {
+			want := tc.zh
+			if lang == En {
+				want = tc.en
+			}
+			got, err := Format(lang, message)
+			if err != nil || got != want {
+				t.Errorf("任务重分析确认%s，count=%d、detail=%d：%q，期望%q，%v", lang, tc.count, tc.detail, got, want, err)
+			}
+		}
+	}
+}
+
+func TestAllFailedReanalysisMessagesHaveBothLanguages(t *testing.T) {
+	for _, tc := range []struct {
+		message Message
+		zh      string
+		en      string
+	}{
+		{Message{Code: "results.reanalyze.confirm_all", Args: map[string]any{"count": 1, "cached": 1, "detail": 0}}, "将重新分析当前筛选内的 1 条失败结果：1 条可使用缓存详情，0 条需要重新打开详情。分批入队后由正常运行处理。", "Reanalyze 1 failed result in this filter. Cached details: 1; new detail visits: 0. Items will be queued in batches for normal runs."},
+		{Message{Code: "results.reanalyze.confirm_all", Args: map[string]any{"count": 215, "cached": 200, "detail": 15}}, "将重新分析当前筛选内的 215 条失败结果：200 条可使用缓存详情，15 条需要重新打开详情。分批入队后由正常运行处理。", "Reanalyze 215 failed results in this filter. Cached details: 200; new detail visits: 15. Items will be queued in batches for normal runs."},
+		{Message{Code: "results.reanalyze.progress", Args: map[string]any{"confirmed": 200, "total": 215, "queued": 198}}, "已确认 200/215 条结果，其中 198 条已排队", "Confirmed results: 200/215. Queued: 198."},
+		{Message{Code: "results.reanalyze.stopped", Args: map[string]any{"confirmed": 200, "queued": 198, "uncertain": 15, "remaining": 0}}, "操作已停止：已确认 200 条结果，其中 198 条已排队；15 条请求结果未确认，0 条尚未提交。未自动重发。", "Stopped. Confirmed results: 200; queued: 198. Request outcomes unknown: 15; not submitted: 0. No automatic retries."},
+	} {
+		for _, lang := range []Language{ZhCN, En} {
+			t.Run(tc.message.Code+"/"+string(lang), func(t *testing.T) {
+				want := tc.zh
+				if lang == En {
+					want = tc.en
+				}
+				got, err := Format(lang, tc.message)
+				if err != nil || got != want {
+					t.Fatalf("批量重分析消息：%q，期望%q，%v", got, want, err)
+				}
+			})
+		}
+	}
+}
