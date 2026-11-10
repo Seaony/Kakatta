@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"reflect"
 	"regexp"
@@ -79,6 +80,15 @@ func Format(lang Language, m Message) (string, error) {
 	dict, ok := dictionaries[lang]
 	if !ok {
 		return "", errors.New("locales: unsupported language")
+	}
+	switch m.Code {
+	case "analysis.risk_confirmed", "analysis.risk_penalty", "analysis.risk_uncertain", "analysis.risk_unknown":
+		if id, ok := m.Args["id"].(string); ok {
+			if name, found := dict["analysis.risk_name."+id]; found {
+				m.Args = maps.Clone(m.Args)
+				m.Args["name"] = name
+			}
+		}
 	}
 	code := m.Code
 	if _, plural := dict[code+"_other"]; plural {
