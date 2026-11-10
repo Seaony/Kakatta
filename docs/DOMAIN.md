@@ -223,15 +223,15 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
     {"name": "存储", "options": ["64G", "128G", "256G", "512G"], "values": ["256G", "512G"], "source": "user", "edited": false},
     {"name": "网络", "options": ["WiFi", "蜂窝"], "values": ["WiFi"], "source": "ai", "edited": false}
   ],
-  "musts": [{"id": "m1", "text": "国行", "source": "user", "edited": false}],
-  "bonuses": [{"id": "b2", "text": "电池 85% 以上", "source": "user", "edited": false}],
+  "musts": [{"id": "m1", "text": "国行", "source": "user", "edited": false, "rev": 1}],
+  "bonuses": [{"id": "b2", "text": "电池 85% 以上", "source": "user", "edited": false, "rev": 1}],
   "risks": [
-    {"id": "id_lock", "attitude": "confirm", "source": "user", "edited": false},
-    {"id": "water_damage", "attitude": "reject", "source": "ai", "edited": false},
-    {"id": "battery_replaced", "attitude": "mind", "source": "ai", "edited": false},
-    {"id": "c3", "name": "屏幕压伤", "hint": "屏幕有压痕、亮斑、白点或漏光", "question": "屏幕有没有亮斑、压伤或漏光？方便拍一张纯白画面吗？", "attitude": "mind", "source": "ai", "edited": false},
-    {"id": "off_platform", "attitude": "reject", "source": "system", "edited": false},
-    {"id": "seller_new", "attitude": "mind", "source": "system", "edited": false}
+    {"id": "id_lock", "attitude": "confirm", "source": "user", "edited": false, "rev": 1},
+    {"id": "water_damage", "attitude": "reject", "source": "ai", "edited": false, "rev": 1},
+    {"id": "battery_replaced", "attitude": "mind", "source": "ai", "edited": false, "rev": 1},
+    {"id": "c3", "name": "屏幕压伤", "hint": "屏幕有压痕、亮斑、白点或漏光", "question": "屏幕有没有亮斑、压伤或漏光？方便拍一张纯白画面吗？", "attitude": "mind", "source": "ai", "edited": false, "rev": 1},
+    {"id": "off_platform", "attitude": "reject", "source": "system", "edited": false, "rev": 1},
+    {"id": "seller_new", "attitude": "mind", "source": "system", "edited": false, "rev": 1}
   ],
   "allowed_kinds": [],
   "next_no": 4
@@ -241,6 +241,7 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 - `specs` 的顺序就是重要程度，越靠前越重要；比价样本不够时先去掉最后一项（12.1）。`values` 是可以接受的值，可以多选；为空表示「都行」。`options` 是给用户点选的候选值，用户也可以加自己的值。
 - 示例里的检查项只列了一部分：程序固定带上的通用项（`source = system`）实际有描述可信度、交易方式、卖家三类的全部项（5.7）。
 - **固定编号**：必须满足、加分项、字典里没有的检查项（自定义检查项）各有一个固定编号，前缀分别是 `m`、`b`、`c`，后面的数字取 `next_no`，取完 `next_no` 加 1。编号在条目新建时分配（生成清单、用户手动加一条都算），之后不变；条目删掉后编号也不再给别的条目用。发给 AI（5.3）、AI 回的结论（8.2）、存下来的结论（`analysis_json`、`user_overrides_json`）都用这个编号，所以清单增删条目后，已有商品的结论不会对错条目。字典里的检查项直接用字典编号。
+- **条目版本 `rev`**：必须满足、加分项、检查项各带一个由服务端维护的正整数，新建为 1。必须满足或加分项的 `text`、自定义检查项的 `name` 或 `hint` 改变时加 1；态度、问卖家的话、勾选和排序不加。分析事实和手动覆盖保存当时版本；与当前条目版本不一致时按 unknown 处理，原事实和原覆盖仍保留，提示需要重新分析。规格名仍按 2.7 重建配置键，不走版本号。程序在解析模型结果后按请求使用的清单补版本，不让模型生成或决定内部版本（第 76 条）。
 - `musts` 是规格以外的硬条件，只能是用户说过的（`source = user`）。保存时程序检查：`source = ai` 的必须满足一律移到 `bonuses`（编号前缀改成 `b`，取新编号）。AI 补充的条件只能进加分项或风险（`DECISIONS.md` 第 48 条）。生成清单时，AI 标成 `source = user` 的必须满足，程序还要在需求原文里核对一遍（8.6）。
 - `risks`：检查项，每项一行。
   - `id`：字典里的项用字典编号（5.7），名称、判断说明和问卖家的话不存，用的时候从字典取。字典里没有的项（自定义检查项：AI 生成清单时写的、用户自己写的、从清单外发现加进来的）用 `c` 开头的固定编号，另外存 `name`（名称）、`hint`（判断说明，发给第三层 AI，5.3；为空时用名称）、`question`（问卖家的话；为空时用「关于『xx』，方便说明一下吗？」）。
@@ -352,8 +353,8 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 | stage | TEXT NOT NULL | 下一步做什么：`title`（等第二层）/ `detail`（等打开详情和第三层）/ `done`。`pending` 和 `failed` 都保留原来的一步：第二层失败的留 `title`，第三层（含打开详情）失败的留 `detail`，下次重试从这一步接着做。只有得出最终结论（`scored`、`matched`、`rejected`）或 `skipped` 时才设为 `done` |
 | decided_layer | INTEGER | 在第几层得出结论：1 / 2 / 3；跳过和失败为空 |
 | reason | TEXT | 原因代码加参数（2.1）：不符合、不建议、跳过、失败或等待的原因；算完分的是分数的主要依据 |
-| analysis_json | TEXT | 第三层提取的事实（包括清单外发现 `extra_findings`，5.3），已经过证据核对（8.4） |
-| user_overrides_json | TEXT | 用户手动改的风险结论，如 `{"risks": {"id_lock": "ok"}}`（5.4） |
+| analysis_json | TEXT | 第三层提取的事实（包括清单外发现 `extra_findings`，5.3），已经过证据核对（8.4）；musts、bonuses、checks 每条另存请求时清单项的 `rev`，旧版本的事实不冒充新含义 |
+| user_overrides_json | TEXT | 用户手动改的风险结论，如 `{"risks": {"id_lock": {"status": "ok", "rev": 1}}}`（5.4）；只在版本与当前条目一致时生效，不删除旧覆盖 |
 | score | INTEGER | 0–100；无法比价、没算分时为空 |
 | grade | TEXT | `steal` 捡漏 / `good` 划算 / `fair` 价格合理 / `pricey` 偏贵或有顾虑 / `avoid` 不建议；无法比价且不是不建议时为空 |
 | score_breakdown_json | TEXT | 分数构成：基础分和依据、每项加减、AI 判断和理由、封顶（5.4） |
@@ -841,7 +842,7 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 
 只用已存的事实，不调 AI、不访问闲鱼，所以随时可以重算。每次运行结束（4.10）、用户改需求清单、改某件商品的规格或检查项结论时，都重算受影响的发现。
 
-**1. 每个检查项的最终结论**：用户手动改过的（`user_overrides_json`）为准；否则用 AI 的结论（已经过 8.4 的证据核对）。只靠看图得出的 `risk` 叫「看图判断」，标黄，不当成有文字证据的风险。
+**1. 每个检查项的最终结论**：与当前条目 `rev` 一致的用户手动覆盖（`user_overrides_json`）为准；否则用版本一致的 AI 结论（已经过 8.4 的证据核对），旧版本按 unknown。旧事实和覆盖原样保留，不把旧含义迁给新条目（2.6）。只靠看图得出的 `risk` 叫「看图判断」，标黄，不当成有文字证据的风险。
 
 - 卖家检查项（`seller_*`）的结论由 5.8 算出，不来自 AI。程序按卖家主页数字算出的 `risk`（疑似商家、新号）算有证据，和有文字证据的风险一样扣分和判断；差评和到手刀来自通过原文核对的评价（8.4），也算有文字证据。没有卖家资料时，依赖卖家主页的卖家检查项不参与扣分和封顶，新号照常判断（5.8）。
 
@@ -2105,7 +2106,7 @@ reason 用一句话说明判断依据，不超过 20 个字。
 2. 每个任务单独解码和校验，一个任务出错不影响其他任务。
 3. 每个字段都可以省略，按新建表单的默认值补齐。
 4. 逐个**跳过**（写明原因）：关键词为空或超过 50 字；最低价高于最高价或为负数；发布时间不是认识的值；地区在地区数据里选不到；运行间隔不是正整数；字段类型不对。
-5. 自动**修正**（写明改了什么）：名称为空用关键词，超过 30 字截断；翻页数小于 1 的改成 1（超过 3 照样导入，按第 6 条提示）；推送档位不认识、或和判断方式不合法时（如 AI 任务写了 `recommended`、关键词任务写了 `good`）按任务类型取默认（AI 任务 `good`，关键词任务 `recommended`）；需求清单里不认识的检查项编号（不是 `c` 开头、字典里也没有的）、没有名称的自定义检查项、规格名为空的规格、不认识的 `allowed_kinds` 去掉；检查项不认识的态度改成默认档位（字典项用推荐档位，自定义检查项用 `mind`），`source = ai` 且没改过（`edited = false`）的自定义检查项是 `confirm` 或 `reject` 的改成 `mind`（5.7）；`source = ai` 的必须满足移到加分项（2.6），缺固定编号或编号重复的条目重新分配编号、`next_no` 补到比已用的最大编号大（2.6）；预算下限高于上限时两个都去掉；`crawl_overrides` 里不认识的键去掉、明显无效的值（0、负数、下限大于上限）去掉；渠道按「类型 + 名称」匹配本机已有的渠道，匹配不上的去掉（写了空列表就是不推送；没写这个字段就和新建表单一样，勾上所有已启用的渠道，2.6）；AI 任务的需求清单一项规格和必须满足都没有时改成关键词判断。
+5. 自动**修正**（写明改了什么）：名称为空用关键词，超过 30 字截断；翻页数小于 1 的改成 1（超过 3 照样导入，按第 6 条提示）；推送档位不认识、或和判断方式不合法时（如 AI 任务写了 `recommended`、关键词任务写了 `good`）按任务类型取默认（AI 任务 `good`，关键词任务 `recommended`）；需求清单里不认识的检查项编号（不是 `c` 开头、字典里也没有的）、没有名称的自定义检查项、规格名为空的规格、不认识的 `allowed_kinds` 去掉；检查项不认识的态度改成默认档位（字典项用推荐档位，自定义检查项用 `mind`），`source = ai` 且没改过（`edited = false`）的自定义检查项是 `confirm` 或 `reject` 的改成 `mind`（5.7）；`source = ai` 的必须满足移到加分项（2.6），缺固定编号或编号重复的条目重新分配编号、`next_no` 补到比已用的最大编号大（2.6）；条目缺少 `rev` 时补 1；预算下限高于上限时两个都去掉；`crawl_overrides` 里不认识的键去掉、明显无效的值（0、负数、下限大于上限）去掉；渠道按「类型 + 名称」匹配本机已有的渠道，匹配不上的去掉（写了空列表就是不推送；没写这个字段就和新建表单一样，勾上所有已启用的渠道，2.6）；AI 任务的需求清单一项规格和必须满足都没有时改成关键词判断。
 6. 运行间隔、等待时间这类数值超出推荐范围时照样导入，在结果里提示，和表单的处理一样（`DECISIONS.md` 第 17 条）。
 7. 本机没有可用 AI 服务商时，AI 任务照样导入，运行时记跳过「没有配置 AI」，结果里提示。
 8. 导入的任务和表单新建的一样：自动分配账号、`baseline_pending = 1`、立即进入调度。
