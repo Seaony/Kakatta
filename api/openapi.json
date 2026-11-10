@@ -14556,16 +14556,32 @@
             ]
           },
           "recent_items": {
-            "items": {
-              "$ref": "#/components/schemas/SellerRecentItem"
-            },
-            "type": "array"
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/SellerRecentItem"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "未取得时为 null，已取得空列表时为 []。"
           },
           "recent_rates": {
-            "items": {
-              "$ref": "#/components/schemas/SellerRecentRate"
-            },
-            "type": "array"
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/SellerRecentRate"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "未取得时为 null，已取得空列表时为 []。"
           },
           "seller_credit": {
             "anyOf": [

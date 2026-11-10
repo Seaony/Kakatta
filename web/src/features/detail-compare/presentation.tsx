@@ -166,7 +166,11 @@ export function Seller({ finding, timeZone }: { finding: Finding; timeZone?: str
         <div><dt className="text-text-secondary">{t('web.detail.updated_at')}</dt><dd className="mt-sm"><DateText value={seller.fetched_at} {...(timeZone ? { timeZone } : {})} /></dd></div>
       </dl>
       {seller.introduction && <p className="whitespace-pre-wrap break-words text-body">{seller.introduction}</p>}
-      <div className="space-y-md"><h3 className="text-body font-medium">{t('web.detail.reviews')}</h3>{seller.recent_rates.map((rate, index) => <blockquote key={index} className="break-words border-b border-border pb-md text-body"><p>{rate.text ?? t('web.detail.unknown')}</p><footer className="mt-sm text-caption text-text-secondary">{[rate.role, rate.kind].filter(Boolean).join(' · ')}</footer></blockquote>)}</div>
+      <div className="space-y-md">
+        <h3 className="text-body font-medium">{t('web.detail.reviews')}</h3>
+        {seller.recent_rates === null ? <p className="text-body text-text-secondary">{t('web.detail.unknown')}</p>
+          : seller.recent_rates.map((rate, index) => <blockquote key={index} className="break-words border-b border-border pb-md text-body"><p>{rate.text ?? t('web.detail.unknown')}</p><footer className="mt-sm text-caption text-text-secondary">{[rate.role, rate.kind].filter(Boolean).join(' · ')}</footer></blockquote>)}
+      </div>
     </> : <p className="text-body text-text-secondary">{t(finding.seller_assessment ? 'web.detail.seller_cache_missing' : 'analysis.seller_unavailable')}</p>}
     {finding.analysis?.seller_signals.map((signal, index) => <Evidence key={index} source="text" evidence={signal.evidence} />)}
   </div>;

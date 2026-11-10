@@ -289,6 +289,71 @@ func TestPlanRunPriceDropUsesSuccessfulBaselineWithoutNewPricePoint(t *testing.T
 	}
 }
 
+func TestPlanRunPriceChangesRequireKnownPriceWithinBudget(t *testing.T) {
+	for _, kind := range []intentKind{intentPriceDrop, intentPriceUpgrade} {
+		t.Run(string(kind), func(t *testing.T) {
+			s, db, ref := planFixture(t)
+			score := int64(72)
+			var recommendedPrice *int64
+			if kind == intentPriceDrop {
+				score = 85
+				recommendedPrice = decisionPtr(int64(10000))
+			}
+			planFinding(t, db, 1, analysis.DecisionScored, decisionPtr(int64(10000)), &score)
+			planExec(t, db, `UPDATE findings SET is_baseline=1 WHERE id=1`)
+			if got := planRun(t, s, ref, nil, planNow); len(got) != 0 {
+				t.Fatal("基线发出了首次推荐")
+			}
+			planExec(t, db, `UPDATE tasks SET budget_max=7000 WHERE id=1`)
+			planExec(t, db, `UPDATE findings SET score=85,grade='good' WHERE id=1`)
+			for _, price := range []*int64{nil, decisionPtr(int64(9000))} {
+				planExec(t, db, `UPDATE listings SET price=? WHERE item_id='item-1'`, price)
+				if got := planRun(t, s, ref, nil, planNow+1); len(got) != 0 || planCount(t, db, `SELECT count(*) FROM notification_intents`) != 0 {
+					t.Fatal("价格未知或超预算时创建了降价通知")
+				}
+				if planCount(t, db, `SELECT count(*) FROM findings WHERE last_drop_notified_price IS NULL AND recommended_price IS ?`, recommendedPrice) != 1 {
+					t.Fatal("预算未通过时改写了降价基准")
+				}
+			}
+			planExec(t, db, `UPDATE listings SET price=7000 WHERE item_id='item-1'`)
+			got := planRun(t, s, ref, nil, planNow+2)
+			if len(got) != 1 || got[0].Intent.Kind != kind || got[0].Intent.Price == nil || *got[0].Intent.Price != 7000 ||
+				got[0].Intent.PreviousPrice == nil || *got[0].Intent.PreviousPrice != 10000 {
+				t.Fatalf("到达预算上限后没有按原基准生成通知：%+v", got)
+			}
+		})
+	}
+}
+
+func TestPlanRunPendingPriceChangesResumeWithinBudget(t *testing.T) {
+	for _, kind := range []intentKind{intentPriceDrop, intentPriceUpgrade} {
+		t.Run(string(kind), func(t *testing.T) {
+			s, db, ref := planFixture(t)
+			planFinding(t, db, 1, analysis.DecisionScored, decisionPtr(int64(9000)), decisionPtr(int64(85)))
+			planExec(t, db, `UPDATE findings SET recommended_price=10000,scored_price=10000,notify_skip_reason='{"code":"notify.baseline","args":{}}',reanalysis_origin=?`, kind == intentPriceUpgrade)
+			planExec(t, db, `INSERT INTO notification_intents(finding_id,task_id,kind,state,created_at,updated_at,price,previous_price,failure_count,first_failed_at)
+				VALUES(1,1,?,'pending',?,?,9000,10000,1,?)`, kind, planNow, planNow, planNow)
+			planExec(t, db, `UPDATE tasks SET budget_max=7000 WHERE id=1`)
+			for _, price := range []*int64{decisionPtr(int64(9000)), nil} {
+				planExec(t, db, `UPDATE listings SET price=? WHERE item_id='item-1'`, price)
+				if got := planRun(t, s, ref, nil, planNow+1); len(got) != 0 {
+					t.Fatal("价格未知或超预算时仍重试降价通知")
+				}
+				if planCount(t, db, `SELECT count(*) FROM notification_intents WHERE id=1 AND state='pending' AND failure_count=1 AND first_failed_at=? AND price=9000`, planNow) != 1 ||
+					planCount(t, db, `SELECT count(*) FROM findings WHERE recommended_price=10000 AND last_drop_notified_price IS NULL`) != 1 {
+					t.Fatal("预算未通过时改写了重试记录或降价基准")
+				}
+			}
+			planExec(t, db, `UPDATE listings SET price=7000 WHERE item_id='item-1'`)
+			got := planRun(t, s, ref, nil, planNow+2)
+			if len(got) != 1 || got[0].Intent.ID != 1 || got[0].Intent.Kind != kind || got[0].Intent.Price == nil ||
+				*got[0].Intent.Price != 7000 || got[0].Intent.FailureCount != 1 {
+				t.Fatalf("到达预算上限后没有沿用原重试记录：%+v", got)
+			}
+		})
+	}
+}
+
 func TestPlanRunPriceUpgradeSurvivesRetry(t *testing.T) {
 	s, db, ref := planFixture(t)
 	planFinding(t, db, 1, analysis.DecisionScored, decisionPtr(int64(10000)), decisionPtr(int64(72)))

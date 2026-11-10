@@ -113,28 +113,39 @@ func TestGroupMessagesRejectsInconsistentProjection(t *testing.T) {
 func TestFormatMessageKindsAndLocalizedCore(t *testing.T) {
 	for _, language := range []locales.Language{locales.ZhCN, locales.En} {
 		for _, test := range []struct {
-			kind intentKind
-			mode analysis.Mode
-			want string
+			kind        intentKind
+			mode        analysis.Mode
+			want        string
+			wantSummary bool
 		}{
-			{intentRecommended, analysis.ModeAI, "recommended"}, {intentPriceUpgrade, analysis.ModeAI, "recommended"},
-			{intentRecommended, analysis.ModeKeyword, "recommended"}, {intentNew, analysis.ModeAI, "all_new"},
-			{intentPriceDrop, analysis.ModeAI, "price_drop"},
+			{intentRecommended, analysis.ModeAI, "recommended", true},
+			{intentPriceUpgrade, analysis.ModeAI, "recommended", true},
+			{intentRecommended, analysis.ModeKeyword, "recommended", true},
+			{intentNew, analysis.ModeAI, "all_new", false},
+			{intentPriceDrop, analysis.ModeAI, "price_drop", false},
 		} {
-			value := formatCandidate(1, test.kind, formatPtr(int64(84)))
-			value.Finding.Reason = &locales.Message{Code: "analysis.keyword_matched", Args: map[string]any{"count": 1, "words": "{count}原文"}}
-			message, err := formatGroup(formatTask(test.mode), messageGroup{Members: []candidate{value}}, notify.Bark, formatOpts(language))
-			if err != nil {
-				t.Fatal(language, test.kind, err)
-			}
-			if message.Kind != test.want || message.Price != "¥1,000" || message.Score != "84" || message.Task != "相机" || message.ItemID != "1" || message.LinkLabel == "" || message.Footer == "" || message.KakattaURL == "" || message.Reason == "" {
-				t.Fatalf("消息字段缺失：%+v", message)
-			}
-			if !strings.HasSuffix(message.Body, "模型{count}原话\n第二行") || message.Reason != strings.Split(message.Body, "\n")[0] {
-				t.Fatalf("原话被改写或reason不是首行：%+v", message)
-			}
-			if test.kind == intentPriceDrop && (!strings.Contains(message.Title, "¥300") || strings.Contains(message.Title, "¥1,000") || !strings.Contains(message.Body, "¥1,300 → ¥1,000")) {
-				t.Fatalf("降幅与现价混淆：%+v", message)
+			for _, channel := range []notify.Type{notify.Bark, notify.Telegram, notify.Webhook} {
+				t.Run(fmt.Sprintf("%s/%s/%s/%s", language, test.mode, test.kind, channel), func(t *testing.T) {
+					value := formatCandidate(1, test.kind, formatPtr(int64(84)))
+					value.Finding.Reason = &locales.Message{Code: "analysis.keyword_matched", Args: map[string]any{"count": 1, "words": "{count}原文"}}
+					message, err := formatGroup(formatTask(test.mode), messageGroup{Members: []candidate{value}}, channel, formatOpts(language))
+					if err != nil {
+						t.Fatal(err)
+					}
+					if message.Kind != test.want || message.Price != "¥1,000" || message.Score != "84" || message.Task != "相机" || message.ItemID != "1" || message.LinkLabel == "" || message.Footer == "" || message.KakattaURL == "" || message.Reason == "" {
+						t.Fatalf("消息字段缺失：%+v", message)
+					}
+					wantBody := message.Reason
+					if test.wantSummary {
+						wantBody += "\n模型{count}原话\n第二行"
+					}
+					if message.Body != wantBody {
+						t.Fatalf("正文为 %q，期望 %q", message.Body, wantBody)
+					}
+					if test.kind == intentPriceDrop && (!strings.Contains(message.Title, "¥300") || strings.Contains(message.Title, "¥1,000") || !strings.Contains(message.Body, "¥1,300 → ¥1,000")) {
+						t.Fatalf("降幅与现价混淆：%+v", message)
+					}
+				})
 			}
 		}
 		message, err := testMessage(language)

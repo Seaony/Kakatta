@@ -333,11 +333,7 @@ func TestTaskSendSnapshotRechecksRecommendationHardGates(t *testing.T) {
 				if err != nil {
 					return err
 				}
-				want := 0
-				if mode == "drop_over_budget" {
-					want = 1
-				}
-				if len(actual.Members) != want {
+				if len(actual.Members) != 0 {
 					t.Fatalf("硬闸不符合唯一规则：%d", len(actual.Members))
 				}
 				return nil

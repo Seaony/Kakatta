@@ -197,10 +197,11 @@ func (r *messageRenderer) single(task service.Task, value candidate, options for
 	spec, fullConfig := r.configuration(task, value.ItemSpecs)
 	message.Config = fullConfig
 	parts := titleParts{TaskName: notificationSingleLine(task.Name), AmountCents: value.Intent.Price}
-	var firstLine string
+	var firstLine, summary string
 	switch value.Intent.Kind {
 	case intentRecommended, intentPriceUpgrade:
 		message.Kind = "recommended"
+		summary = findingSummary(finding)
 		if task.JudgeMode == analysis.ModeKeyword {
 			parts.Action = locales.Message{Code: "notification.action_match"}
 			firstLine = r.findingReason(finding)
@@ -233,7 +234,7 @@ func (r *messageRenderer) single(task service.Task, value candidate, options for
 		parts.AmountCents = &drop
 		firstLine = notificationJoin(" · ", r.text("notification.price_arrow", map[string]any{"previous": r.money(value.Intent.PreviousPrice), "current": message.Price}), r.gradeScore(finding))
 	}
-	message.Body = notificationJoin("\n", firstLine, findingSummary(finding))
+	message.Body = notificationJoin("\n", firstLine, summary)
 	message.Reason, _, _ = strings.Cut(message.Body, "\n")
 	return message, parts
 }

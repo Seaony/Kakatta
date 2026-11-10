@@ -24,7 +24,7 @@ type Confirmation =
   | { kind: 'delete-all'; taskId: number }
   | { kind: 'dismiss'; ids: number[] }
   | { kind: 'block'; sellerId: string; name: string }
-  | { kind: 'reanalyze'; ids: number[]; single: boolean; allFailed?: boolean; prepared?: Schema<'ReanalysisPreview'> };
+  | { kind: 'reanalyze'; ids: number[]; single: boolean; allFailed?: { total: number; preview: Schema<'ReanalysisPreview'> } };
 
 type Operation = Confirmation
   | { kind: 'favorite'; finding: Finding }
@@ -217,8 +217,9 @@ export function ResultsPage({ search, onSearchChange }: ResultsPageProps) {
     mutation.mutate(operation);
   }
   const reanalysisIDs = confirmation?.kind === 'reanalyze' ? confirmation.ids : [];
+  const allFailed = confirmation?.kind === 'reanalyze' ? confirmation.allFailed : undefined;
   const preview = useQuery({
-    queryKey: apiKey('findings', 'reanalysis-preview', reanalysisIDs), enabled: reanalysisIDs.length > 0 && !(confirmation?.kind === 'reanalyze' && confirmation.prepared),
+    queryKey: apiKey('findings', 'reanalysis-preview', reanalysisIDs), enabled: reanalysisIDs.length > 0 && !allFailed,
     queryFn: async ({ signal }) => apiData(await api.POST('/api/v1/findings/reanalysis-preview', { body: { ids: reanalysisIDs }, signal })),
     staleTime: 0,
   });
@@ -255,37 +256,17 @@ export function ResultsPage({ search, onSearchChange }: ResultsPageProps) {
     setFeedback(null);
     try {
       const { cursor: _cursor, ...firstQuery } = findingQuery(search);
-      if (allFailed) {
-        const ids = new Set<number>();
-        const cursors = new Set<string>();
-        let cursor: string | undefined;
-        do {
-          controller.signal.throwIfAborted();
-          const response = apiData(await api.GET('/api/v1/findings', {
-            params: { query: { ...firstQuery, view: 'all', decision: 'failed', limit: 200, ...(cursor === undefined ? {} : { cursor }) } }, signal: controller.signal,
-          }));
-          controller.signal.throwIfAborted();
-          if (activeView.current !== origin) return;
-          for (const item of response.items) ids.add(item.id);
-          cursor = response.next_cursor ?? undefined;
-          if (cursor !== undefined) {
-            if (cursors.has(cursor)) throw new ApiError(0, { code: 'web.invalid_response', args: {} });
-            cursors.add(cursor);
-          }
-        } while (cursor !== undefined);
-        const snapshot = [...ids];
-        if (snapshot.length === 0) { setFeedback({ code: 'results.reanalyze.no_failed', args: {} }); return; }
-        const prepared = await previewReanalysisBatches(api, snapshot, controller.signal);
-        if (activeView.current !== origin) return;
-        ask({ kind: 'reanalyze', ids: snapshot, single: false, allFailed: true, prepared });
-        return;
-      }
       const response = apiData(await api.GET('/api/v1/findings', {
         params: { query: { ...firstQuery, limit: 200 } },
         signal: controller.signal,
       }));
-      if (controller.signal.aborted) return;
-      setSelected(selectableIDs(response.items));
+      if (controller.signal.aborted || activeView.current !== origin) return;
+      const ids = selectableIDs(response.items);
+      if (!allFailed) { setSelected(ids); return; }
+      if (ids.length === 0) { setFeedback({ code: 'results.reanalyze.no_failed', args: {} }); return; }
+      const prepared = await previewReanalysisBatches(api, ids, controller.signal);
+      if (activeView.current !== origin) return;
+      ask({ kind: 'reanalyze', ids, single: false, allFailed: { total: response.total, preview: prepared } });
     } catch (error) {
       if (!controller.signal.aborted) setSelectionError(error);
     } finally {
@@ -307,16 +288,19 @@ export function ResultsPage({ search, onSearchChange }: ResultsPageProps) {
   const actionError = (mutationView.current === filtersIdentity && viewVersion.current === mutationVersion.current && !isCancellation(mutation.error) ? mutation.error : null) ?? selectionError;
   const nextAllowedAt = actionError instanceof ApiError ? actionError.reason.args.next_allowed_at : null;
   const isReanalysis = confirmation?.kind === 'reanalyze';
-  const prepared = confirmation?.kind === 'reanalyze' ? confirmation.prepared : undefined;
-  const previewError = isReanalysis && !prepared ? preview.error : null;
-  const confirmPending = mutation.isPending || isReanalysis && !prepared && (preview.isPending || preview.isFetching);
+  const previewError = isReanalysis && !allFailed ? preview.error : null;
+  const confirmPending = mutation.isPending || isReanalysis && !allFailed && (preview.isPending || preview.isFetching);
+  const failedDescription = allFailed && confirmation?.kind === 'reanalyze' ? t(allFailed.total > confirmation.ids.length
+    ? 'results.reanalyze.confirm_limited' : 'results.reanalyze.confirm_all', {
+    total: allFailed.total, count: confirmation.ids.length, cached: allFailed.preview.cached_detail_count, detail: allFailed.preview.needs_detail_count,
+  }) : '';
   const confirmationTitle = confirmation?.kind === 'block' ? t('results.confirm.block') : confirmation?.kind === 'reanalyze' ? t('results.confirm.reanalyze') : confirmation?.kind === 'dismiss' ? t('results.confirm.dismiss') : t('results.confirm.delete');
   const confirmationDescription = confirmation?.kind === 'delete-all' ? t('results.confirm.delete_all')
     : confirmation?.kind === 'delete' ? t('results.confirm.delete_selected', { count: confirmation.ids.length })
       : confirmation?.kind === 'dismiss' ? t('results.dismiss.global')
         : confirmation?.kind === 'block' ? t('results.block.global', { seller: confirmation.name })
-          : prepared && confirmation?.kind === 'reanalyze'
-            ? `${mutation.isPending && allProgress ? message(allProgress) : message({ code: 'results.reanalyze.confirm_all', args: { count: confirmation.ids.length, cached: prepared.cached_detail_count, detail: prepared.needs_detail_count } })} ${message({ code: 'results.reanalyze.preview_only', args: {} })} ${t('results.reanalyze.cached')} ${t('results.reanalyze.no_new_notification')}`
+          : allFailed
+            ? `${mutation.isPending && allProgress ? message(allProgress) : failedDescription} ${message({ code: 'results.reanalyze.preview_only', args: {} })} ${t('results.reanalyze.cached')} ${t('results.reanalyze.no_new_notification')}`
             : `${t('results.reanalyze.cached')} ${preview.data ? t('results.reanalyze.quota', { count: preview.data.needs_detail_count }) : ''} ${message({ code: 'results.reanalyze.preview_only', args: {} })} ${t('results.reanalyze.no_new_notification')}`;
   return (
     <div className="min-w-0 space-y-xl">
@@ -408,7 +392,7 @@ export function ResultsPage({ search, onSearchChange }: ResultsPageProps) {
         description={confirmationDescription} confirmLabel={previewError ? t('common.retry') : t('results.confirm.submit')} cancelLabel={t('common.cancel')}
         pending={confirmPending} destructive={confirmation?.kind === 'delete' || confirmation?.kind === 'delete-all'}
         {...(mutation.error ? { error: errorText(mutation.error) } : previewError ? { error: errorText(previewError) } : {})}
-        onConfirm={() => { if (previewError) { void preview.refetch(); return; } if (confirmation && (!isReanalysis || prepared || preview.data)) perform(confirmation); }} />
+        onConfirm={() => { if (previewError) { void preview.refetch(); return; } if (confirmation && (!isReanalysis || allFailed || preview.data)) perform(confirmation); }} />
       <Dialog open={openItem !== null} onOpenChange={(open) => { if (!open) setOpenItem(null); }} title={t('results.listing.title')} closeLabel={t('common.close')}>
         {openItem !== null && <ListingPanel itemId={openItem} />}
       </Dialog>

@@ -499,6 +499,66 @@ func TestRunInsightEligibilityAndPromptSnapshot(t *testing.T) {
 	}
 }
 
+func TestRunInsightCountsOnlySelectedMarketSamples(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		selected   int
+		unselected int
+		calls      int
+	}{
+		{"配置全未勾选", 0, 10, 0},
+		{"勾选配置不足十件", 9, 1, 0},
+		{"勾选配置恰好十件", 10, 2, 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			s, run, _, now := finishFixture(t)
+			seedFinishMarket(t, s, now, test.selected+test.unselected, true)
+			finishExec(t, s.db, `UPDATE tasks SET judge_mode='ai',profile_json='{"specs":[{"name":"容量","options":["128G","256G"],"values":["128G"],"source":"user"}],"next_no":1}' WHERE id=1`)
+			finishExec(t, s.db, `UPDATE task_item_specs SET specs_json=CASE WHEN CAST(substr(item_id,6) AS INTEGER)<?
+				THEN '[{"name":"容量","value":"128G"}]' ELSE '[{"name":"容量","value":"256G"}]' END WHERE task_id=1`, test.selected)
+			calls := 0
+			s.models = finishModels(func(_ context.Context, request client.Request) (client.Result, error) {
+				calls++
+				var payload struct {
+					Groups []struct {
+						Specs []struct{ Value string }
+						Daily []struct {
+							Day    string
+							Sample int
+						}
+					}
+				}
+				if err := json.Unmarshal([]byte(request.User), &payload); err != nil {
+					t.Fatal(err)
+				}
+				if len(payload.Groups) != 1 || len(payload.Groups[0].Specs) != 1 || payload.Groups[0].Specs[0].Value != "128G" {
+					t.Errorf("解读请求应只带勾选的配置：%s", request.User)
+				} else {
+					var todaySamples int
+					for _, point := range payload.Groups[0].Daily {
+						if point.Day == now.Format(time.DateOnly) {
+							todaySamples = point.Sample
+						}
+					}
+					if todaySamples != test.selected {
+						t.Errorf("请求的今日样本数为 %d，预期 %d", todaySamples, test.selected)
+					}
+				}
+				return client.Result{Text: "本地行情解读", ProviderID: 1, Model: "fixture"}, nil
+			})
+			if err := s.generateRunInsight(t.Context(), run); err != nil {
+				t.Fatal(err)
+			}
+			if calls != test.calls {
+				t.Errorf("模型调用 %d 次，预期 %d 次", calls, test.calls)
+			}
+			if saved := finishScalar[int](t, s.db, `SELECT count(*) FROM market_insights`); saved != test.calls {
+				t.Errorf("保存 %d 条解读，预期 %d 条", saved, test.calls)
+			}
+		})
+	}
+}
+
 func TestRunInsightDiscardedAfterGenerationChange(t *testing.T) {
 	s, run, _, now := finishFixture(t)
 	seedFinishMarket(t, s, now, 10, true)

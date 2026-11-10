@@ -423,6 +423,9 @@ func (s *Service) generateRunInsight(ctx context.Context, run *runExecution) err
 		location, _ := time.LoadLocation(clock.Timezone)
 		day, samples := now.In(location).Format(time.DateOnly), 0
 		for _, group := range market.Groups {
+			if !group.Selected {
+				continue
+			}
 			for _, daily := range group.Daily {
 				if daily.Day == day {
 					samples += daily.Sample

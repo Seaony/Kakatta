@@ -206,12 +206,13 @@ func (s *Service) refreshTaskGroupTx(ctx context.Context, tx *sql.Tx, ref servic
 		if !concluded(current.Finding.Decision) {
 			continue
 		}
+		priceChange := value.Kind == intentPriceDrop || value.Kind == intentPriceUpgrade
 		if current.ReanalysisOrigin && value.Kind != intentPriceDrop {
 			eligible, reason, err := revalidateReanalysisIntent(task, current, value, true)
 			if err != nil {
 				return service.Task{}, messageGroup{}, err
 			}
-			if !eligible && reason == nil {
+			if !eligible && (reason == nil || priceChange && isBudgetReason(reason)) {
 				continue
 			}
 			if !eligible && value.State == intentPending {
@@ -247,9 +248,9 @@ func (s *Service) refreshTaskGroupTx(ctx context.Context, tx *sql.Tx, ref servic
 				continue
 			}
 		}
-		if value.Kind != intentPriceDrop && task.BudgetMax != nil {
+		if task.BudgetMax != nil {
 			if current.Listing.Price == nil {
-				if value.State == intentPending {
+				if !priceChange && value.State == intentPending {
 					if err := finishPlannedIntentTx(ctx, tx, current, value, intentCancelled, notificationReason("notify.price_unknown_budget", nil), nowMS); err != nil {
 						return service.Task{}, messageGroup{}, err
 					}
@@ -260,7 +261,7 @@ func (s *Service) refreshTaskGroupTx(ctx context.Context, tx *sql.Tx, ref servic
 				continue
 			}
 		}
-		if value.Kind == intentPriceDrop || value.Kind == intentPriceUpgrade {
+		if priceChange {
 			if !task.NotifyPriceDrop || current.Finding.Decision == "rejected" || isAvoid(current.Finding) {
 				continue
 			}

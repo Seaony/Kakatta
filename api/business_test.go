@@ -277,8 +277,13 @@ func TestSharedDTOsMatchOwningTypes(t *testing.T) {
 				t.Fatalf("%s.%s 没有遵守真实 JSON 成员及省略规则", name, field.name)
 			}
 			property := object(t, raw)
-			if _, pointer := field.expr.(*ast.StarExpr); pointer != allowsNull(property) {
-				t.Fatalf("%s.%s 的指针/null 口径不符", name, field.name)
+			_, nullable := field.expr.(*ast.StarExpr)
+			if goType == "service.SellerProfile" && (field.name == "recent_items" || field.name == "recent_rates") {
+				list, ok := field.expr.(*ast.ArrayType)
+				nullable = nullable || ok && list.Len == nil
+			}
+			if nullable != allowsNull(property) {
+				t.Fatalf("%s.%s 的空值口径不符", name, field.name)
 			}
 		}
 		checked++

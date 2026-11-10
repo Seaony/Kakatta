@@ -203,13 +203,14 @@ func preparePendingIntentTx(ctx context.Context, tx *sql.Tx, task service.Task, 
 		}
 		return nil, nil
 	}
+	priceChange := pending.Kind == intentPriceDrop || pending.Kind == intentPriceUpgrade
 	if value.ReanalysisOrigin && (pending.Kind == intentRecommended || pending.Kind == intentNew || pending.Kind == intentPriceUpgrade) {
 		eligible, reason, err := revalidateReanalysisIntent(task, value, pending, hasChannel)
 		if err != nil {
 			return nil, err
 		}
 		if !eligible {
-			if reason == nil {
+			if reason == nil || priceChange && isBudgetReason(reason) {
 				return nil, nil
 			}
 			if err := finishPlannedIntentTx(ctx, tx, value, pending, intentCancelled, reason, nowMS); err != nil {
@@ -239,7 +240,7 @@ func preparePendingIntentTx(ctx context.Context, tx *sql.Tx, task service.Task, 
 	if value.Listing.IsDismissed || value.SellerBlocked {
 		return nil, finishPlannedIntentTx(ctx, tx, value, pending, intentCancelled, notificationReason("notify.cancelled_unavailable", nil), nowMS)
 	}
-	if task.NotifyPolicy == "none" || (pending.Kind == intentPriceDrop || pending.Kind == intentPriceUpgrade) && !task.NotifyPriceDrop {
+	if task.NotifyPolicy == "none" || priceChange && !task.NotifyPriceDrop {
 		return nil, finishPlannedIntentTx(ctx, tx, value, pending, intentCancelled, notificationReason("notify.cancelled_policy", nil), nowMS)
 	}
 	if !concluded(value.Finding.Decision) || !hasChannel {
@@ -251,18 +252,16 @@ func preparePendingIntentTx(ctx context.Context, tx *sql.Tx, task service.Task, 
 			return nil, nil
 		}
 	}
-	if pending.Kind == intentPriceDrop || pending.Kind == intentPriceUpgrade {
+	if priceChange {
 		if value.Finding.Decision == analysis.DecisionRejected || isAvoid(value.Finding) {
 			return nil, finishPlannedIntentTx(ctx, tx, value, pending, intentCancelled, notificationReason("notify.cancelled_unavailable", nil), nowMS)
 		}
 	}
-	if pending.Kind != intentPriceDrop {
-		if exceedsBudget(task, value.Listing) {
-			return nil, nil
-		}
-		if value.Listing.Price == nil && task.BudgetMax != nil {
-			return nil, finishPlannedIntentTx(ctx, tx, value, pending, intentCancelled, notificationReason("notify.price_unknown_budget", nil), nowMS)
-		}
+	if exceedsBudget(task, value.Listing) {
+		return nil, nil
+	}
+	if !priceChange && value.Listing.Price == nil && task.BudgetMax != nil {
+		return nil, finishPlannedIntentTx(ctx, tx, value, pending, intentCancelled, notificationReason("notify.price_unknown_budget", nil), nowMS)
 	}
 	if pending.Kind == intentPriceUpgrade {
 		eligible, _, err := revalidateReanalysisIntent(task, value, pending, hasChannel)
@@ -270,7 +269,7 @@ func preparePendingIntentTx(ctx context.Context, tx *sql.Tx, task service.Task, 
 			return nil, err
 		}
 	}
-	if pending.Kind == intentPriceDrop || pending.Kind == intentPriceUpgrade {
+	if priceChange {
 		if value.Listing.Price == nil || pending.PreviousPrice == nil || *value.Listing.Price >= *pending.PreviousPrice {
 			return nil, nil
 		}
@@ -394,7 +393,7 @@ func planPriceIntentTx(ctx context.Context, tx *sql.Tx, task service.Task, value
 		}
 		return nil
 	}
-	if finding.RecommendedPrice == nil || task.NotifyPolicy == "none" || !task.NotifyPriceDrop || !hasChannel {
+	if finding.RecommendedPrice == nil || task.NotifyPolicy == "none" || !task.NotifyPriceDrop || !hasChannel || exceedsBudget(task, value.Listing) {
 		return nil
 	}
 	baseline := finding.LastDropNotifiedPrice
@@ -415,4 +414,8 @@ func planPriceIntentTx(ctx context.Context, tx *sql.Tx, task service.Task, value
 		return nil
 	}
 	return insertPlannedIntentTx(ctx, tx, value, intentPriceDrop, value.Listing.Price, baseline, nowMS)
+}
+
+func isBudgetReason(reason *locales.Message) bool {
+	return reason.Code == "notify.over_budget" || reason.Code == "notify.price_unknown_budget"
 }

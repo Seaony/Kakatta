@@ -3128,8 +3128,10 @@ export interface components {
             nick: string | null;
             on_sale_count: number | null;
             rate_count: number | null;
-            recent_items: components["schemas"]["SellerRecentItem"][];
-            recent_rates: components["schemas"]["SellerRecentRate"][];
+            /** @description 未取得时为 null，已取得空列表时为 []。 */
+            recent_items: components["schemas"]["SellerRecentItem"][] | null;
+            /** @description 未取得时为 null，已取得空列表时为 []。 */
+            recent_rates: components["schemas"]["SellerRecentRate"][] | null;
             seller_credit: string | null;
             seller_credit_level: string | null;
             /** @description 比率，0.1 表示 10%；没有足够事实时为 null。 */

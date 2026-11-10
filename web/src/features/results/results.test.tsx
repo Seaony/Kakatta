@@ -491,8 +491,9 @@ describe('结果页面实际请求与恢复', () => {
     expect(screen.queryByText('已接纳 3 条重新分析请求，请查看后续状态') === null).toBe(true);
   });
 
-  test('全部失败215条保留筛选并去重，分批预检后一次确认顺序入队', async () => {
+  test('全部失败215条按筛选顺序只预检并提交前200条，剩余另行确认', async () => {
     const items = failedItems();
+    let remaining = items;
     const collected: URL[] = [];
     const previews: number[][] = [];
     const batches: number[][] = [];
@@ -502,24 +503,40 @@ describe('结果页面实际请求与恢复', () => {
       if (request.method === 'POST') {
         const body: Schema<'FindingBatchRequest'> = await request.json();
         if (url.pathname.endsWith('reanalysis-preview')) { previews.push(body.ids); return batchPreview(body.ids); }
-        batches.push(body.ids); return batchReanalysis(body.ids);
+        batches.push(body.ids);
+        remaining = remaining.filter((item) => !body.ids.includes(item.id));
+        return batchReanalysis(body.ids);
       }
       if (url.searchParams.get('limit') === '200') collected.push(url);
-      return failedPage(request, items);
-    }, allFailedSearch);
+      return failedPage(request, remaining);
+    }, { ...allFailedSearch, view: 'hidden' });
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: '重新分析全部失败的' }));
-    await waitFor(() => expect(previews.map((ids) => ids.length)).toEqual([200, 15]));
     const dialog = await screen.findByRole('alertdialog');
+    expect(previews.map((ids) => ids.length)).toEqual([200]);
     expect(dialog.textContent).toContain('215 条失败结果');
+    expect(dialog.textContent).toContain('这次处理前 200 条，剩下的再点一次');
     expect(dialog.textContent).toContain('200 条可使用缓存详情');
-    expect(dialog.textContent).toContain('15 条需要重新打开详情');
+    expect(dialog.textContent).toContain('0 条需要重新打开详情');
     expect(dialog.textContent).toContain('不会预扣额度');
     expect(batches).toHaveLength(0);
-    expect(collected.map((url) => url.searchParams.get('cursor'))).toEqual([null, 'failed-next']);
-    for (const url of collected) for (const [key, value] of Object.entries({ task_id: '7', view: 'all', decision: 'failed', q: '机身', price_drop: 'true', over_budget: 'true', sort: 'latest' })) expect(url.searchParams.get(key)).toBe(value);
+    expect(collected.map((url) => url.searchParams.get('cursor'))).toEqual([null]);
+    for (const url of collected) for (const [key, value] of Object.entries({ task_id: '7', view: 'hidden', decision: 'failed', q: '机身', price_drop: 'true', over_budget: 'true', sort: 'latest' })) expect(url.searchParams.get(key)).toBe(value);
     await user.click(within(dialog).getByRole('button', { name: '确认' }));
-    await screen.findByText('已接纳 215 条重新分析请求，请查看后续状态');
+    await screen.findByText('已接纳 200 条重新分析请求，请查看后续状态');
+    expect(batches).toEqual(previews);
+    expect(batches.flat()).toEqual(items.slice(0, 200).map((item) => item.id));
+    expect(screen.queryByText((_, element) => element?.tagName === 'LI' && element.textContent?.startsWith('#245 · 已排队') === true)).toBeNull();
+
+    await waitFor(() => expect(screen.getByRole('button', { name: '重新分析全部失败的' }).hasAttribute('disabled')).toBe(false));
+    await user.click(screen.getByRole('button', { name: '重新分析全部失败的' }));
+    const rest = await screen.findByRole('alertdialog');
+    expect(rest.textContent).toContain('15 条失败结果');
+    expect(rest.textContent).toContain('15 条需要重新打开详情');
+    expect(rest.textContent).not.toContain('剩下的再点一次');
+    expect(batches).toHaveLength(1);
+    await user.click(within(rest).getByRole('button', { name: '确认' }));
+    await screen.findByText('已接纳 15 条重新分析请求，请查看后续状态');
     expect(batches).toEqual(previews);
     expect(batches.flat()).toEqual(items.map((item) => item.id));
     expect(screen.getByText((_, element) => element?.tagName === 'LI' && element.textContent?.startsWith('#245 · 已排队') === true)).toBeTruthy();
@@ -535,8 +552,8 @@ describe('结果页面实际请求与恢复', () => {
       if (request.method === 'POST') {
         if (new URL(request.url).pathname.endsWith('reanalysis-preview')) {
           previews++;
-          if (previews === 2) { failedSignal = request.signal; return json({ error: { code: 'auth.unauthenticated', args: {} }, fields: [], request_id: 'lost-session' } satisfies Schema<'ErrorEnvelope'>, 401); }
-          const body: Schema<'FindingBatchRequest'> = await request.json(); return batchPreview(body.ids);
+          failedSignal = request.signal;
+          return json({ error: { code: 'auth.unauthenticated', args: {} }, fields: [], request_id: 'lost-session' } satisfies Schema<'ErrorEnvelope'>, 401);
         }
         submitted++; return json({});
       }
@@ -544,7 +561,7 @@ describe('结果页面实际请求与恢复', () => {
     }, allFailedSearch);
     await userEvent.setup().click(await screen.findByRole('button', { name: '重新分析全部失败的' }));
     await waitFor(() => expect(failedSignal?.aborted).toBe(true));
-    expect(previews).toBe(2);
+    expect(previews).toBe(1);
     expect(submitted).toBe(0);
     expect(screen.queryByRole('alertdialog') === null).toBe(true);
   });
@@ -558,7 +575,7 @@ describe('结果页面实际请求与恢复', () => {
       const common = base(request); if (common) return common;
       const url = new URL(request.url);
       if (request.method === 'POST') { posts++; return json({}); }
-      if (url.searchParams.get('limit') === '200' && url.searchParams.get('cursor') === 'failed-next') {
+      if (url.searchParams.get('limit') === '200') {
         signal = request.signal;
         return await new Promise<Response>((resolve) => { late = resolve; });
       }
@@ -569,7 +586,7 @@ describe('结果页面实际请求与恢复', () => {
     await waitFor(() => expect(signal !== undefined).toBe(true));
     await user.selectOptions(screen.getByRole('combobox', { name: '显示范围' }), 'default');
     expect(signal?.aborted).toBe(true);
-    await act(async () => { late?.(json({ items: items.slice(200), next_cursor: null, total: 215 } satisfies Schema<'PageFindingView'>)); });
+    await act(async () => { late?.(json({ items: items.slice(0, 200), next_cursor: 'failed-next', total: 215 } satisfies Schema<'PageFindingView'>)); });
     expect(posts).toBe(0);
     expect(screen.queryByRole('alertdialog') === null).toBe(true);
   });
@@ -600,7 +617,7 @@ describe('结果页面实际请求与恢复', () => {
     expect(screen.queryByRole('alertdialog') === null).toBe(true);
   });
 
-  test('全部失败第二批失败保留第一批事实，不重复提交或把未确认批当成功', async () => {
+  test('全部失败入队请求失败不自动重试，也不把未确认结果当成功', async () => {
     const items = failedItems();
     const batches: number[][] = [];
     await page(async (request) => {
@@ -609,24 +626,20 @@ describe('结果页面实际请求与恢复', () => {
         const body: Schema<'FindingBatchRequest'> = await request.json();
         if (new URL(request.url).pathname.endsWith('reanalysis-preview')) return batchPreview(body.ids);
         batches.push(body.ids);
-        if (batches.length === 2) return json({ error: { code: 'web.network_failed', args: {} }, fields: [], request_id: 'second-batch' } satisfies Schema<'ErrorEnvelope'>, 503);
-        return json({ items: body.ids.map((finding_id, index) => ({ finding_id, status: index === 1 ? 'cached' : index === 2 ? 'rejected' : 'queued', reason: index === 2 ? { code: 'findings.not_found', args: {} } : null, needs_detail: false })), needs_detail_count: 0 } satisfies Schema<'ReanalysisResult'>, 202);
+        return json({ error: { code: 'web.network_failed', args: {} }, fields: [], request_id: 'failed-batch' } satisfies Schema<'ErrorEnvelope'>, 503);
       }
       return failedPage(request, items);
     }, allFailedSearch);
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: '重新分析全部失败的' }));
     await user.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: '确认' }));
-    await screen.findByText('操作已停止：已确认 200 条结果，其中 198 条已排队；15 条请求结果未确认，0 条尚未提交。未自动重发。');
-    expect(batches.map((ids) => ids.length)).toEqual([200, 15]);
+    await screen.findByText('操作已停止：已确认 0 条结果，其中 0 条已排队；200 条请求结果未确认，0 条尚未提交。未自动重发。');
+    expect(batches.map((ids) => ids.length)).toEqual([200]);
     expect(screen.queryByRole('alertdialog') === null).toBe(true);
-    expect(screen.getByText('已接纳 198 条重新分析请求，请查看后续状态', { exact: false })).toBeTruthy();
-    expect(screen.getByText((_, element) => element?.tagName === 'LI' && element.textContent?.startsWith('#32 · 已使用缓存') === true)).toBeTruthy();
-    expect(screen.getByText((_, element) => element?.tagName === 'LI' && element.textContent?.startsWith('#33 · 未通过') === true).textContent).toContain('这条结果已不存在');
-    expect(screen.queryByText('已接纳 215 条重新分析请求，请查看后续状态') === null).toBe(true);
+    expect(screen.queryByText(/^已接纳 \d+ 条重新分析请求/)).toBeNull();
   });
 
-  test.each(['取消保留已确认批', '切筛选后返回'] as const)('全部失败入队时%s，迟到的第二批响应不计成功', async (mode) => {
+  test.each(['取消', '切筛选后返回'] as const)('全部失败入队时%s，迟到的响应不计成功', async (mode) => {
     const items = failedItems();
     let batches = 0;
     let signal: AbortSignal | undefined;
@@ -637,8 +650,8 @@ describe('结果页面实际请求与恢复', () => {
         const body: Schema<'FindingBatchRequest'> = await request.json();
         if (new URL(request.url).pathname.endsWith('reanalysis-preview')) return batchPreview(body.ids);
         batches++;
-        if (batches === 2) { signal = request.signal; return await new Promise<Response>((resolve) => { late = resolve; }); }
-        return batchReanalysis(body.ids);
+        signal = request.signal;
+        return await new Promise<Response>((resolve) => { late = resolve; });
       }
       return failedPage(request, items);
     }, allFailedSearch);
@@ -647,18 +660,18 @@ describe('结果页面实际请求与恢复', () => {
     const dialog = await screen.findByRole('alertdialog');
     await user.click(within(dialog).getByRole('button', { name: '确认' }));
     await waitFor(() => expect(signal !== undefined).toBe(true));
-    if (mode === '取消保留已确认批') await user.click(within(dialog).getByRole('button', { name: '取消' }));
+    if (mode === '取消') await user.click(within(dialog).getByRole('button', { name: '取消' }));
     else {
       fireEvent.change(screen.getByLabelText('显示范围', { selector: 'select' }), { target: { value: 'default' } });
       await waitFor(() => expect(screen.queryByRole('alertdialog') === null).toBe(true));
       await user.selectOptions(screen.getByRole('combobox', { name: '显示范围' }), 'all');
     }
     expect(signal?.aborted).toBe(true);
-    if (mode === '取消保留已确认批') await screen.findByText('操作已停止：已确认 200 条结果，其中 200 条已排队；15 条请求结果未确认，0 条尚未提交。未自动重发。');
-    await act(async () => { late?.(batchReanalysis(items.slice(200).map((item) => item.id))); });
-    expect(batches).toBe(2);
-    expect(screen.queryByText('已接纳 200 条重新分析请求，请查看后续状态', { exact: false }) !== null).toBe(mode === '取消保留已确认批');
-    expect(screen.queryByText((_, element) => element?.tagName === 'LI' && element.textContent?.startsWith('#245 · 已排队') === true) === null).toBe(true);
+    if (mode === '取消') await screen.findByText('操作已停止：已确认 0 条结果，其中 0 条已排队；200 条请求结果未确认，0 条尚未提交。未自动重发。');
+    await act(async () => { late?.(batchReanalysis(items.slice(0, 200).map((item) => item.id))); });
+    expect(batches).toBe(1);
+    expect(screen.queryByText(/^已接纳 \d+ 条重新分析请求/)).toBeNull();
+    expect(screen.queryByText((_, element) => element?.tagName === 'LI' && element.textContent?.startsWith('#31 · 已排队') === true)).toBeNull();
   });
 
   test('批量跳过项显示原因并保留选择，不把部分应用说成全成功', async () => {

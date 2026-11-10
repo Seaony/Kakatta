@@ -359,6 +359,47 @@ func TestFlushRunUnknownBudgetPriceSkipsWithSpecificReason(t *testing.T) {
 	}
 }
 
+func TestFlushRunDropRechecksBudgetAfterChannelInterval(t *testing.T) {
+	db := deliveryDB(t)
+	deliverySeed(t, db, 1, intentPriceDrop)
+	s := deliveryService(t, db, nil)
+	var calls atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+	channel := deliveryChannel(t, s, "预算变更", server.URL)
+	clock := newQueueTestClock()
+	s.queues.startedAt, s.queues.now = clock.current().Add(-time.Hour), clock.current
+	s.queues.waitFor = func(ctx context.Context, delay time.Duration) error {
+		_, err := db.ExecContext(ctx, `UPDATE tasks SET budget_max=7000`)
+		clock.advance(delay)
+		return err
+	}
+	previous := mustQueueTurn(t, &s.queues, channel)
+	previous.finish(notify.Feishu, true, clock.current())
+	first := s.now().UnixMilli()
+	planExec(t, db, `UPDATE notification_intents SET failure_count=1,first_failed_at=? WHERE id=1`, first)
+	ref := service.RunRef{TaskID: 1, SearchGeneration: 1}
+	result, err := s.FlushRun(t.Context(), ref, nil)
+	if err != nil || result.NotifiedCount != 0 || calls.Load() != 0 || deliveryCount(t, db, `SELECT count(*) FROM deliveries`) != 0 {
+		t.Fatalf("等待期间调低预算后仍向渠道发送：%+v %v，发送 %d 次", result, err, calls.Load())
+	}
+	if deliveryCount(t, db, `SELECT count(*) FROM tasks WHERE budget_max=7000`) != 1 ||
+		deliveryCount(t, db, `SELECT count(*) FROM notification_intents WHERE id=1 AND state='pending' AND failure_count=1 AND first_failed_at=? AND price=9000`, first) != 1 ||
+		deliveryCount(t, db, `SELECT count(*) FROM findings WHERE recommended_price=10000 AND last_drop_notified_price IS NULL AND drop_notified_at IS NULL`) != 1 {
+		t.Fatal("未发送时改写了失败窗口或降价基准，或未触发预算变化")
+	}
+	planExec(t, db, `UPDATE listings SET price=7000`)
+	result, err = s.FlushRun(t.Context(), ref, nil)
+	if err != nil || result.NotifiedCount != 1 || calls.Load() != 1 ||
+		deliveryCount(t, db, `SELECT count(*) FROM notification_intents WHERE id=1 AND state='sent' AND failure_count=1 AND first_failed_at=? AND price=7000`, first) != 1 ||
+		deliveryCount(t, db, `SELECT count(*) FROM findings WHERE recommended_price=10000 AND last_drop_notified_price=7000 AND drop_notified_at IS NOT NULL`) != 1 {
+		t.Fatalf("降到预算上限后没有结算原通知：%+v %v，发送 %d 次", result, err, calls.Load())
+	}
+}
+
 func TestFlushRunPendingDropKeepsWindowWhenPriceFallsAgain(t *testing.T) {
 	db := deliveryDB(t)
 	deliverySeed(t, db, 1, intentPriceDrop)

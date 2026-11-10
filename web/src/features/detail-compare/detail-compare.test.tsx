@@ -382,6 +382,22 @@ describe('比较和局部阅读', () => {
     expect(screen.getByText('卖家原始资料缓存已不可用，分析时的判断依据仍保留')).toBeTruthy();
   });
 
+  test('只取得部分卖家资料时，详情保留已取得的字段并把评价显示为未知', async () => {
+    const finding = fixture();
+    finding.seller = {
+      seller_id: 'seller-1', nick: '部分资料的卖家', avatar_url: null, introduction: '保留卖家介绍', seller_credit: null, buyer_credit: null,
+      seller_credit_level: null, buyer_credit_level: null, item_count: null, rate_count: null, on_sale_count: null, sold_count: null,
+      seller_good_rate: null, buyer_good_rate: null, seller_good_count: null, seller_rate_count: null, buyer_good_count: null, buyer_rate_count: null,
+      recent_items: null, recent_rates: null, fetched_at: timestamp,
+    };
+    mount(<FindingDetail findingId={1} onClose={() => {}} onNavigate={() => {}} timeZone="UTC" />, fakeAPI(finding).api);
+    await screen.findByRole('heading', { name: '本地商品 1' });
+    expect(screen.getByText('部分资料的卖家')).toBeTruthy();
+    expect(screen.getByText('保留卖家介绍')).toBeTruthy();
+    const reviews = screen.getByRole('heading', { name: '最近评价' }).parentElement!;
+    expect(within(reviews).getByText('未知')).toBeTruthy();
+  });
+
   test('当前有效结论直接用后台checks，旧覆盖不能把程序卖家风险显示成没问题', async () => {
     const finding = fixture();
     const profile = profileFields(finding.task.profile);
