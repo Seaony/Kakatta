@@ -270,3 +270,10 @@
     - 人工验证时遇到直接拒绝或环境异常，清空待验证标记、网址和旧冷却，由拒绝暂停状态接管。到期按 `DOMAIN.md` 7.2 恢复，不能残留假的待验证状态。
     - 用户确认验证完成时，当前页面已无验证遮罩且没跳登录页，才确认最后一次成功接口之前已收到的验证信号。之后没有成功响应的新验证继续拦住，提示用户在画面里刷新再确认；程序不刷新、不导航。直接拒绝和环境异常仍优先；发现登录失效就结束当前验证、清待验证标记，改走扫码登录，不清额度或原有冷却。
     - 依据是 `XIANYU.md` 8.2–8.3 的人工登录与旧上游登录框消失信号，以及 `DOMAIN.md` 7.2 的状态表。扫码后的刷新、接口重发行为尚未用真实页面确认，列入 `XIANYU.md` 第十一节。
+
+68. **正式安全计算的参数和边界**（落实第 40、44 条及 `DOMAIN.md` 2.2–2.3）：
+    - Argon2id 用 64 MiB、3 轮、4 路、16 字节盐、32 字节结果，Hash 和 Verify 共用一个进程内名额。采用 [RFC 9106 的内存受限推荐](https://www.rfc-editor.org/rfc/rfc9106.html#section-4)和 [Go 官方参数示例](https://pkg.go.dev/golang.org/x/crypto/argon2#IDKey)，不让异常 PHC 参数任意扩大内存。
+    - 密钥文件保存原始 32 字节，环境变量才用 Base64；默认文件原子创建并同步落盘。显式来源错误不回退，已有数据库但密钥缺失时停止自动生成，避免把挂载错误当成新部署。
+    - AES-256-GCM 用标准库随机 nonce 接口，保持原定存储格式和逐行 AAD。令牌采用 32 字节随机量及其 SHA-256，不在数据库存明文。
+    - TOTP 为 SHA1、6 位、30 秒，允许前后一步；新增内部 `admin.totp_last_step`，和会话创建同事务条件更新，防并发与重启后重放。依据是 [RFC 6238 的一次性消费要求](https://www.rfc-editor.org/rfc/rfc6238.html#section-5.2)，不增加恢复码或额外产品选项。
+69. **网页构建按 Safari 16.0，而不是 16.4**：Tailwind 4 的最低要求是 Safari 16.4，官方建议更早浏览器保留 3.4，所以使用 Tailwind 3.4，Vite 的脚本和样式目标都明确设为 `safari16`。接口描述用单一 `api/openapi.json`，字典用 `internal/locales/zh-CN.json`、`en.json`，前后端共用消息代码和 `{name}` 参数。依据：[Tailwind 浏览器要求](https://tailwindcss.com/docs/upgrade-guide#browser-requirements)、[Vite 构建目标](https://vite.dev/guide/build#browser-compatibility)，以及既定的第 22、30 条和 `TECH-STACK.md`。

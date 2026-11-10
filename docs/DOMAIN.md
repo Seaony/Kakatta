@@ -88,6 +88,7 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 | password_hash | TEXT NOT NULL | Argon2id，PHC 字符串格式（含参数和盐） |
 | totp_secret_enc | BLOB | 两步验证（TOTP）的密钥，没开启时为空 |
 | totp_enabled_at | INTEGER | 开启两步验证的时间，没开启时为空 |
+| totp_last_step | INTEGER | 上次成功消费的验证码时间步，没开启时为空；创建会话时同事务条件更新，防重放（`DECISIONS.md` 第 68 条） |
 | created_at / password_changed_at | INTEGER NOT NULL | |
 
 - 还没有这一行时，只有填对容器日志里的一次性初始化令牌才能创建（30 分钟有效，过期重启容器再拿新的）。令牌只存在内存里，不写数据库（`DECISIONS.md` 第 40 条）。
@@ -533,7 +534,7 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 | 键 | 默认值 | 说明 |
 |---|---|---|
 | `ai.max_items_per_run` | 10 | 每次运行最多处理几个商品（第三层和关键词判断合计；第二层批量整理不算），推荐 5–20 |
-| `ai.image_count` | 4 | 第三层每个商品发几张图，1–4 |
+| `ai.image_count` | 4 | 第三层每个商品发几张图，推荐 1–4；正整数均可保存，实际不超过详情图片数。超出服务商限制可能被记为不支持图片，需调小数量并重新保存服务商，不自动减图重发 |
 | `ai.max_concurrent_requests` | 2 | 整个服务端同时进行的 AI 请求数 |
 | `ai.request_timeout_seconds` | 90 | |
 | `ai.proxy_id` | 空 | AI 请求专用的代理，只影响 AI，不影响闲鱼和推送 |
