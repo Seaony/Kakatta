@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"math"
 
 	"github.com/Seaony/Kakatta/internal/analysis"
 	"github.com/Seaony/Kakatta/internal/locales"
@@ -295,9 +294,6 @@ func (s *Service) AddExtraFinding(ctx context.Context, findingID int64, expected
 		if analysis.RiskNameKey(risk.Name) == name {
 			return TaskSaveResult{}, &ServiceError{Kind: ErrorConflict, Reason: locales.Message{Code: "profile.check_exists"}}
 		}
-	}
-	if finding.ProcessingRevision == math.MaxInt64 {
-		return TaskSaveResult{}, changedItemAction()
 	}
 	proposed := task.Profile
 	proposed.Risks = append(append([]analysis.ProfileRisk{}, task.Profile.Risks...), analysis.ProfileRisk{

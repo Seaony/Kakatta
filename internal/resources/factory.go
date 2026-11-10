@@ -4,7 +4,6 @@ package resources
 import (
 	"context"
 	"errors"
-	"math"
 	"net/url"
 	"strings"
 	"sync"
@@ -67,7 +66,7 @@ func (f *Factory) Open(ctx context.Context, spec service.ResourceSpec) (_ servic
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if spec.AccountID < 1 || spec.AccountID > 12767 || spec.Budget == nil || spec.ProfileDir == "" || spec.CacheMB < 1 || int64(spec.CacheMB) > math.MaxInt64>>20 {
+	if spec.AccountID < 1 || spec.AccountID > 12767 || spec.Budget == nil || spec.ProfileDir == "" || spec.CacheMB < 1 {
 		return nil, errors.New("浏览器账号、额度、目录或缓存配置无效")
 	}
 	if _, err := time.LoadLocation(spec.Timezone); spec.Timezone == "" || spec.Timezone == "Local" || err != nil {

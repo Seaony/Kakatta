@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"math"
 	"path/filepath"
 	"testing"
 	"time"
@@ -164,7 +163,7 @@ func TestPrepareReanalysisFirstLayerRejectAndRollback(t *testing.T) {
 	}
 }
 
-func TestPrepareReanalysisRejectsStaleOrExhaustedWork(t *testing.T) {
+func TestPrepareReanalysisRejectsStaleWork(t *testing.T) {
 	ctx, db, task, finding, item := reanalysisTestDB(t)
 	tx := reanalysisTestTx(t, ctx, db)
 	if _, _, err := prepareReanalysisTx(ctx, tx, task, finding, item, analysis.LayerResult{}, 1000); err != nil {
@@ -180,14 +179,6 @@ func TestPrepareReanalysisRejectsStaleOrExhaustedWork(t *testing.T) {
 	}
 	if err := tx.Rollback(); err != nil {
 		t.Fatal(err)
-	}
-	if _, err := db.ExecContext(ctx, `UPDATE findings SET processing_revision=? WHERE id=?`, int64(math.MaxInt64), finding.ID); err != nil {
-		t.Fatal(err)
-	}
-	finding.ProcessingRevision = math.MaxInt64
-	tx = reanalysisTestTx(t, ctx, db)
-	if _, _, err := prepareReanalysisTx(ctx, tx, task, finding, item, analysis.LayerResult{}, 1000); err == nil {
-		t.Fatal("耗尽的处理版本发生回绕")
 	}
 }
 

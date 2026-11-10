@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -47,7 +46,7 @@ func (s *Service) Cleanup(ctx context.Context) (CleanupResult, error) {
 		return result, storageFailure(err)
 	}
 	var imageMB int64
-	if err := json.Unmarshal(snapshot.Values["cache.image_max_mb"], &imageMB); err != nil || imageMB < 1 || imageMB > math.MaxInt64/(1<<20) {
+	if err := json.Unmarshal(snapshot.Values["cache.image_max_mb"], &imageMB); err != nil || imageMB < 1 {
 		return result, storageFailure(errors.New("图片缓存容量设置无效"))
 	}
 	result, err = cleanupSQLTx(ctx, tx, snapshot.Values, now.UnixMilli(), active.ActiveTaskIDs, active.ActiveRunIDs, dayStart.UnixMilli())
@@ -82,7 +81,7 @@ func cleanupSQLTx(ctx context.Context, tx *sql.Tx, values settings.Values, now i
 	var findingsDays int64
 	for _, key := range []string{"retention.findings_days", "retention.stats_days", "retention.run_steps_days", "retention.seller_profile_days", "retention.orphan_listing_days"} {
 		var days int64
-		if err := json.Unmarshal(values[key], &days); err != nil || days < 0 || days > math.MaxInt64/(24*time.Hour.Milliseconds()) {
+		if err := json.Unmarshal(values[key], &days); err != nil || days < 0 {
 			return result, errors.New("清理保留期无效")
 		}
 		cutoffs[key] = cleanupBefore(now, days*24*time.Hour.Milliseconds())
@@ -180,9 +179,6 @@ func cleanupSQLTx(ctx context.Context, tx *sql.Tx, values settings.Values, now i
 }
 
 func cleanupBefore(now, age int64) int64 {
-	if now < math.MinInt64+age {
-		return math.MinInt64
-	}
 	return now - age
 }
 

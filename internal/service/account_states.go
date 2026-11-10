@@ -158,16 +158,11 @@ func applyAccountRiskTx(ctx context.Context, tx *sql.Tx, accountID int64, riskEr
 				return Account{}, err
 			}
 			resetMS := int64(time.Hour / time.Millisecond)
-			if resetHours > math.MaxInt64/resetMS {
-				return Account{}, errors.New("连续验证的间隔超出范围")
-			}
 			resetMS *= resetHours
 			inCooldown := account.CooldownUntil != nil && *account.CooldownUntil > nowMS
 			recentCooldown := account.LastCooldownEndAt != nil && (*account.LastCooldownEndAt > nowMS-resetMS)
 			if inCooldown || recentCooldown {
-				if account.VerifyLevel < math.MaxInt64 {
-					account.VerifyLevel++
-				}
+				account.VerifyLevel++
 			} else {
 				account.VerifyLevel = 1
 			}

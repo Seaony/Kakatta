@@ -511,7 +511,6 @@
   "findings.dismissed": "Marked as not interested",
   "findings.invalid_selection": "Select 1 to 200 different results",
   "findings.not_found": "This result no longer exists",
-  "findings.revision_exhausted": "The result revision limit has been reached; reanalysis cannot start",
   "listings.invalid_patch": "Only favorite and dismissed flags can be changed, using true or false",
   "listings.not_found": "This item no longer exists",
   "maintenance.confirmation_required": "Enter \"清除\" to confirm clearing business data",

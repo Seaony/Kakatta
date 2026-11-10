@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -249,9 +248,6 @@ func recordSkipTx(ctx context.Context, tx *sql.Tx, run RunRecord, at int64) (Run
 			if err != nil {
 				return RunRecord{}, err
 			}
-			if previous.RepeatCount == math.MaxInt64 {
-				return RunRecord{}, runError(ErrorInvalid, "runs.invalid_record")
-			}
 			previous.RepeatCount++
 			end := max(*previous.EndedAt, at)
 			previous.EndedAt, previous.Message, previous.FailureKind = &end, run.Message, run.FailureKind
@@ -465,9 +461,6 @@ func (s *Service) GetRunLogOverview(ctx context.Context) (RunLogOverview, error)
 	}
 	asOf := now.UnixMilli()
 	const hourMS int64 = 60 * 60 * 1000
-	if asOf < math.MinInt64+24*hourMS {
-		return RunLogOverview{}, runError(ErrorUnavailable, "service.storage_failure")
-	}
 	result := RunLogOverview{FromAt: asOf - 24*hourMS, ToAt: asOf, AsOf: asOf, Buckets: make([]RunHourBucket, 24)}
 	result.Coverage, err = readRunLogCoverageTx(ctx, tx, result.FromAt, asOf)
 	if err != nil {

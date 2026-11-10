@@ -340,9 +340,6 @@ func (s *Service) CreateTask(ctx context.Context, patch TaskPatch) (TaskSaveResu
 	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(sort_index),0) FROM tasks`).Scan(&previousSort); err != nil {
 		return TaskSaveResult{}, storageFailure(err)
 	}
-	if previousSort == math.MaxInt64 {
-		return TaskSaveResult{}, invalidTaskField("sort_index", locales.Message{Code: "settings.overflow"})
-	}
 	task.SortIndex = previousSort + 1
 	if err := insertTaskTx(ctx, tx, &task); err != nil {
 		return TaskSaveResult{}, storageFailure(err)
@@ -433,9 +430,6 @@ func (s *Service) UpdateTask(ctx context.Context, id int64, patch TaskPatch) (Ta
 	updated.TaskFields, updated.UpdatedAt = fields, &now
 	effects := TaskSaveEffects{Generation: old.SearchGeneration, AddedExcludeWords: addedExcludeWords(old.ExcludeKeywords, fields.ExcludeKeywords)}
 	if taskSearchChanged(old, updated) {
-		if old.SearchGeneration == math.MaxInt64 {
-			return TaskSaveResult{}, invalidTaskField("search_generation", locales.Message{Code: "settings.overflow"})
-		}
 		updated.SearchGeneration++
 		updated.BaselinePending = true
 		effects.SearchReset, effects.Generation = true, updated.SearchGeneration
@@ -445,9 +439,6 @@ func (s *Service) UpdateTask(ctx context.Context, id int64, patch TaskPatch) (Ta
 	}
 	if old.IntervalMinutes != updated.IntervalMinutes {
 		intervalMS := updated.IntervalMinutes * 60000
-		if now > math.MaxInt64-intervalMS {
-			return TaskSaveResult{}, invalidTaskField("interval_minutes", locales.Message{Code: "settings.overflow"})
-		}
 		next := now + intervalMS
 		updated.NextRunAt = &next
 	}
@@ -523,15 +514,6 @@ func migrateTaskModeTx(ctx context.Context, tx *sql.Tx, task Task, nowMS int64) 
 	stage := StageTitle
 	if task.JudgeMode == analysis.ModeKeyword {
 		stage = StageDetail
-	}
-	var overflow bool
-	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM findings WHERE task_id=? AND search_generation=?
-		AND (decision='pending' OR (decision='failed' AND retryable=1 AND attempts<3)) AND processing_revision=?)`,
-		task.ID, task.SearchGeneration, int64(math.MaxInt64)).Scan(&overflow); err != nil {
-		return err
-	}
-	if overflow {
-		return invalidTaskField("judge_mode", locales.Message{Code: "settings.overflow"})
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE findings SET stage=?,processing_revision=processing_revision+1
 		WHERE task_id=? AND search_generation=? AND (decision='pending' OR (decision='failed' AND retryable=1 AND attempts<3))`,
@@ -824,14 +806,14 @@ func (s *Service) HideAddedExcludes(ctx context.Context, taskID int64, words []s
 		}
 		result, err := tx.ExecContext(ctx, `UPDATE findings SET decision='rejected',reject_kind='excluded',stage='done',
 			decided_layer=1,reason=?,score=NULL,grade=NULL,score_breakdown_json=NULL,retryable=0,
-			processing_revision=processing_revision+1 WHERE id=? AND processing_revision<?`, string(reason), id, int64(math.MaxInt64))
+			processing_revision=processing_revision+1 WHERE id=?`, string(reason), id)
 		if err != nil {
 			return 0, storageFailure(err)
 		}
 		count, err := result.RowsAffected()
 		if err != nil || count != 1 {
 			if err == nil {
-				err = invalidTaskField("added_exclude_words", locales.Message{Code: "settings.overflow"})
+				err = errors.New("发现排除更新行数不正确")
 			}
 			return 0, storageFailure(err)
 		}

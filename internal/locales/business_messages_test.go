@@ -37,7 +37,6 @@ func TestBusinessMessagesHaveBothLanguages(t *testing.T) {
 		{Code: "listings.invalid_patch"},
 		{Code: "findings.invalid_selection"},
 		{Code: "findings.not_found"},
-		{Code: "findings.revision_exhausted"},
 		{Code: "findings.changed"},
 		{Code: "findings.backlog_expired"},
 		{Code: "tasks.invalid"},

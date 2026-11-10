@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"math"
+	"errors"
 
 	"github.com/Seaony/Kakatta/internal/analysis"
 	"github.com/Seaony/Kakatta/internal/appsettings"
@@ -169,10 +169,8 @@ func (s *Service) prepareReanalysis(ctx context.Context, ids []int64) (Reanalysi
 }
 
 func prepareReanalysisTx(ctx context.Context, tx *sql.Tx, task Task, finding Finding, item Listing, layer analysis.LayerResult, now int64) (ReanalysisItem, WorkRef, error) {
-	if finding.ProcessingRevision < 1 || finding.ProcessingRevision == math.MaxInt64 {
-		return ReanalysisItem{}, WorkRef{}, &ServiceError{
-			Kind: ErrorConflict, Reason: locales.Message{Code: "findings.revision_exhausted", Args: map[string]any{}},
-		}
+	if finding.ProcessingRevision < 1 {
+		return ReanalysisItem{}, WorkRef{}, errors.New("发现处理版本无效")
 	}
 	decision, stage := DecisionPending, StageTitle
 	if task.JudgeMode == analysis.ModeKeyword {

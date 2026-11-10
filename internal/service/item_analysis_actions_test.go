@@ -402,14 +402,6 @@ func TestAddExtraFindingRejectsStaleDuplicateAndOverflow(t *testing.T) {
 			t.Fatalf("同名项没有给出明确原因：%v", err)
 		}
 	})
-	t.Run("revision_overflow", func(t *testing.T) {
-		f := itemActions(t)
-		if _, err := f.db.ExecContext(f.ctx, `UPDATE findings SET processing_revision=? WHERE id=?`, int64(math.MaxInt64), f.finding); err != nil {
-			t.Fatal(err)
-		}
-		_, err := f.service.AddExtraFinding(f.ctx, f.finding, f.facts.ExtraFindings[0])
-		itemActionKind(t, err, ErrorConflict)
-	})
 	t.Run("profile_id_overflow", func(t *testing.T) {
 		f := itemActions(t)
 		f.profile.NextNo = math.MaxInt

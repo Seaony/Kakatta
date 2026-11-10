@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"sort"
 
 	"github.com/Seaony/Kakatta/internal/analysis"
@@ -165,17 +164,15 @@ func loadBacklogTx(ctx context.Context, tx *sql.Tx, ref RunRef, nowMS int64) ([]
 		return nil, err
 	}
 	const dayMS int64 = 24 * 60 * 60 * 1000
-	if nowMS >= math.MinInt64+dayMS {
-		reason, _ := json.Marshal(findingMessage("findings.backlog_expired", nil))
-		_, err := tx.ExecContext(ctx, `UPDATE findings SET decision='skipped',stage='done',
+	reason, _ := json.Marshal(findingMessage("findings.backlog_expired", nil))
+	_, err := tx.ExecContext(ctx, `UPDATE findings SET decision='skipped',stage='done',
 			decided_layer=NULL,reject_kind=NULL,reason=?,retryable=0,reanalyze_requested_at=NULL
 			WHERE task_id=? AND search_generation=? AND decision='pending'
 			AND COALESCE(reanalyze_requested_at,found_at)<?
 			AND COALESCE(json_extract(reason,'$.code'),'')<>'await_ai'`,
-			string(reason), ref.TaskID, ref.SearchGeneration, nowMS-dayMS)
-		if err != nil {
-			return nil, err
-		}
+		string(reason), ref.TaskID, ref.SearchGeneration, nowMS-dayMS)
+	if err != nil {
+		return nil, err
 	}
 	rows, err := tx.QueryContext(ctx, `SELECT `+findingSelectColumns+` FROM findings f
 		WHERE f.task_id=? AND f.search_generation=?

@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"reflect"
 	"sort"
 	"strconv"
@@ -381,9 +380,6 @@ func saveTitleTx(ctx context.Context, tx *sql.Tx, work WorkRef, requestProfile a
 	if task.JudgeMode != analysis.ModeAI || (finding.Decision != DecisionPending && finding.Decision != DecisionFailed) {
 		return false, findingChangedError()
 	}
-	if finding.Attempts == math.MaxInt64 {
-		return false, errors.New("发现处理次数溢出")
-	}
 	item := titleForCurrentProfile(requestProfile, task.Profile, result.Item)
 	judged := analysis.JudgeTitle(task.Profile, item)
 	actual, err := saveItemSpecsTx(ctx, tx, task.ID, finding.ItemID, judged.Specs, nowMS)
@@ -430,9 +426,6 @@ func saveFindingFailureTx(ctx context.Context, tx *sql.Tx, work WorkRef, stage F
 		}
 		decision, retryable = DecisionPending, false
 	} else {
-		if attempts == math.MaxInt64 {
-			return errors.New("发现处理次数溢出")
-		}
 		attempts++
 		retryable = retryable && attempts < 3
 	}
@@ -464,9 +457,6 @@ func (s *Service) saveConclusionTx(ctx context.Context, tx *sql.Tx, work WorkRef
 	}
 	if choices != 1 {
 		return false, errors.New("发现结论必须有且只有一种结果")
-	}
-	if finding.Attempts == math.MaxInt64 {
-		return false, errors.New("发现处理次数溢出")
 	}
 	item, err := loadListingTx(ctx, tx, finding.ItemID)
 	if err != nil {

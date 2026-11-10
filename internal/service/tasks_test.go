@@ -506,23 +506,19 @@ func TestTaskUpdateRollbackKeepsGenerationAndProtectedData(t *testing.T) {
 	if err != nil || view.Keyword != "camera" || view.SearchGeneration != 1 || h.count(`SELECT COUNT(*) FROM findings WHERE id=? AND decision='pending'`, finding) != 1 {
 		t.Fatalf("任务失败但旧发现已失效：%+v %v", view, err)
 	}
-	h.exec(`UPDATE tasks SET search_generation=? WHERE id=?`, int64(math.MaxInt64), task.ID)
-	if _, err := h.s.UpdateTask(h.ctx, task.ID, taskPatch(map[string]any{"keyword": "lens"})); err == nil {
-		t.Fatal("代次溢出未拦截")
-	}
 }
 
-func TestTaskModeRevisionOverflowRollsBackEntireSave(t *testing.T) {
+func TestTaskModeMigrationFailureRollsBackEntireSave(t *testing.T) {
 	h := newTaskHarness(t)
 	task := h.create(map[string]any{"judge_mode": "ai", "profile": analysis.Profile{Musts: []analysis.Requirement{{Text: "国行", Source: analysis.SourceUser}}}})
 	id := h.seedFinding(task, "pending", DecisionPending, StageTitle, nil)
-	h.exec(`UPDATE findings SET processing_revision=? WHERE id=?`, int64(math.MaxInt64), id)
+	h.exec(`CREATE TRIGGER fail_task_mode_migration BEFORE UPDATE OF processing_revision ON findings BEGIN SELECT RAISE(ABORT,'模拟处理队列保存失败'); END`)
 	if _, err := h.s.UpdateTask(h.ctx, task.ID, taskPatch(map[string]any{"judge_mode": "keyword"})); err == nil {
-		t.Fatal("处理代次溢出仍然保存了新模式")
+		t.Fatal("处理队列保存失败仍然保存了新模式")
 	}
 	view, err := h.s.GetTask(h.ctx, task.ID)
 	if err != nil || view.JudgeMode != analysis.ModeAI || !reflect.DeepEqual(view.Profile, task.Profile) ||
-		h.count(`SELECT COUNT(*) FROM findings WHERE id=? AND stage='title' AND processing_revision=?`, id, int64(math.MaxInt64)) != 1 {
+		h.count(`SELECT COUNT(*) FROM findings WHERE id=? AND stage='title' AND processing_revision=1`, id) != 1 {
 		t.Fatalf("模式失败没有回滚全部修改：%+v %v", view.Task, err)
 	}
 }

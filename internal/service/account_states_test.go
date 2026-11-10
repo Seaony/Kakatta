@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"math"
 	"path/filepath"
 	"testing"
 	"time"
@@ -144,7 +143,6 @@ func TestAccountVerificationResetAndMaximum(t *testing.T) {
 	}{
 		{"窗口内", int64(24*time.Hour/time.Millisecond) - 1, 4, 5},
 		{"正好结束窗口", int64(24 * time.Hour / time.Millisecond), 4, 1},
-		{"最高等级不溢出", 1, math.MaxInt64, math.MaxInt64},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			db, values, now := accountStateDB(t)

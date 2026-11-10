@@ -511,7 +511,6 @@
   "findings.dismissed": "已标为不感兴趣",
   "findings.invalid_selection": "请选择 1 到 200 条不同的结果",
   "findings.not_found": "这条结果已不存在",
-  "findings.revision_exhausted": "结果版本已达上限，无法重新分析",
   "listings.invalid_patch": "只能修改商品的收藏和不感兴趣标记，并填写是或否",
   "listings.not_found": "这个商品已不存在",
   "maintenance.confirmation_required": "请输入「清除」确认清除业务数据",

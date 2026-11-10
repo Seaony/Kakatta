@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"math"
 	"net"
 	"time"
 
@@ -254,7 +253,7 @@ func (s *Service) finishTaskTx(ctx context.Context, tx *sql.Tx, task Task, recor
 		}
 		eventChanged = resolved
 	} else if record.FailureKind != nil && (*record.FailureKind == FailureNetwork || *record.FailureKind == FailurePage || *record.FailureKind == FailureTimeout) {
-		if failures < 0 || failures == math.MaxInt64 {
+		if failures < 0 {
 			return 0, false, errors.New("任务连续失败次数无效")
 		}
 		failures++
