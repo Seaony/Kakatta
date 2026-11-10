@@ -31,6 +31,7 @@
   --color-overlay: 0 0 0;
   --opacity-overlay: 0.4;
   --font-family-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-family-mono: ui-monospace, "SFMono-Regular", Menlo, monospace;
   --font-caption: 0.75rem;
   --font-body: 0.875rem;
   --font-input: 1rem;

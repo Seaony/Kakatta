@@ -28,7 +28,10 @@ export default {
     borderRadius: Object.fromEntries(
       ['minimum', 'thumb', 'control', 'banner', 'card', 'panel'].map((name) => [name, `var(--radius-${name})`]),
     ),
-    fontFamily: { sans: ['var(--font-family-ui)'] },
+    fontFamily: {
+      sans: ['var(--font-family-ui)'],
+      mono: ['var(--font-family-mono)'],
+    },
     fontSize: Object.fromEntries(
       ['caption', 'body', 'input', 'section', 'page'].map((name) => [name, `var(--font-${name})`]),
     ),

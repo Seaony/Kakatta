@@ -1,7 +1,7 @@
 import { useId, type ComponentPropsWithRef, type ReactNode } from "react";
 import { classes, focusClass } from "./styles";
 
-type FieldText = { label: string; hint?: string; error?: string };
+type FieldText = { label: string; hint?: string | undefined; error?: string | undefined };
 export type TextFieldProps = ComponentPropsWithRef<"input"> & FieldText;
 export type TextAreaFieldProps = ComponentPropsWithRef<"textarea"> & FieldText;
 
