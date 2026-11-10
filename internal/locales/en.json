@@ -716,5 +716,9 @@
   "notify.price_unknown_budget": "Price is unknown, so the budget cannot be checked",
   "notify.reanalysis": "Reanalysis does not create notifications for new items",
   "notify.reanalysis_below_recommendation": "Reanalysis produced a score of {score}, which no longer meets the recommendation criteria",
-  "notify.retry_exhausted": "Sending failed for every channel; retries have stopped"
+  "notify.retry_exhausted": "Sending failed for every channel; retries have stopped",
+  "ai.provider_invalid": "The AI provider settings are invalid. Check the supplied values",
+  "ai.provider_not_found": "This AI provider no longer exists. Choose another provider",
+  "ai.url_normalized": "Removed the trailing /chat/completions from the endpoint",
+  "ai.provider_error": "AI provider error: {provider}"
 }

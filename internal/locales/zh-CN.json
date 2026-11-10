@@ -716,5 +716,9 @@
   "notify.price_unknown_budget": "价格未知，无法核对预算",
   "notify.reanalysis": "重新分析不新增新商品提醒",
   "notify.reanalysis_below_recommendation": "重新分析得到 {score} 分，不再达到推荐条件",
-  "notify.retry_exhausted": "发送失败：所有渠道都没发出去，不再重发"
+  "notify.retry_exhausted": "发送失败：所有渠道都没发出去，不再重发",
+  "ai.provider_invalid": "AI 服务商设置无效，请检查填写的内容",
+  "ai.provider_not_found": "这个 AI 服务商已不存在，请重新选择",
+  "ai.url_normalized": "已移除接口地址末尾的 /chat/completions",
+  "ai.provider_error": "AI 接口出错：{provider}"
 }
