@@ -301,55 +301,88 @@ func (s *Service) CreateTask(ctx context.Context, patch TaskPatch) (TaskSaveResu
 		return TaskSaveResult{}, err
 	}
 	defer release()
+	result, _, err := s.createTask(ctx, patch, nil)
+	return result, err
+}
+
+func (s *Service) createTask(ctx context.Context, patch TaskPatch, imported *taskImportOptions) (TaskSaveResult, []settings.Issue, error) {
+	corrections := []settings.Issue{}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return TaskSaveResult{}, storageFailure(err)
+		return TaskSaveResult{}, corrections, storageFailure(err)
 	}
 	defer tx.Rollback()
 	global, err := s.settings.SnapshotTx(ctx, tx)
 	if err != nil {
-		return TaskSaveResult{}, storageFailure(err)
+		return TaskSaveResult{}, corrections, storageFailure(err)
 	}
 	defaults, err := taskDefaultsTx(ctx, tx, global)
 	if err != nil {
-		return TaskSaveResult{}, storageFailure(err)
+		return TaskSaveResult{}, corrections, storageFailure(err)
 	}
 	fields, err := applyTaskPatch(defaults, patch)
 	if err != nil {
-		return TaskSaveResult{}, err
+		return TaskSaveResult{}, corrections, err
 	}
-	fields, warnings, err := normalizeTaskFields(nil, fields, patch, global)
+	if imported != nil {
+		fields, err = repairImportedTaskFieldsTx(ctx, tx, fields, imported, &corrections)
+		if err != nil {
+			return TaskSaveResult{}, corrections, err
+		}
+	}
+	importedNextNo := fields.Profile.NextNo
+	fields, warnings, err := normalizeTaskFieldsMode(nil, fields, patch, global, imported != nil)
 	if err != nil {
-		return TaskSaveResult{}, err
+		return TaskSaveResult{}, corrections, err
+	}
+	if imported != nil && fields.JudgeMode == analysis.ModeAI && fields.Profile.NextNo != importedNextNo {
+		reported := false
+		for _, correction := range corrections {
+			if correction.Key == "profile.next_no" {
+				reported = true
+				break
+			}
+		}
+		if !reported {
+			importCorrection(&corrections, "profile.next_no", "profile_next_no")
+		}
+	}
+	if imported != nil && fields.JudgeMode == analysis.ModeAI {
+		var available bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM ai_providers WHERE enabled=1 AND error_state IS NULL)`).Scan(&available); err != nil {
+			return TaskSaveResult{}, corrections, storageFailure(err)
+		}
+		if !available {
+			warnings = append(warnings, settings.Issue{Key: "judge_mode", Reason: locales.Message{Code: "run.no_ai_provider", Args: map[string]any{}}})
+		}
 	}
 	if !fields.AccountPinned {
 		fields.AccountID, err = pickAccountTx(ctx, tx)
 		if err != nil {
-			return TaskSaveResult{}, storageFailure(err)
+			return TaskSaveResult{}, corrections, storageFailure(err)
 		}
 	}
 	if err := validateTaskReferencesTx(ctx, tx, fields); err != nil {
-		return TaskSaveResult{}, storageFailure(err)
+		return TaskSaveResult{}, corrections, storageFailure(err)
 	}
 	now := s.now().UnixMilli()
 	task := Task{TaskFields: fields, SearchGeneration: 1, BaselinePending: true, CreatedAt: &now, UpdatedAt: &now, NextRunAt: &now}
 	var previousSort int64
 	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(sort_index),0) FROM tasks`).Scan(&previousSort); err != nil {
-		return TaskSaveResult{}, storageFailure(err)
+		return TaskSaveResult{}, corrections, storageFailure(err)
 	}
 	task.SortIndex = previousSort + 1
 	if err := insertTaskTx(ctx, tx, &task); err != nil {
-		return TaskSaveResult{}, storageFailure(err)
+		return TaskSaveResult{}, corrections, storageFailure(err)
 	}
 	if err := tx.Commit(); err != nil {
-		return TaskSaveResult{}, storageFailure(err)
+		return TaskSaveResult{}, corrections, storageFailure(err)
 	}
-	release()
 	s.wakeScheduler()
 	_ = s.emit("task.changed", map[string]any{"task_id": task.ID})
 	return TaskSaveResult{Task: task, Warnings: warnings, Effects: TaskSaveEffects{
 		Generation: 1, AddedExcludeWords: []string{}, NeedsReanalysisIDs: []int64{}, TitleRejectedIDs: []int64{},
-	}}, nil
+	}}, corrections, nil
 }
 
 func validateTaskReferencesTx(ctx context.Context, tx *sql.Tx, fields TaskFields) error {

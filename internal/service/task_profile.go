@@ -157,6 +157,10 @@ func applyTaskPatch(base TaskFields, patch TaskPatch) (TaskFields, error) {
 }
 
 func normalizeTaskFields(old *Task, proposed TaskFields, patch TaskPatch, global settings.Snapshot) (TaskFields, []settings.Issue, error) {
+	return normalizeTaskFieldsMode(old, proposed, patch, global, false)
+}
+
+func normalizeTaskFieldsMode(old *Task, proposed TaskFields, patch TaskPatch, global settings.Snapshot, imported bool) (TaskFields, []settings.Issue, error) {
 	warnings := []settings.Issue{}
 	proposed.Keyword = strings.TrimSpace(proposed.Keyword)
 	if n := utf8.RuneCountInString(proposed.Keyword); n < 1 || n > 50 {
@@ -270,11 +274,16 @@ func normalizeTaskFields(old *Task, proposed TaskFields, patch TaskPatch, global
 	if old != nil {
 		previous = old.Profile
 	}
-	profile, err := taskProfileForRevision(previous, proposed.Profile)
-	if err != nil {
-		return TaskFields{}, warnings, err
+	var profile analysis.Profile
+	var profileWarnings []locales.Message
+	if imported {
+		profile, profileWarnings, err = normalizeImportedProfile(proposed.Profile)
+	} else {
+		profile, err = taskProfileForRevision(previous, proposed.Profile)
+		if err == nil {
+			profile, profileWarnings, err = analysis.ReviseProfile(previous, profile)
+		}
 	}
-	profile, profileWarnings, err := analysis.ReviseProfile(previous, profile)
 	if err != nil {
 		return TaskFields{}, warnings, invalidTaskField("profile", locales.Message{Code: "analysis.profile_invalid", Args: map[string]any{"field": "profile"}})
 	}
