@@ -430,5 +430,15 @@
   "analysis.question.seller_dealer": "Was this your own item, and how long did you use it?",
   "events.reset": "The event history has changed. Reload the latest data.",
   "security.login_failures_one": "Sign-in failures have reached the limit of {count} attempt. The latest attempt came from IP {ip}. If this was not you, choose a stronger password and enable two-step verification.",
-  "security.login_failures_other": "Sign-in failures have reached the limit of {count} attempts. The latest attempt came from IP {ip}. If this was not you, choose a stronger password and enable two-step verification."
+  "security.login_failures_other": "Sign-in failures have reached the limit of {count} attempts. The latest attempt came from IP {ip}. If this was not you, choose a stronger password and enable two-step verification.",
+  "analysis.prompts.invalid_input": "Invalid model input: {field}",
+  "analysis.prompts.missing_keys": "Prompt is missing quoted keys: {keys}",
+  "analysis.images.invalid_configuration": "Invalid image preparation settings",
+  "analysis.images.invalid_count": "Image count must be a positive integer",
+  "analysis.images.invalid_url": "Invalid image URL",
+  "analysis.images.download_failed": "Image download failed",
+  "analysis.images.http_failed": "Image download failed: HTTP {status}",
+  "analysis.images.timeout": "Image download timed out",
+  "analysis.images.invalid_image": "Cannot decode this image or the format is unsupported",
+  "analysis.images.resource_limit": "Image exceeds the resource limit: {field}"
 }

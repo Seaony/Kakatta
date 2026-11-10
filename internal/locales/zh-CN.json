@@ -430,5 +430,15 @@
   "analysis.question.seller_dealer": "是自己用的吗？用了多久？",
   "events.reset": "事件记录已更新，请重新读取最新数据。",
   "security.login_failures_one": "登录失败已达到上限 {count} 次，最近一次来自 IP {ip}。如果不是你本人，请改一个更强的密码并开启两步验证。",
-  "security.login_failures_other": "登录失败已达到上限 {count} 次，最近一次来自 IP {ip}。如果不是你本人，请改一个更强的密码并开启两步验证。"
+  "security.login_failures_other": "登录失败已达到上限 {count} 次，最近一次来自 IP {ip}。如果不是你本人，请改一个更强的密码并开启两步验证。",
+  "analysis.prompts.invalid_input": "模型输入无效：{field}",
+  "analysis.prompts.missing_keys": "提示词缺少带引号的键名：{keys}",
+  "analysis.images.invalid_configuration": "图片准备配置无效",
+  "analysis.images.invalid_count": "图片数量必须是正整数",
+  "analysis.images.invalid_url": "图片地址无效",
+  "analysis.images.download_failed": "图片下载失败",
+  "analysis.images.http_failed": "图片下载失败：HTTP {status}",
+  "analysis.images.timeout": "图片下载超时",
+  "analysis.images.invalid_image": "图片无法解码或格式不受支持",
+  "analysis.images.resource_limit": "图片超出资源限制：{field}"
 }

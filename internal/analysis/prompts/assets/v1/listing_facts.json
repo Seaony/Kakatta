@@ -1,0 +1,80 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["specs", "brand_new", "musts", "bonuses", "checks", "seller_signals", "price_note", "extra_findings", "adjust", "summary"],
+  "properties": {
+    "specs": {"$ref": "#/$defs/specs"},
+    "brand_new": {"type": ["boolean", "null"]},
+    "musts": {"type": "array", "items": {"$ref": "#/$defs/req"}},
+    "bonuses": {"type": "array", "items": {"$ref": "#/$defs/req"}},
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["key", "status", "source", "evidence"],
+        "properties": {
+          "key": {"type": "string"},
+          "status": {"type": "string", "enum": ["ok", "risk", "suspect", "unknown"]},
+          "source": {"type": ["string", "null"], "enum": ["text", "image", null]},
+          "evidence": {"type": ["string", "null"]}
+        }
+      }
+    },
+    "seller_signals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["key", "evidence"],
+        "properties": {
+          "key": {"type": "string", "enum": ["desc_mismatch", "after_sale", "slow_ship", "partial_refund", "dealer_words"]},
+          "evidence": {"type": "string"}
+        }
+      }
+    },
+    "price_note": {"type": ["string", "null"]},
+    "extra_findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "evidence", "source"],
+        "properties": {
+          "name": {"type": "string"},
+          "evidence": {"type": "string"},
+          "source": {"type": "string", "enum": ["text", "image"]}
+        }
+      }
+    },
+    "adjust": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "reason"],
+      "properties": {"value": {"type": "integer"}, "reason": {"type": "string"}}
+    },
+    "summary": {"type": "string"}
+  },
+  "$defs": {
+    "specs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "value"],
+        "properties": {"name": {"type": "string"}, "value": {"type": ["string", "null"]}}
+      }
+    },
+    "req": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "status", "source", "evidence"],
+      "properties": {
+        "id": {"type": "string"},
+        "status": {"type": "string", "enum": ["met", "unmet", "unknown"]},
+        "source": {"type": ["string", "null"], "enum": ["text", "image", null]},
+        "evidence": {"type": ["string", "null"]}
+      }
+    }
+  }
+}

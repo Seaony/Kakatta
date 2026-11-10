@@ -1,0 +1,49 @@
+{
+  "asset_version": 1,
+  "definitions": [
+    {
+      "kind": "analysis",
+      "template": "analysis.txt",
+      "required_keys": [
+        "checks",
+        "adjust",
+        "summary"
+      ],
+      "schema": {
+        "name": "listing_facts",
+        "file": "listing_facts.json"
+      }
+    },
+    {
+      "kind": "title_screen",
+      "template": "title_screen.txt",
+      "required_keys": [
+        "items",
+        "kind",
+        "verdict"
+      ],
+      "schema": {
+        "name": "title_screen",
+        "file": "title_screen.json"
+      }
+    },
+    {
+      "kind": "profile",
+      "template": "profile.txt",
+      "required_keys": [
+        "specs",
+        "risks"
+      ],
+      "schema": {
+        "name": "task_profile",
+        "file": "task_profile.json"
+      }
+    },
+    {
+      "kind": "market",
+      "template": "market.txt",
+      "required_keys": [],
+      "schema": null
+    }
+  ]
+}
