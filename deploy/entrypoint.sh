@@ -46,9 +46,9 @@ else
 fi
 
 if [ "$#" -eq 0 ]; then
-    set -- /usr/local/bin/experiment --data /data --listen :8080
+    set -- /usr/local/bin/kakatta --data /data --listen :8080
 elif [ "${1#-}" != "$1" ]; then
-    set -- /usr/local/bin/experiment "$@"
+    set -- /usr/local/bin/kakatta "$@"
 fi
 
 if [ "$(id -u)" -eq 0 ]; then

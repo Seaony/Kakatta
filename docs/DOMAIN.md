@@ -64,7 +64,7 @@
 - 驱动用 `modernc.org/sqlite`。连接打开后执行 `PRAGMA journal_mode=WAL`、`PRAGMA foreign_keys=ON`、`PRAGMA busy_timeout=5000`。
 - 数据库文件放在数据目录 `<data>/kakatta.db`。同一目录下还有：`secret.key`（加密主密钥）、`browser/<账号 id>/`（每个账号的浏览器配置目录）、`cache/images/`（缩略图缓存）。
 - 服务端自己下载商品图片（第三层看图、缓存缩略图）时，走这个任务所用账号的代理（账号没绑代理就直连），不带 Cookie。
-- 主键一律 `INTEGER PRIMARY KEY`。布尔值存 `0/1`。列表、对象存 JSON 文本，列名以 `_json` 结尾。
+- 自动分配的整数主键使用 `INTEGER PRIMARY KEY AUTOINCREMENT`，删除后不复用，避免保留的历史引用串到新对象；`admin` 固定为 1，版本编号、自然主键及复合主键不自增。清理不改 `sqlite_sequence`（`DECISIONS.md` 第 75 条）。布尔值存 `0/1`。列表、对象存 JSON 文本，列名以 `_json` 结尾。
 - 表结构用编号的迁移脚本升级，当前版本记在 `schema_migrations`。
 - **给用户看的原因一律存原因代码加参数**，不存成句子：`findings.reason`、`findings.notify_skip_reason`、`accounts.state_reason`、`ai_providers.error_state`、`tasks.last_error`、`run_records.message` 和 `warnings_json` 里的每一条、`run_steps.message` 和 `detail`、`system_events.message`、`deliveries.error`、`channels.last_error`，都存成 `{"code": "await_ai", "args": {"cause": "no_provider"}}` 这样的 JSON，显示时按界面语言翻译，中英文都要完整（`DECISIONS.md` 第 22 条）。本文写成原因「不感兴趣」「等待分析：……」的地方，存的是对应的代码，引号里是中文界面显示的文字。程序判断状态（比如「等待分析」）只看代码，不看文字。AI 自己写的话（`summary`、`title_screen_reason`、AI 综合判断的理由）不翻译，原样存、原样显示；AI 服务商返回的原始错误（8.7 的「详细信息」）放在参数里，遮掉 Key 后原样显示。
 

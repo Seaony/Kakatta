@@ -161,6 +161,7 @@ func ResolveRisks(Profile) []ResolvedRisk
 func DefaultProfile() Profile
 func ParseGeneratedProfile([]byte) (GeneratedProfile, []locales.Message, error)
 func MergeGeneratedProfile(Profile, GeneratedProfile, string, string) (Profile, ProfileSuggestions, []locales.Message, error)
+func NormalizeProfile(Profile) (Profile, []locales.Message, error)
 func ParseKeywords(string) []string
 func MatchingKeywords(string, []string) []string
 func FirstLayer(FirstLayerInput) LayerResult
@@ -179,6 +180,8 @@ func NoGoodReasons([]RecentScoredFinding) []ReasonCount
 ```
 
 清单合并按生成项的顺序替换同名旧编辑项，再按旧相对顺序追加未命中的旧编辑项；不得重用删除的编号。`breakdown` 固定为 `base/items/ai/caps/gates`，程序原因用 Message，模型调整理由保留原文。普通保存不补回被删的通用项；用户规格保护、重分析与通知由编排处理。关键词、证据、规格分别按文档的三套规则规整，不共用一个含糊的文本匹配器。
+
+普通保存调用 NormalizeProfile，不冒用重新生成入口。持久层先守住旧 next_no 水位和既有条目的固定编号，不能相信请求把水位调小；新增空编号由纯包分配。标题整理结果携带独立 Warnings，未知或重复规格不能悄悄吞掉。
 
 没有规格维度的任务使用固定配置键 `*`，并非规格不明；「较 14 天前」只用原配置 14 天序列，价格带跟随合理价实际样本窗口。最终合理价落到整数分时四舍五入，每日中位数和分位数保留插值精度。
 

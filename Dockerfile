@@ -1,14 +1,25 @@
 # syntax=docker/dockerfile:1
 ARG GO_VERSION=1.27.3
 
+FROM --platform=$BUILDPLATFORM oven/bun:1.3.14-slim AS web-build
+WORKDIR /src/web
+COPY web/package.json web/bun.lock ./
+RUN bun install --frozen-lockfile
+COPY web/ ./
+COPY api/openapi.json /src/api/openapi.json
+COPY internal/locales/*.json /src/internal/locales/
+RUN bun run build
+
 FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-trixie AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
+COPY --from=web-build /src/web/dist ./web/dist
 ARG TARGETOS
 ARG TARGETARCH
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -ldflags='-s -w' -o /out/experiment ./cmd/experiment
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -ldflags='-s -w' -o /out/kakatta ./cmd/kakatta \
+    && CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -ldflags='-s -w' -o /out/experiment ./cmd/experiment
 
 FROM debian:trixie-slim AS runtime
 ARG TARGETARCH
@@ -38,5 +49,6 @@ WORKDIR /data
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/kakatta-entrypoint"]
 
 FROM runtime AS final
+COPY --from=build /out/kakatta /usr/local/bin/kakatta
 COPY --from=build /out/experiment /usr/local/bin/experiment
 CMD ["--data", "/data", "--listen", ":8080"]

@@ -1,6 +1,6 @@
-# 实验容器
+# 容器与实验工具
 
-当前入口是单次可行性实验工具，还不是完整的 1.0 服务。真实账号实验由作者按 `EXPERIMENT.md` 自己运行；开发和测试只使用本地假页面。
+默认入口是正式服务，镜像另带单次可行性实验工具。当前正在按里程碑实现，网页基础页还没有接上完整产品流程，不能当作 1.0 已交付。真实账号实验由作者按 `EXPERIMENT.md` 自己运行；开发和测试只使用本地假页面。
 
 ## 构建和启动
 
@@ -10,18 +10,26 @@
 docker compose build
 ```
 
-作者需要观察实验时，自己启动容器：
+作者需要运行服务时，自己启动容器：
 
 ```sh
 docker compose up
 ```
 
-默认只把网页端口绑定到宿主机的 `127.0.0.1:8080`，浏览器打开 `http://127.0.0.1:8080`。初始化令牌只在容器日志里显示一次，30 分钟有效，只能用一次，填入后换取浏览器的 HttpOnly、SameSite=Strict Cookie。网页会话闲置 30 分钟后过期，正常请求会续期；令牌或会话过期后，重启实验工具领取新令牌（第 65 条）。调试端口和 VNC 端口都没有映射到宿主机。打开远程画面后，扫码、短信和验证码由作者手动完成；工具不破解验证，也不做闲鱼写操作。
+默认只把网页端口绑定到宿主机的 `127.0.0.1:8080`，浏览器打开 `http://127.0.0.1:8080`。首次初始化令牌只在容器日志里显示一次，30 分钟有效，建立管理员后失效；过期而尚未初始化时重启领取新令牌。正式会话使用 HttpOnly、SameSite=Lax；HTTPS 下加 Secure 和 `__Host-` 前缀，30 天不用过期，最长 90 天重新登录（第 40 条）。调试端口和 VNC 端口都没有映射到宿主机。
 
-运行间隔不是循环：默认交互模式等待用户操作，点击后只跑一次搜索及两三个详情。`--keyword`、`--details`、`--account` 可在 `compose.yaml` 的命令里修改。工具参数可以这样查看：
+实验工具需要明确选择 `experiment`，不与正式服务同时运行同一份实验数据：
 
 ```sh
-docker compose run --rm kakatta --help
+docker compose run --rm -p 127.0.0.1:8080:8080 kakatta experiment --data /data --listen :8080 --account 1 --keyword 相机 --details 3
+```
+
+实验工具的初始化令牌同样只显示一次且 30 分钟有效；实验会话使用 HttpOnly、SameSite=Strict，闲置 30 分钟过期（第 65 条）。打开远程画面后，扫码、短信和验证码由作者手动完成；工具不破解验证，也不做闲鱼写操作。
+
+实验运行间隔不是循环：默认交互模式等待用户操作，点击后只跑一次搜索及两三个详情。工具参数可以这样查看：
+
+```sh
+docker compose run --rm kakatta experiment --help
 ```
 
 `--webgl` 只接受 `off` 和 `llvmpipe`：默认 `off` 不追加渲染参数，`llvmpipe` 选择 Mesa 软件渲染。这只决定浏览器实际使用的渲染后端，不改页面读到的厂商、设备或能力。按 `EXPERIMENT.md` 对比两档后，再由作者的真实实验结果决定正式设置（第 66 条）。
@@ -33,13 +41,13 @@ docker compose run --rm kakatta --help
 本地假页面和程序跑在同一个容器里，因此可以断开容器外网：
 
 ```sh
-docker run --rm --network none --security-opt seccomp=unconfined kakatta:local --fixture --once --data /data --keyword 相机 --details 3 --account 1
+docker run --rm --network none --security-opt seccomp=unconfined kakatta:local experiment --fixture --once --data /data --keyword 相机 --details 3 --account 1
 ```
 
 `--once` 只允许和 `--fixture` 一起使用，跑完后退出；不能用它循环访问真实网站。需要看假页面的远程画面时，作者手动运行：
 
 ```sh
-docker compose run --rm -p 127.0.0.1:8080:8080 kakatta --fixture --data /data --listen :8080 --keyword 相机 --details 3 --account 1
+docker compose run --rm -p 127.0.0.1:8080:8080 kakatta experiment --fixture --data /data --listen :8080 --keyword 相机 --details 3 --account 1
 ```
 
 停止实验用 `Ctrl+C`。Go 程序先关闭浏览器，再回收虚拟屏幕和远程画面；容器里的 `tini` 负责回收孤儿进程。没有实验在跑时不常驻 Chrome。

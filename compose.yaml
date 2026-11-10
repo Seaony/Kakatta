@@ -13,4 +13,4 @@ services:
     security_opt:
       - seccomp=unconfined
     stop_grace_period: 30s
-    command: ["--data", "/data", "--listen", ":8080", "--account", "1", "--keyword", "相机", "--details", "3"]
+    command: ["--data", "/data", "--listen", ":8080"]
