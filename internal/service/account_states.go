@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/Seaony/Kakatta/internal/eventstore"
@@ -42,6 +44,20 @@ func accountDeadline(nowMS, units, unitMS int64) (int64, error) {
 
 func accountIsDenied(account Account, nowMS int64) bool {
 	return account.State == AccountDenied && account.CooldownUntil != nil && *account.CooldownUntil > nowMS
+}
+
+func accountPauseBlock(account Account, nowMS int64) (*RuntimeBlocked, error) {
+	if (account.State == AccountCooling || account.State == AccountDenied) && account.CooldownUntil == nil {
+		return nil, errors.New("账号暂停截止时间缺失")
+	}
+	if account.CooldownUntil == nil || *account.CooldownUntil <= nowMS {
+		return nil, nil
+	}
+	code := "run.account_cooling"
+	if account.State == AccountDenied {
+		code = "run.account_denied"
+	}
+	return runBlock(code, account.CooldownUntil), nil
 }
 
 func changeAccountState(account *Account, state AccountState, reason *locales.Message, nowMS int64) {
@@ -122,7 +138,7 @@ func applyAccountRiskTx(ctx context.Context, tx *sql.Tx, accountID int64, riskEr
 		if errors.Is(riskErr, web.ErrEnvBlocked) {
 			code = "accounts.environment_denied"
 		}
-		reason := accountMessage(code, map[string]any{"name": account.Name, "hours": hours, "count": hours})
+		reason := accountMessage(code, map[string]any{"name": account.Name, "hours": hours, "count": hours, "until": until, "environment": errors.Is(riskErr, web.ErrEnvBlocked)})
 		changeAccountState(&account, AccountDenied, &reason, nowMS)
 		if err := writeAccountStateTx(ctx, tx, account); err != nil {
 			return Account{}, err
@@ -134,6 +150,10 @@ func applyAccountRiskTx(ctx context.Context, tx *sql.Tx, accountID int64, riskEr
 			return Account{}, err
 		}
 	case errors.Is(riskErr, web.ErrLoginExpired):
+		previousTasks, err := boundAccountTaskIDsTx(ctx, tx, account.ID, false)
+		if err != nil {
+			return Account{}, err
+		}
 		account.VerifyURL = nil
 		reason := accountMessage("run.account_expired", nil)
 		changeAccountState(&account, AccountExpired, &reason, nowMS)
@@ -143,11 +163,34 @@ func applyAccountRiskTx(ctx context.Context, tx *sql.Tx, accountID int64, riskEr
 		if _, err := events.ResolveTx(ctx, tx, "account_verify", account.ID); err != nil {
 			return Account{}, err
 		}
-		reassigned, err := reassignAutomaticTasksTx(ctx, tx, account.ID, nowMS)
-		if err != nil {
+		if _, err := reassignAutomaticTasksTx(ctx, tx, account.ID, nowMS); err != nil {
 			return Account{}, err
 		}
-		message := accountMessage("accounts.login_expired", map[string]any{"name": account.Name, "count": len(reassigned)})
+		var reassigned int64
+		destinations := map[int64]string{}
+		for _, taskID := range previousTasks {
+			var id int64
+			var name string
+			err := tx.QueryRowContext(ctx, `SELECT a.id,a.name FROM tasks t JOIN accounts a ON a.id=t.account_id WHERE t.id=? AND a.id<>?`, taskID, account.ID).Scan(&id, &name)
+			if errors.Is(err, sql.ErrNoRows) {
+				continue
+			}
+			if err != nil {
+				return Account{}, err
+			}
+			reassigned++
+			destinations[id] = name
+		}
+		ids := make([]int64, 0, len(destinations))
+		for id := range destinations {
+			ids = append(ids, id)
+		}
+		sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+		names := make([]string, 0, len(ids))
+		for _, id := range ids {
+			names = append(names, destinations[id])
+		}
+		message := accountMessage("accounts.login_expired", map[string]any{"name": account.Name, "count": reassigned, "reassigned_to": strings.Join(names, "、")})
 		if _, err := events.RaiseTx(ctx, tx, "account_login", account.ID, message); err != nil {
 			return Account{}, err
 		}
@@ -243,24 +286,18 @@ func completeLoginTx(ctx context.Context, tx *sql.Tx, accountID int64, nickname,
 	if accountIsDenied(account, nowMS) {
 		return account, web.ErrDenied
 	}
-	finishOldCooldown(&account, nowMS)
-	account.VerifyURL = nil
-	if account.CooldownUntil != nil && *account.CooldownUntil > nowMS {
-		reason := accountMessage("run.account_cooling", nil)
-		changeAccountState(&account, AccountCooling, &reason, nowMS)
-	} else {
-		account.CooldownUntil, account.CooldownManualUsed = nil, false
-		changeAccountState(&account, AccountActive, nil, nowMS)
+	if pause, err := accountPauseBlock(account, nowMS); err != nil {
+		return account, err
+	} else if pause != nil {
+		return account, &ServiceError{Kind: ErrorConflict, Reason: pause.Reason, NextAllowedAt: pause.NextAllowedAt, Fields: []settings.Issue{}}
 	}
+	finishOldCooldown(&account, nowMS)
+	account.VerifyURL, account.CooldownUntil, account.CooldownManualUsed = nil, nil, false
+	changeAccountState(&account, AccountActive, nil, nowMS)
 	if err := writeAccountStateTx(ctx, tx, account); err != nil {
 		return Account{}, err
 	}
-	if nickname != nil {
-		account.Nickname = nickname
-	}
-	if avatarURL != nil {
-		account.AvatarURL = avatarURL
-	}
+	account.Nickname, account.AvatarURL = nickname, avatarURL
 	if _, err := tx.ExecContext(ctx, `UPDATE accounts SET nickname=?,avatar_url=? WHERE id=?`, account.Nickname, account.AvatarURL, account.ID); err != nil {
 		return Account{}, err
 	}
@@ -309,21 +346,19 @@ func advanceAccountStatesTx(ctx context.Context, tx *sql.Tx, nowMS int64) ([]int
 		kind := "account_deny"
 		state := AccountActive
 		var reason *locales.Message
-		loggedOut := false
+		loggedOut, err := accountLoggedOutTx(ctx, tx, account.ID)
+		if err != nil {
+			return nil, err
+		}
 		if account.State == AccountCooling {
 			ended := *account.CooldownUntil
 			account.LastCooldownEndAt = &ended
 			kind = "account_verify"
-		} else {
-			loggedOut, err = accountLoggedOutTx(ctx, tx, account.ID)
-			if err != nil {
-				return nil, err
-			}
-			if loggedOut {
-				state = AccountSignedOut
-				message := accountMessage("accounts.signed_out", nil)
-				reason = &message
-			}
+		}
+		if loggedOut {
+			state = AccountSignedOut
+			message := accountMessage("accounts.signed_out", nil)
+			reason = &message
 		}
 		account.CooldownUntil, account.VerifyURL, account.CooldownManualUsed = nil, nil, false
 		changeAccountState(&account, state, reason, nowMS)

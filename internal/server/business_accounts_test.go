@@ -115,8 +115,13 @@ func TestBusinessAccountLogoutKeepsQuotaAndProtection(t *testing.T) {
 	result := f.request(http.MethodPost, path+"/logout", "", true)
 	requireStatus(t, result, http.StatusOK)
 	value := decodeBody[service.AccountView](t, result)
-	if value.State != service.AccountSignedOut || value.Quota.HourlyUsed != 1 || value.Quota.DailySearchUsed != 1 || value.VerifyLevel != 3 || value.CooldownUntil == nil || *value.CooldownUntil != until {
+	if value.State != service.AccountCooling || value.Quota.HourlyUsed != 1 || value.Quota.DailySearchUsed != 1 || value.VerifyLevel != 3 || value.CooldownUntil == nil || *value.CooldownUntil != until {
 		t.Fatal("退出账号不能恢复额度或清掉旧保护")
+	}
+	login := f.request(http.MethodPost, path+"/login", "", true)
+	requireStatus(t, login, http.StatusConflict)
+	if errorCode(login) != "run.account_cooling" {
+		t.Fatal("退出后扫码没有按原冷却期限拦住")
 	}
 	var visits int
 	if err := f.store.DB().QueryRowContext(t.Context(), "SELECT COUNT(*) FROM quota_events WHERE account_id=?", account.ID).Scan(&visits); err != nil || visits != 1 {

@@ -177,8 +177,7 @@ func automaticReadyAt(start preflightResult) time.Time {
 				at = gap.UTC()
 			}
 		}
-		if until := start.Account.CooldownUntil; until != nil && *until > at.UnixMilli() &&
-			(start.Account.State == AccountCooling || start.Account.State == AccountDenied) {
+		if until := start.Account.CooldownUntil; until != nil && *until > at.UnixMilli() {
 			at = time.UnixMilli(*until).UTC()
 		}
 	}

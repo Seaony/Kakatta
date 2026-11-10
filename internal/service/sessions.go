@@ -109,7 +109,18 @@ func manualAccountBlockTx(ctx context.Context, tx *sql.Tx, account Account, kind
 	if pending {
 		return &RuntimeBlocked{Reason: locales.Message{Code: "accounts.cleanup_failed", Args: map[string]any{}}}, nil
 	}
-	return manualSessionBlock(account, kind, snapshot, now)
+	loggedOut, err := accountLoggedOutTx(ctx, tx, account.ID)
+	if err != nil {
+		return nil, err
+	}
+	blocked, err := manualSessionBlock(account, kind, snapshot, now)
+	if err != nil || blocked != nil {
+		return blocked, err
+	}
+	if loggedOut && kind == SessionVerification {
+		return nil, sessionError(ErrorConflict, "runtime.verification_not_pending")
+	}
+	return nil, nil
 }
 
 func (s *Service) tryStartSession(ctx context.Context, request startRequest) (bool, *RuntimeBlocked, error) {
@@ -561,14 +572,13 @@ func sessionError(kind ErrorKind, code string) error {
 func manualSessionBlock(account Account, kind SessionKind, snapshot settings.Snapshot, now time.Time) (*RuntimeBlocked, error) {
 	var reason *locales.Message
 	ready := now
-	if account.State == AccountDenied {
-		if account.CooldownUntil == nil {
-			return nil, errors.New("拒绝暂停没有结束时间")
-		}
-		if until := time.UnixMilli(*account.CooldownUntil); until.After(ready) {
-			ready = until
-			reason = &locales.Message{Code: "run.account_denied", Args: map[string]any{}}
-		}
+	pause, err := accountPauseBlock(account, now.UnixMilli())
+	if err != nil {
+		return nil, err
+	}
+	if pause != nil {
+		ready = time.UnixMilli(*pause.NextAllowedAt)
+		reason = &pause.Reason
 	}
 	if reason == nil && kind == SessionVerification && (account.State != AccountNeedsVerification || account.VerifyURL == nil || *account.VerifyURL == "") {
 		return nil, sessionError(ErrorConflict, "runtime.verification_not_pending")

@@ -60,6 +60,10 @@ func (s *Service) preflightTx(ctx context.Context, tx *sql.Tx, task Task, trigge
 		return result, storageFailure(err)
 	}
 	account := result.Account
+	loggedOut, err := accountLoggedOutTx(ctx, tx, account.ID)
+	if err != nil {
+		return result, storageFailure(err)
+	}
 	if account.LastRunEndedAt != nil {
 		if account.NextGapSeconds == nil {
 			return result, storageFailure(errors.New("账号间隔记录缺失"))
@@ -72,23 +76,24 @@ func (s *Service) preflightTx(ctx context.Context, tx *sql.Tx, task Task, trigge
 			mergeRunBlock(&result.Blocked, runBlock("run.account_gap", &until))
 		}
 	}
+	pause, err := accountPauseBlock(account, now.UnixMilli())
+	if err != nil {
+		return result, storageFailure(err)
+	}
+	manualOpportunity := trigger == TriggerManual && account.State == AccountCooling && !account.CooldownManualUsed && !loggedOut
+	if pause != nil && !manualOpportunity {
+		mergeRunBlock(&result.Blocked, pause)
+	}
+	if loggedOut && !accountIsDenied(account, now.UnixMilli()) {
+		setRunUserReason(&result, trigger, "run.account_signed_out")
+		return result, nil
+	}
 	switch account.State {
 	case AccountSignedOut, AccountExpired, AccountNeedsVerification:
 		code := map[AccountState]string{AccountSignedOut: "run.account_signed_out", AccountExpired: "run.account_expired", AccountNeedsVerification: "run.account_needs_verification"}[account.State]
 		setRunUserReason(&result, trigger, code)
 		return result, nil
-	case AccountCooling, AccountDenied:
-		if account.CooldownUntil == nil {
-			return result, storageFailure(errors.New("账号暂停截止时间缺失"))
-		}
-		if *account.CooldownUntil > now.UnixMilli() && (account.State == AccountDenied || trigger != TriggerManual || account.CooldownManualUsed) {
-			code := "run.account_cooling"
-			if account.State == AccountDenied {
-				code = "run.account_denied"
-			}
-			mergeRunBlock(&result.Blocked, runBlock(code, account.CooldownUntil))
-		}
-	case AccountActive:
+	case AccountCooling, AccountDenied, AccountActive:
 	default:
 		return result, storageFailure(errors.New("账号状态无效"))
 	}

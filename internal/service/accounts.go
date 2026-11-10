@@ -39,8 +39,8 @@ func scanAccount(row accountScanner) (Account, error) {
 		return Account{}, err
 	}
 	if reason != nil {
-		account.StateReason = new(locales.Message)
-		if err := json.Unmarshal([]byte(*reason), account.StateReason); err != nil {
+		account.StateReason, err = logMessage(sql.NullString{String: *reason, Valid: true})
+		if err != nil {
 			return Account{}, err
 		}
 	}
@@ -604,48 +604,17 @@ func (s *Service) LogoutAccount(ctx context.Context, id int64) (AccountView, err
 	if _, err := tx.ExecContext(ctx, `INSERT INTO meta(key,value) VALUES(?,'1') ON CONFLICT(key) DO UPDATE SET value='1'`, accountCleanupPrefix+strconv.FormatInt(id, 10)); err != nil {
 		return AccountView{}, storageFailure(err)
 	}
-	if account.State == AccountDenied && account.CooldownUntil == nil {
-		return AccountView{}, storageFailure(errors.New("拒绝暂停没有结束时间"))
+	_, eventsChanged, err := signOutAccountTx(ctx, tx, id, now.UnixMilli())
+	if err != nil {
+		return AccountView{}, storageFailure(err)
 	}
-	previousState := account.State
-	// 退出能清掉登录资料，不能把尚未结束的拒绝暂停改成可扫码状态。
-	if account.State == AccountDenied && *account.CooldownUntil > now.UnixMilli() {
-		if err := setAccountLoggedOutTx(ctx, tx, id); err != nil {
-			return AccountView{}, storageFailure(err)
-		}
-		if _, err := tx.ExecContext(ctx, `UPDATE accounts SET verify_url=NULL WHERE id=?`, id); err != nil {
-			return AccountView{}, storageFailure(err)
-		}
-	} else {
-		if account.State == AccountDenied {
-			if err := clearAccountLoggedOutTx(ctx, tx, id); err != nil {
-				return AccountView{}, storageFailure(err)
-			}
-		}
-		reason := locales.Message{Code: "accounts.signed_out"}
-		raw, _ := json.Marshal(reason)
-		if _, err := tx.ExecContext(ctx, `UPDATE accounts SET state='signed_out',state_reason=?,state_changed_at=?,verify_url=NULL WHERE id=?`, string(raw), now.UnixMilli(), id); err != nil {
-			return AccountView{}, storageFailure(err)
-		}
-		account.State, account.StateReason, account.StateChangedAt = AccountSignedOut, &reason, new(now.UnixMilli())
+	account, err = loadAccountTx(ctx, tx, id)
+	if err != nil {
+		return AccountView{}, storageFailure(err)
 	}
 	changed, err := reassignAutomaticTasksTx(ctx, tx, id, now.UnixMilli())
 	if err != nil {
 		return AccountView{}, storageFailure(err)
-	}
-	account.VerifyURL = nil
-	eventsChanged := false
-	for _, event := range []struct {
-		previous AccountState
-		kind     string
-	}{{AccountNeedsVerification, "account_verify"}, {AccountDenied, "account_deny"}} {
-		if previousState == event.previous && account.State != event.previous {
-			resolved, err := accountEvents(now.UnixMilli()).ResolveTx(ctx, tx, event.kind, id)
-			if err != nil {
-				return AccountView{}, storageFailure(err)
-			}
-			eventsChanged = eventsChanged || resolved
-		}
 	}
 	if err := appsettings.SaveClock(ctx, tx, clock); err != nil {
 		return AccountView{}, storageFailure(err)

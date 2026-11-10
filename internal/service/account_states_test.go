@@ -206,21 +206,25 @@ func TestAccountExpiryPreservesCooldownAndReassignsOnlyAutomaticTasks(t *testing
 	nickname, avatar := "新的昵称", "http://fixture.invalid/avatar.jpg"
 	stateTx(t, db, func(ctx context.Context, tx *sql.Tx) error {
 		account, err := completeLoginTx(ctx, tx, id, &nickname, &avatar, now+1000)
-		if err == nil && (account.State != AccountCooling || *account.CooldownUntil != until || !account.CooldownManualUsed || account.VerifyLevel != 3 || *account.Nickname != nickname || *account.AvatarURL != avatar) {
-			t.Fatalf("重新登录提前恢复额度或丢昵称：%+v", account)
+		var problem *ServiceError
+		if !errors.As(err, &problem) || problem.Reason.Code != "run.account_cooling" || account.State != AccountExpired || *account.CooldownUntil != until || !account.CooldownManualUsed || account.VerifyLevel != 3 {
+			t.Fatalf("重新登录绕过原冷却：%+v %v", account, err)
 		}
-		return err
+		return nil
 	})
-	if stateEventCount(t, db, "account_login", true) != 0 {
-		t.Fatal("重新登录没有解决登录失效事件")
+	if stateEventCount(t, db, "account_login", true) != 1 {
+		t.Fatal("被冷却拦住的登录提前解决了失效事件")
 	}
 	stateTx(t, db, func(ctx context.Context, tx *sql.Tx) error {
-		account, err := completeLoginTx(ctx, tx, id, nil, nil, until+5000)
-		if err == nil && (account.State != AccountActive || account.CooldownUntil != nil || account.LastCooldownEndAt == nil || *account.LastCooldownEndAt != until || account.CooldownManualUsed) {
+		account, err := completeLoginTx(ctx, tx, id, &nickname, &avatar, until+5000)
+		if err == nil && (account.State != AccountActive || account.CooldownUntil != nil || account.LastCooldownEndAt == nil || *account.LastCooldownEndAt != until || account.CooldownManualUsed || account.Nickname == nil || *account.Nickname != nickname || account.AvatarURL == nil || *account.AvatarURL != avatar) {
 			t.Fatalf("旧冷却到期没有按原截止记结束：%+v", account)
 		}
 		return err
 	})
+	if stateEventCount(t, db, "account_login", true) != 0 {
+		t.Fatal("实际登录成功后仍未解决失效事件")
+	}
 }
 
 func TestAccountDeniedReplacesVerificationAndRejectsLateResults(t *testing.T) {

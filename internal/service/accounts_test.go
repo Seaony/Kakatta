@@ -264,7 +264,7 @@ func TestAccountLogoutPreservesRiskGapQuotaAndMovesOnlyAutomaticTasks(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if view.State != AccountSignedOut || view.CooldownUntil == nil || *view.CooldownUntil != 9000000000000 || view.VerifyLevel != 5 || view.LastCooldownEndAt == nil || *view.LastCooldownEndAt != 123 || !view.CooldownManualUsed || view.LastRunEndedAt == nil || *view.LastRunEndedAt != 456 || view.NextGapSeconds == nil || *view.NextGapSeconds != 240 || view.Quota.DailySearchUsed != 1 {
+	if view.State != AccountCooling || view.CooldownUntil == nil || *view.CooldownUntil != 9000000000000 || view.VerifyLevel != 5 || view.LastCooldownEndAt == nil || *view.LastCooldownEndAt != 123 || !view.CooldownManualUsed || view.LastRunEndedAt == nil || *view.LastRunEndedAt != 456 || view.NextGapSeconds == nil || *view.NextGapSeconds != 240 || view.Quota.DailySearchUsed != 1 {
 		t.Fatalf("退出凭空清了保护：%+v", view)
 	}
 	if _, err := os.Stat(profile); !os.IsNotExist(err) {

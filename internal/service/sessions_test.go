@@ -597,8 +597,8 @@ func TestManualSessionRetainsProtectionAndBypassesOnlyQuota(t *testing.T) {
 	now := time.Date(2026, 11, 11, 8, 0, 0, 0, time.UTC)
 	cooldown := now.Add(24 * time.Hour).UnixMilli()
 	account := Account{ID: 1, State: AccountCooling, CooldownUntil: &cooldown, CooldownManualUsed: true}
-	if block, err := manualSessionBlock(account, SessionLogin, defaults, now); err != nil || block != nil {
-		t.Fatalf("登录不应消耗或清除旧冷却：%+v %v", block, err)
+	if block, err := manualSessionBlock(account, SessionLogin, defaults, now); err != nil || block == nil || block.Reason.Code != "run.account_cooling" || block.NextAllowedAt == nil || *block.NextAllowedAt != cooldown {
+		t.Fatalf("登录绕过未结束的冷却：%+v %v", block, err)
 	}
 	account.State = AccountDenied
 	block, err := manualSessionBlock(account, SessionLogin, defaults, now)
