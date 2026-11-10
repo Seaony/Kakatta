@@ -13,12 +13,15 @@ import (
 //go:embed migrations/001_initial.sql
 var initialSchema string
 
+//go:embed migrations/002_business_runtime.sql
+var businessSchema string
+
 type migration struct {
 	version int
 	sql     string
 }
 
-var migrations = []migration{{version: 1, sql: initialSchema}}
+var migrations = []migration{{version: 1, sql: initialSchema}, {version: 2, sql: businessSchema}}
 
 const migrationTable = `CREATE TABLE schema_migrations (
  version INTEGER NOT NULL PRIMARY KEY CHECK (version > 0),

@@ -53,6 +53,7 @@ func TestAutoIDsSurviveDeletionAndReopen(t *testing.T) {
 		{"run_records", "", `INSERT INTO run_records(task_name,trigger,outcome) VALUES('任务','auto','success')`},
 		{"system_events", "", `INSERT INTO system_events(kind,subject_id) VALUES('account_verify',1)`},
 		{"market_insights", "", `INSERT INTO market_insights(generated_at) VALUES(1)`},
+		{"notification_intents", "", `INSERT INTO notification_intents(finding_id,task_id,kind,state,created_at,updated_at) VALUES(1,1,'recommended','sent',1,1)`},
 	}
 	for _, test := range cases {
 		t.Run(test.table, func(t *testing.T) {
@@ -165,7 +166,7 @@ func TestOnlyAutomaticIDsHaveSequences(t *testing.T) {
 	if err := rows.Err(); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"auth_tokens", "proxies", "accounts", "quota_events", "tasks", "channels", "price_points", "findings", "ai_providers", "ai_calls", "deliveries", "run_records", "system_events", "market_insights"}
+	want := []string{"auth_tokens", "proxies", "accounts", "quota_events", "tasks", "channels", "price_points", "findings", "ai_providers", "ai_calls", "deliveries", "run_records", "system_events", "market_insights", "notification_intents"}
 	sort.Strings(want)
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("自动编号序列不一致：admin、版本号和自然主键不应建序列：got %v, want %v", got, want)

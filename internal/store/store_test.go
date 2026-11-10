@@ -135,9 +135,9 @@ func TestOpenRejectsUnknownFutureMissingAndCorruptSchema(t *testing.T) {
 				case "unknown":
 					execute(t, s.DB(), "DROP TABLE schema_migrations")
 				case "future":
-					execute(t, s.DB(), "INSERT INTO schema_migrations VALUES (2, 1)")
+					execute(t, s.DB(), "INSERT INTO schema_migrations VALUES (?, 1)", len(migrations)+1)
 				case "gap":
-					execute(t, s.DB(), "UPDATE schema_migrations SET version=3")
+					execute(t, s.DB(), "DELETE FROM schema_migrations WHERE version=1")
 				case "empty_versions":
 					execute(t, s.DB(), "DELETE FROM schema_migrations")
 				case "missing_table":
@@ -153,9 +153,6 @@ func TestOpenRejectsUnknownFutureMissingAndCorruptSchema(t *testing.T) {
 				s.Close()
 			}
 			steps := migrations
-			if damage == "gap" {
-				steps = append(append([]migration(nil), migrations...), migration{2, "SELECT 1"}, migration{3, "SELECT 1"})
-			}
 			if s, err := open(context.Background(), path, steps); err == nil {
 				s.Close()
 				t.Fatal("损坏或不支持的数据库被接受")
@@ -305,9 +302,9 @@ func TestMigrationBacksUpOldVersionAndRollsBackWholeUpgrade(t *testing.T) {
 			s := testStore(t)
 			execute(t, s.DB(), "INSERT INTO meta(key,value) VALUES('state','before')")
 			s.Close()
-			steps := append(append([]migration(nil), migrations...), migration{2, "CREATE TABLE added(id INTEGER PRIMARY KEY); UPDATE meta SET value='after' WHERE key='state'"})
+			steps := append(append([]migration(nil), migrations...), migration{len(migrations) + 1, "CREATE TABLE added(id INTEGER PRIMARY KEY); UPDATE meta SET value='after' WHERE key='state'"})
 			if fail {
-				steps = append(steps, migration{3, "THIS IS NOT SQL"})
+				steps = append(steps, migration{len(migrations) + 2, "THIS IS NOT SQL"})
 			}
 			upgraded, err := open(context.Background(), s.path, steps)
 			if fail && err == nil || !fail && err != nil {
@@ -321,9 +318,9 @@ func TestMigrationBacksUpOldVersionAndRollsBackWholeUpgrade(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer db.Close()
-			version, value, tables := 2, "after", 1
+			version, value, tables := len(migrations)+1, "after", 1
 			if fail {
-				version, value, tables = 1, "before", 0
+				version, value, tables = len(migrations), "before", 0
 			}
 			if got := scalar[int](t, db, "SELECT max(version) FROM schema_migrations"); got != version {
 				t.Fatal("失败后推进了迁移版本", got)
@@ -346,7 +343,7 @@ func TestMigrationBacksUpOldVersionAndRollsBackWholeUpgrade(t *testing.T) {
 			if got := scalar[string](t, copy.DB(), "SELECT value FROM meta WHERE key='state'"); got != "before" {
 				t.Fatal("快照不是升级前数据", got)
 			}
-			if got := scalar[int](t, copy.DB(), "SELECT max(version) FROM schema_migrations"); got != 1 {
+			if got := scalar[int](t, copy.DB(), "SELECT max(version) FROM schema_migrations"); got != len(migrations) {
 				t.Fatal("快照不是升级前版本", got)
 			}
 		})
@@ -360,7 +357,7 @@ func TestUpgradeChecksNewRequiredColumnAfterMigration(t *testing.T) {
 	previous := requiredColumns["admin"]
 	requiredColumns["admin"] = previous + " last_login_at"
 	t.Cleanup(func() { requiredColumns["admin"] = previous })
-	missingColumn := append(append([]migration(nil), migrations...), migration{2, "SELECT 1"})
+	missingColumn := append(append([]migration(nil), migrations...), migration{len(migrations) + 1, "SELECT 1"})
 	if invalid, err := open(context.Background(), s.path, missingColumn); err == nil {
 		invalid.Close()
 		t.Fatal("迁移未补齐最新必需列时不能提交")
@@ -370,19 +367,19 @@ func TestUpgradeChecksNewRequiredColumnAfterMigration(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { unchanged.Close() })
-	if got := scalar[int](t, unchanged, "SELECT max(version) FROM schema_migrations"); got != 1 {
+	if got := scalar[int](t, unchanged, "SELECT max(version) FROM schema_migrations"); got != len(migrations) {
 		t.Fatalf("结构检查失败仍推进了版本：%d", got)
 	}
 	unchanged.Close()
-	steps := append(append([]migration(nil), migrations...), migration{2, "ALTER TABLE admin ADD COLUMN last_login_at INTEGER"})
+	steps := append(append([]migration(nil), migrations...), migration{len(migrations) + 1, "ALTER TABLE admin ADD COLUMN last_login_at INTEGER"})
 	upgraded, err := open(context.Background(), s.path, steps)
 	if err != nil {
 		t.Fatalf("旧库应先补齐新列，再校验最新结构：%v", err)
 	}
 	t.Cleanup(func() { upgraded.Close() })
-	if got := scalar[int](t, upgraded.DB(), "SELECT max(version) FROM schema_migrations"); got != 2 {
+	if got := scalar[int](t, upgraded.DB(), "SELECT max(version) FROM schema_migrations"); got != len(migrations)+1 {
 		upgraded.Close()
-		t.Fatalf("迁移未到v2：%d", got)
+		t.Fatalf("迁移未到新版本：%d", got)
 	}
 	if got := scalar[string](t, upgraded.DB(), "SELECT username FROM admin WHERE id=1"); got != "owner" {
 		upgraded.Close()
@@ -436,7 +433,7 @@ func TestFailedBackupPreventsUpgradeAndNeverPrunesOldFiles(t *testing.T) {
 	if err := os.WriteFile(dir, []byte("not a directory"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	steps := append(append([]migration(nil), migrations...), migration{2, "CREATE TABLE must_not_exist(id INTEGER)"})
+	steps := append(append([]migration(nil), migrations...), migration{len(migrations) + 1, "CREATE TABLE must_not_exist(id INTEGER)"})
 	if upgraded, err := open(context.Background(), s.path, steps); err == nil {
 		upgraded.Close()
 		t.Fatal("备份失败仍执行了升级")
@@ -446,7 +443,7 @@ func TestFailedBackupPreventsUpgradeAndNeverPrunesOldFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	if version := scalar[int](t, db, "SELECT max(version) FROM schema_migrations"); version != 1 {
+	if version := scalar[int](t, db, "SELECT max(version) FROM schema_migrations"); version != len(migrations) {
 		t.Fatal("备份失败后版本发生变化")
 	}
 }
@@ -464,7 +461,7 @@ func TestMigrationBackupRetentionOnlyRemovesOwnedFiles(t *testing.T) {
 		}
 	}
 	steps := append([]migration(nil), migrations...)
-	for version := 2; version <= 6; version++ {
+	for version := len(migrations) + 1; version <= len(migrations)+5; version++ {
 		steps = append(steps, migration{version, fmt.Sprintf("ALTER TABLE meta ADD COLUMN test_%d INTEGER", version)})
 		upgraded, err := open(context.Background(), s.path, steps)
 		if err != nil {
@@ -490,7 +487,7 @@ func TestMigrationBackupRetentionOnlyRemovesOwnedFiles(t *testing.T) {
 		versions[scalar[int](t, db, "SELECT max(version) FROM schema_migrations")] = true
 		db.Close()
 	}
-	if !versions[3] || !versions[4] || !versions[5] {
+	if !versions[len(migrations)+2] || !versions[len(migrations)+3] || !versions[len(migrations)+4] {
 		t.Fatal("没有保留最近三份版本", versions)
 	}
 }

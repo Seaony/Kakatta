@@ -69,7 +69,8 @@ var schemaRequiredColumns = map[string]string{
 		seller_id:TEXT:np1 nick:TEXT avatar_url:TEXT introduction:TEXT seller_credit:TEXT buyer_credit:TEXT
 		seller_credit_level:TEXT buyer_credit_level:TEXT item_count:INTEGER rate_count:INTEGER
 		on_sale_count:INTEGER sold_count:INTEGER seller_good_rate:REAL buyer_good_rate:REAL
-		recent_items_json:TEXT recent_rates_json:TEXT fetched_at:INTEGER:n`,
+		recent_items_json:TEXT recent_rates_json:TEXT fetched_at:INTEGER:n
+		seller_good_count:INTEGER seller_rate_count:INTEGER buyer_good_count:INTEGER buyer_rate_count:INTEGER`,
 	"blocked_sellers": `seller_id:TEXT:np1 nick:TEXT created_at:INTEGER`,
 	"seen_items":      `task_id:INTEGER:np1 item_id:TEXT:np2 first_seen_at:INTEGER`,
 	"findings": `
@@ -80,8 +81,8 @@ var schemaRequiredColumns = map[string]string{
 		summary:TEXT seller_type:TEXT title_screen_reason:TEXT matched_keywords_json:TEXT
 		analysis_model:TEXT analysis_provider_id:INTEGER analyzed_at:INTEGER attempts:INTEGER:n
 		retryable:INTEGER:n reanalyze_requested_at:INTEGER is_read:INTEGER:n notify_kind:TEXT
-		notify_skip_reason:TEXT notified_at:INTEGER notify_failures:INTEGER:n recommended_price:INTEGER
-		last_drop_notified_price:INTEGER drop_notified_at:INTEGER`,
+		notify_skip_reason:TEXT notified_at:INTEGER recommended_price:INTEGER
+		last_drop_notified_price:INTEGER drop_notified_at:INTEGER reanalysis_origin:INTEGER:n processing_revision:INTEGER:n`,
 	"ai_providers": `
 		id:INTEGER:p1 uuid:TEXT:n name:TEXT:n preset:TEXT base_url:TEXT:n api_key_enc:BLOB
 		vision_model:TEXT:n text_model:TEXT enabled:INTEGER:n sort_index:INTEGER:n error_state:TEXT error_at:INTEGER`,
@@ -95,6 +96,11 @@ var schemaRequiredColumns = map[string]string{
 	"deliveries": `
 		id:INTEGER:p1 at:INTEGER channel_id:INTEGER task_id:INTEGER kind:TEXT item_count:INTEGER ok:INTEGER error:TEXT`,
 	"delivery_items": `delivery_id:INTEGER:np1 finding_id:INTEGER:np2`,
+	"notification_intents": `id:INTEGER:p1 finding_id:INTEGER:n task_id:INTEGER:n kind:TEXT:n state:TEXT:n
+		created_at:INTEGER:n updated_at:INTEGER:n price:INTEGER previous_price:INTEGER failure_count:INTEGER:n
+		first_failed_at:INTEGER sent_at:INTEGER reason:TEXT`,
+	"delivery_intents": `delivery_id:INTEGER:np1 intent_id:INTEGER:np2`,
+	"run_skip_events":  `run_id:INTEGER:np1 seq:INTEGER:np2 at:INTEGER:n`,
 	"run_records": `
 		id:INTEGER:p1 task_id:INTEGER task_name:TEXT:n trigger:TEXT:n account_id:INTEGER account_name:TEXT
 		proxy_name:TEXT started_at:INTEGER ended_at:INTEGER outcome:TEXT:n failure_kind:TEXT message:TEXT
@@ -115,13 +121,14 @@ var schemaRequiredDefaults = map[string]map[string]string{
 		"match_keywords_json": "'[]'", "exclude_keywords_json": "'[]'", "analyze_on_first_run": "1",
 		"notify_price_drop": "1", "search_generation": "1", "baseline_pending": "1", "consecutive_failures": "0",
 	},
-	"channels":        {"enabled": "1"},
-	"listings":        {"is_favorite": "0", "is_dismissed": "0"},
-	"task_item_specs": {"excluded": "0"},
-	"findings":        {"attempts": "0", "retryable": "0", "notify_failures": "0"},
-	"ai_providers":    {"enabled": "1"},
-	"ai_compat":       {"json_mode": "'schema'", "send_temperature": "1", "max_tokens_param": "'max_tokens'"},
-	"run_records":     {"repeat_count": "1"},
+	"channels":             {"enabled": "1"},
+	"listings":             {"is_favorite": "0", "is_dismissed": "0"},
+	"task_item_specs":      {"excluded": "0"},
+	"findings":             {"attempts": "0", "retryable": "0", "reanalysis_origin": "0", "processing_revision": "1"},
+	"ai_providers":         {"enabled": "1"},
+	"ai_compat":            {"json_mode": "'schema'", "send_temperature": "1", "max_tokens_param": "'max_tokens'"},
+	"run_records":          {"repeat_count": "1"},
+	"notification_intents": {"failure_count": "0"},
 }
 
 func schemaOpenDB(t *testing.T) *sql.DB {
@@ -211,20 +218,22 @@ func TestInitialSchemaColumns(t *testing.T) {
 func TestInitialSchemaForeignKeys(t *testing.T) {
 	db := schemaOpenDB(t)
 	want := map[string][]string{
-		"accounts":        {"proxy_id>proxies.id:NO ACTION"},
-		"quota_events":    {"account_id>accounts.id:CASCADE"},
-		"tasks":           {"account_id>accounts.id:SET NULL"},
-		"task_channels":   {"task_id>tasks.id:CASCADE", "channel_id>channels.id:CASCADE"},
-		"price_points":    {"item_id>listings.item_id:CASCADE"},
-		"task_sightings":  {"task_id>tasks.id:CASCADE"},
-		"task_item_specs": {"task_id>tasks.id:CASCADE"},
-		"seen_items":      {"task_id>tasks.id:CASCADE"},
-		"findings":        {"task_id>tasks.id:CASCADE", "item_id>listings.item_id:NO ACTION"},
-		"ai_compat":       {"provider_id>ai_providers.id:CASCADE"},
-		"delivery_items":  {"delivery_id>deliveries.id:CASCADE"},
-		"run_records":     {"task_id>tasks.id:SET NULL"},
-		"run_steps":       {"run_id>run_records.id:CASCADE"},
-		"market_insights": {"task_id>tasks.id:CASCADE"},
+		"accounts":         {"proxy_id>proxies.id:NO ACTION"},
+		"quota_events":     {"account_id>accounts.id:CASCADE"},
+		"tasks":            {"account_id>accounts.id:SET NULL"},
+		"task_channels":    {"task_id>tasks.id:CASCADE", "channel_id>channels.id:CASCADE"},
+		"price_points":     {"item_id>listings.item_id:CASCADE"},
+		"task_sightings":   {"task_id>tasks.id:CASCADE"},
+		"task_item_specs":  {"task_id>tasks.id:CASCADE"},
+		"seen_items":       {"task_id>tasks.id:CASCADE"},
+		"findings":         {"task_id>tasks.id:CASCADE", "item_id>listings.item_id:NO ACTION"},
+		"ai_compat":        {"provider_id>ai_providers.id:CASCADE"},
+		"delivery_items":   {"delivery_id>deliveries.id:CASCADE"},
+		"delivery_intents": {"delivery_id>deliveries.id:CASCADE", "intent_id>notification_intents.id:CASCADE"},
+		"run_skip_events":  {"run_id>run_records.id:CASCADE"},
+		"run_records":      {"task_id>tasks.id:SET NULL"},
+		"run_steps":        {"run_id>run_records.id:CASCADE"},
+		"market_insights":  {"task_id>tasks.id:CASCADE"},
 	}
 	for table := range schemaRequiredColumns {
 		t.Run(table, func(t *testing.T) {
@@ -277,16 +286,19 @@ func TestInitialSchemaIndexes(t *testing.T) {
 		"seen_items":      {"task_id,item_id|1|0"},
 		"findings": {"task_id,item_id|1|0", "task_id,found_at|0|0", "task_id,decision|0|0", "task_id,score|0|0",
 			"is_read|0|0", "item_id|0|0"},
-		"ai_providers":    {"uuid|1|0"},
-		"ai_compat":       {"provider_id,model|1|0"},
-		"ai_calls":        {"at|0|0"},
-		"deliveries":      {"at|0|0", "channel_id,at|0|0"},
-		"delivery_items":  {"delivery_id,finding_id|1|0", "finding_id|0|0"},
-		"run_records":     {"started_at|0|0", "task_id,started_at|0|0"},
-		"run_steps":       {"run_id,seq|1|0"},
-		"system_events":   {"kind,subject_id|1|1"},
-		"market_insights": {"task_id,generated_at|0|0"},
-		"meta":            {"key|1|0"},
+		"ai_providers":         {"uuid|1|0"},
+		"ai_compat":            {"provider_id,model|1|0"},
+		"ai_calls":             {"at|0|0"},
+		"deliveries":           {"at|0|0", "channel_id,at|0|0"},
+		"delivery_items":       {"delivery_id,finding_id|1|0", "finding_id|0|0"},
+		"notification_intents": {"finding_id|1|1", "state,created_at|0|0", "task_id,state|0|0", "finding_id,created_at|0|0", "sent_at|0|0"},
+		"delivery_intents":     {"delivery_id,intent_id|1|0", "intent_id|0|0"},
+		"run_skip_events":      {"run_id,seq|1|0", "at|0|0"},
+		"run_records":          {"started_at|0|0", "task_id,started_at|0|0"},
+		"run_steps":            {"run_id,seq|1|0"},
+		"system_events":        {"kind,subject_id|1|1"},
+		"market_insights":      {"task_id,generated_at|0|0"},
+		"meta":                 {"key|1|0"},
 	}
 	for table := range schemaRequiredColumns {
 		t.Run(table, func(t *testing.T) {
@@ -367,6 +379,9 @@ func schemaSeed(t *testing.T, db *sql.DB) {
 		`INSERT INTO delivery_items(delivery_id,finding_id) VALUES(1,1)`,
 		`INSERT INTO run_records(id,task_id,task_name,trigger,account_id,outcome) VALUES(1,1,'任务','auto',1,'success')`,
 		`INSERT INTO run_steps(run_id,seq,status) VALUES(1,1,'ok')`,
+		`INSERT INTO run_skip_events(run_id,seq,at) VALUES(1,1,1)`,
+		`INSERT INTO notification_intents(id,finding_id,task_id,kind,state,created_at,updated_at) VALUES(1,1,1,'recommended','pending',1,1)`,
+		`INSERT INTO delivery_intents(delivery_id,intent_id) VALUES(1,1)`,
 		`INSERT INTO system_events(id,kind,subject_id) VALUES(1,'account_verify',1)`,
 		`INSERT INTO market_insights(id,task_id,provider_id) VALUES(1,1,1)`,
 		`INSERT INTO meta(key,value) VALUES('clock_high_water','1')`,
@@ -434,6 +449,8 @@ func TestInitialSchemaEnums(t *testing.T) {
 		"run_records.failure_kind":   "risk_verify risk_deny risk_env login network page timeout quota config cancelled restart",
 		"run_steps.status":           "ok warn fail",
 		"system_events.kind":         "account_verify account_login account_deny ai_error ai_budget task_failure_pause xianyu_layout login_failures",
+		"notification_intents.kind":  "recommended new price_drop price_upgrade",
+		"notification_intents.state": "pending sent abandoned cancelled",
 	}
 	for field, allowed := range values {
 		t.Run(field, func(t *testing.T) {
@@ -460,7 +477,7 @@ func TestInitialSchemaBooleans(t *testing.T) {
 		"channels.enabled": false, "channels.last_test_ok": true,
 		"listings.is_favorite": false, "listings.is_dismissed": false,
 		"task_item_specs.brand_new": true, "task_item_specs.excluded": false,
-		"findings.is_baseline": false, "findings.retryable": false, "findings.is_read": false,
+		"findings.is_baseline": false, "findings.retryable": false, "findings.is_read": false, "findings.reanalysis_origin": false,
 		"ai_providers.enabled": false, "ai_compat.send_temperature": false,
 		"ai_calls.ok": true, "deliveries.ok": true,
 	}
