@@ -98,6 +98,11 @@ func (s *Service) finishRun(ctx context.Context, run *runExecution, stopCause er
 	}
 	endedAt := now.UnixMilli()
 	record.EndedAt = &endedAt
+	recommended, err := countRunRecommendationsTx(ctx, tx, run)
+	if err != nil {
+		return errors.Join(storageFailure(err), notifyErr)
+	}
+	record.RecommendedCount = &recommended
 	eventIDs := []int64{}
 	eventsChanged := false
 	if !changed {
@@ -133,7 +138,7 @@ func (s *Service) finishRun(ctx context.Context, run *runExecution, stopCause er
 	if err := tx.Commit(); err != nil {
 		return errors.Join(storageFailure(err), notifyErr)
 	}
-	run.Record = record
+	run.RecommendedCount, run.Record = recommended, record
 	s.wakeScheduler()
 	emitErr := s.emit("run.changed", record)
 	if !changed {
@@ -163,6 +168,35 @@ func runAlreadyEndedTx(ctx context.Context, tx *sql.Tx, id int64) (bool, error) 
 	var endedAt *int64
 	err := tx.QueryRowContext(ctx, `SELECT ended_at FROM run_records WHERE id=?`, id).Scan(&endedAt)
 	return endedAt != nil, err
+}
+
+func countRunRecommendationsTx(ctx context.Context, tx *sql.Tx, run *runExecution) (int64, error) {
+	concluded := make(map[int64]bool, len(run.FirstConclusionIDs))
+	for _, id := range run.FirstConclusionIDs {
+		concluded[id] = true
+	}
+	// 每项保存本次处理的发现编号和工作版本，不能借后来重新分析的结果。
+	works := make([][2]int64, 0, len(run.P))
+	for _, work := range run.P {
+		if work.RunRef == run.Ref && concluded[work.FindingID] {
+			works = append(works, [2]int64{work.FindingID, work.ProcessingRevision})
+		}
+	}
+	if len(works) == 0 {
+		return 0, nil
+	}
+	raw, err := json.Marshal(works)
+	if err != nil {
+		return 0, err
+	}
+	var count int64
+	err = tx.QueryRowContext(ctx, `SELECT COUNT(DISTINCT f.id)`+findingFromSQL+`
+		JOIN json_each(?) work ON f.id=json_extract(work.value,'$[0]')
+		WHERE f.task_id=? AND f.search_generation=? AND f.processing_revision=json_extract(work.value,'$[1]')
+		AND f.stage='done' AND (`+findingVisibleSQL+`) AND (`+findingRecommendationBudgetSQL+`)
+		AND (f.decision='matched' OR (f.decision='scored' AND f.grade IS NOT 'avoid'
+		AND (f.score>=80 OR (f.score IS NULL AND f.grade IS NULL))))`, string(raw), run.Ref.TaskID, run.Ref.SearchGeneration).Scan(&count)
+	return count, err
 }
 
 func finishRecord(run *runExecution, cause error) RunRecord {

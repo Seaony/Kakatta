@@ -472,7 +472,8 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 | repeat_count INTEGER NOT NULL DEFAULT 1 | 同一个任务因同一个原因连续跳过时，只保留一条记录，这里累计次数，`ended_at` 更新为最近一次（4.1） |
 | page_count、scanned_count、new_count | 翻了几页、搜到几件、其中几件是新的 |
 | layer1_rejected、layer2_count、layer2_rejected、detail_count、seller_page_count | 分层的数量 |
-| analyzed_count、recommended_count、notified_count | |
+| analyzed_count、notified_count | |
+| recommended_count | 按本次实际得出结论的发现去重，含本次完成的队列重新分析；按第 1 节的当前推荐资格判断，不受推送档位、基线、渠道或是否送达影响。取消时已落地的旧代结论照计，不为统计补重算，不混入新代或发送旧代通知 |
 | warnings_json | 卖家资料缺失等不影响结果的提示，同一次运行里去重 |
 
 索引：`(started_at)`、`(task_id, started_at)`。
