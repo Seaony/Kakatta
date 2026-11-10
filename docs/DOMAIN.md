@@ -65,7 +65,8 @@
 
 API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）、邮箱密码都加密保存，列名以 `_enc` 结尾，类型 `BLOB`。
 
-- 主密钥：第一次启动时生成 32 字节随机数，写进 `<data>/secret.key`，文件权限 0600。也可以用环境变量 `KAKATTA_SECRET_KEY`（base64）指定，指定了就不读文件。
+- 主密钥：第一次启动时生成 32 字节随机数，写进 `<data>/secret.key`，文件权限 0600。也可以用环境变量 `KAKATTA_SECRET_KEY`（base64）指定，或者用 `KAKATTA_SECRET_KEY_FILE` 指向一个文件（配合 Docker secrets），指定了就不读 `secret.key`。主密钥丢了，所有加密的值都要重新填。
+- 能防什么、不能防什么（文档如实写）：主密钥和数据在同一个目录时，加密只挡得住「只有数据库文件泄露」，挡不住整个数据目录被拿走（`DECISIONS.md` 第 40 条）。
 - 算法：AES-256-GCM。存储格式是 `12 字节随机 nonce + 密文`。附加数据（AAD）用 `表名:列名:行 id`，防止把一行的密文挪到另一行用。
 - 接口永远不返回明文。界面上只显示「已设置」，用户要改就整个重填。日志、运行记录、错误信息里都不能出现明文，报错时先把当前 Key 遮掉再截取。
 
@@ -79,6 +80,9 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 | username | TEXT NOT NULL | |
 | password_hash | TEXT NOT NULL | Argon2id，PHC 字符串格式（含参数和盐） |
 | created_at / password_changed_at | INTEGER NOT NULL | |
+
+- 还没有这一行时，只有填对容器日志里的一次性初始化令牌才能创建（30 分钟有效，过期重启容器再拿新的）。令牌只存在内存里，不写数据库（`DECISIONS.md` 第 40 条）。
+- 登录失败按 IP 递增延迟，另有全局失败次数上限；真实 IP 只从可信代理的请求头里读（`DECISIONS.md` 第 40 条）。
 
 **auth_tokens**：网页端的 Cookie 会话和桌面端、手机端的令牌都在这里。
 

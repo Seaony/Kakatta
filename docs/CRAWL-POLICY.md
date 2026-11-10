@@ -23,7 +23,7 @@
 ### 用什么浏览器
 
 - **Google Chrome 正式版，开有界面的窗口。** 不用 Chromium，因为 Chromium 缺少 H.264/AAC 解码器，本身就和普通 Chrome 不一样。也不用任何无头模式：旧版 chrome-headless-shell 和完整 Chrome 的 `--headless=new` 都会在 UA 里带上 `HeadlessChrome`（Chromium `components/embedder_support/user_agent_utils.cc`）。goofish-cli 等至少 3 个项目记录了无头模式会被闲鱼判为「非法访问」，上游作者也建议关闭无头（`scraper.py:753`）。
-- **服务器、NAS 和 Docker**：Chrome 跑在 Xvfb 虚拟屏幕上，屏幕设为 `1920x1080x24`。Xvfb 默认是 8 位色深，很不正常，必须显式设置。Google 从 2026-07-30 起提供 Linux ARM64 的正式版 Chrome，所以 amd64 和 arm64 镜像用的都是同一款浏览器。
+- **服务器、NAS 和 Docker**：Chrome 跑在 Xvfb 虚拟屏幕上，屏幕显式设为 `1920x1080x24`（不设时默认是 1280x1024）。Google 的 apt 源从 2026-07 底起同时提供 amd64 和 arm64 的正式版 Chrome，所以两种镜像用的是同一款浏览器。镜像、沙盒、内存和 WebGL 的做法见 `DECISIONS.md` 第 38 条。
 - 桌面端先不考虑（`DECISIONS.md` 第 36 条）。注意：如果以后做桌面端本机模式，Chrome 要开在用户真实的屏幕上，每次抓取都会弹出窗口，到时候要先解决这个问题。
 - 每个闲鱼账号有一份独立、长期保留的浏览器配置目录（user-data-dir），和用户自己日常用的浏览器完全分开。
 
@@ -33,7 +33,10 @@
 - 调试端口只在容器或本机内部使用，不映射到外面。多个账号同时运行时，各自使用不同的固定端口。
 - **启动参数**以 chromedp 的 `DefaultExecAllocatorOptions` 为基础（`allocate.go:90`）：
   - 去掉 `headless`（连同它附带的 `hide-scrollbars`、`mute-audio`）、`enable-automation`、`disable-extensions`、`disable-background-timer-throttling`、`disable-backgrounding-occluded-windows`、`disable-renderer-backgrounding`、`force-color-profile=srgb`、`disable-popup-blocking`、`disable-ipc-flooding-protection`、`enable-features=NetworkService,NetworkServiceInProcess`。这些会改变浏览器的行为或者本身就是自动化特征。
-  - 保留 `no-first-run`、`no-default-browser-check`、`disable-background-networking`、`disable-breakpad`、`disable-sync`、`disable-default-apps`、`disable-client-side-phishing-detection`、`metrics-recording-only`、`safebrowsing-disable-auto-update`、`password-store=basic`、`use-mock-keychain`、`disable-hang-monitor`、`disable-prompt-on-repost`、`disable-dev-shm-usage`。页面基本读不到这些参数。保留 `disable-dev-shm-usage` 是因为有些 NAS 界面没法设置 shm 大小。
+  - 保留 `no-first-run`、`no-default-browser-check`、`disable-background-networking`、`disable-breakpad`、`disable-sync`、`disable-default-apps`、`disable-client-side-phishing-detection`、`metrics-recording-only`、`safebrowsing-disable-auto-update`、`password-store=basic`、`use-mock-keychain`、`disable-hang-monitor`、`disable-prompt-on-repost`。页面基本读不到这些参数。
+  - **不加** `--disable-dev-shm-usage`：Chromium 在 Linux 上已经改用 memfd，不依赖 `/dev/shm`，实测加了反而多占约 175MB 内存（`DECISIONS.md` 第 38 条）。
+  - **不加** `--no-sandbox`：会出现网页能看到的警告条；容器里靠 seccomp 设置让沙盒正常工作（`DECISIONS.md` 第 38 条）。
+  - 加 `--lang`，按设置项的语言；时区由容器的 `TZ` 决定。
   - 另加 `--disk-cache-size`，按配置项限制每个账号浏览器的磁盘缓存（`DOMAIN.md` 第 3 节，默认 256MB）。
   - **不加** `--disable-blink-features=AutomationControlled`：它本质上就是在改 webdriver，有界面时还会弹出「不受支持的命令行标记」提示条。
 - **不往页面注入任何脚本**：读数据靠 CDP 网络事件（`Network.getResponseBody`），找元素靠 DOM 查询，点击和输入用 `Input.dispatchMouseEvent` 和 `Input.dispatchKeyEvent`，坐标取元素中心附近的随机点。
@@ -46,7 +49,7 @@
 ### 浏览器什么时候开
 
 - 要运行任务时才启动，跑完就关（`DECISIONS.md` 第 16 条）。登录状态保存在配置目录里，重开浏览器不会丢。
-- 每个页面大约占 150–350MB 内存（第三方实测，可信度一般，以我们自己的实验为准）。
+- 内存：实测打开一个很重的电商首页，容器峰值约 0.9–1GB，容器至少给 1GB（`DECISIONS.md` 第 38 条）。闲鱼页面的实际数字在实验里量。
 
 ---
 
@@ -103,7 +106,7 @@
 ## 五、登录和人机验证交给用户
 
 - **登录**：在这个账号自己的浏览器里打开闲鱼登录页，用户扫码。登录状态由浏览器自己保存、自己续期，不导入导出 Cookie。上游靠导入 Cookie 文件，登录状态「快的时候不到半小时，慢的时候也就几个小时」就失效（#492）；我们这种方式能撑多久，要放进实验里验证。
-- **服务器、NAS 和 Docker**：需要用户操作时，临时启动 x11vnc 加 noVNC，用户在网页端里直接看到并操作这个 Xvfb 窗口。鼠标操作经过 X 服务器送进浏览器，和真人操作走同一条路，不经过 CDP。用户操作完就关掉。noVNC 是静态网页文件，x11vnc 只有几 MB，平时不运行。
+- **服务器、NAS 和 Docker**：需要用户操作时，临时启动 x11vnc 加 noVNC，用户在网页端里直接看到并操作这个 Xvfb 窗口（手机上的触摸处理见 `DECISIONS.md` 第 39 条）。鼠标操作经过 X 服务器送进浏览器，和真人操作走同一条路，不经过 CDP。用户操作完就关掉。noVNC 是静态网页文件，x11vnc 只有几 MB，平时不运行。
 - **在同一个浏览器里完成验证**：有 issue 报告，验证通过后拿到的 `x5sec` 和完成验证的浏览器绑定（xianyu-super-butler #62）。
 - **风险**：上游作者确认「playwright的chromium 即使手动拖动滑动条做验证也无法通过」（#62）。我们的环境不同：正式版 Chrome、没有自动化标记、鼠标走 X 服务器，但能不能通过，仍然要用实验验证。
 
@@ -135,7 +138,7 @@
 | 卖家信息缓存 | 24 小时 | ≥ 12 小时 | Mekke 的做法，上游是 30 分钟 | 反复打开同一个卖家的主页 |
 | 每天不运行的时段 | 01:00–07:30 | 按自己的作息设 | 真人半夜很少刷闲鱼（推测，没有直接证据）；半夜新上架的商品也少 | 设为全天运行：没有证据说一定有害，但不像真人 |
 | 同一账号同时打开的页面数 | 1 | 1 | 上游同时挂三四个任务就触发（#4） | 同一账号多个页面并行，明显不像真人 |
-| 全局同时打开的页面数 | 1 | 1–2（取决于内存） | 每个页面约 150–350MB 内存，2GB 的 NAS 也要能跑 | 内存不够，浏览器会崩溃 |
+| 全局同时打开的页面数 | 1 | 1–2（取决于内存） | 实测一个很重的页面容器峰值约 1GB（`DECISIONS.md` 第 38 条），2GB 的 NAS 也要能跑 | 内存不够，浏览器会崩溃 |
 | 人机验证后的冷却 | 2 小时，逐次加倍，最长 24 小时 | 见第四节 | 见第四节 | 冷却太短，立即再次触发（#19） |
 | 直接拒绝后的暂停 | 24 小时 | ≥ 24 小时 | 上游熔断的默认值（#363） | — |
 | 普通失败的保护 | 连续 3 次失败暂停 30 分钟 | — | 沿用 Mekke | — |
@@ -154,24 +157,27 @@
 
 ## 八、要用实验验证的
 
-1. 有界面的 Chrome 加 Xvfb，在家用网络、云服务器、NAS 上按默认值跑，多久会触发验证。
-2. 在浏览器里扫码登录后，登录状态能保持多久。
-3. 用户通过 noVNC 手动拖滑块，能不能通过。
-4. 实际的内存占用和镜像体积，用来校准 `DECISIONS.md` 第 16 条的目标值。
-5. 在搜索框里输入，和直接打开搜索网址相比，被拦的概率有没有区别。
+动工前只做可行性摸底（`DECISIONS.md` 第 37 条，做法见 `EXPERIMENT.md`）：
 
-### 新号实验方案
+1. Docker 里有界面的 Chrome 加 Xvfb，能不能正常扫码登录、搜索、打开详情，不被判为异常；WebGL「不开」和「llvmpipe」两种设置哪种更好。
+2. 扫码登录后，登录状态能保持多久，重启容器后还在不在。
+3. 用户通过网页端的远程画面手动拖滑块（电脑和手机浏览器），能不能通过。
+4. 闲鱼页面实际的内存占用和镜像体积，用来校准 `DECISIONS.md` 第 16 条的目标值。
 
-作者提供的是新注册的闲鱼账号（`DECISIONS.md` 第 33 条），新号更容易触发风控（#324、#339），所以实验要比默认值更保守：
+不在动工前回答的：
+
+- **按默认值跑多久会触发验证**：一个号、几天时间测不出可靠的阈值。默认值按本文的证据定，上线后靠运行记录和用户反馈持续校准。
+- **搜索框输入和直接打开搜索网址的区别**：只有一个账号，比较两种做法要在同一个号上多冒一次险。默认用搜索框输入（有其他项目的实测支持）。
+
+### 新号怎么用
+
+作者提供的是新注册的闲鱼账号（`DECISIONS.md` 第 33 条），新号更容易触发风控（#324、#339）：
 
 1. **先养号 1–2 周**（推测，没有直接证据，但这是成本最低的保护）：
    - 在手机闲鱼 App 里正常使用：每天打开、搜几次、看几个商品；
    - 把资料补完整；App 提示实名认证就按提示做；
    - 这段时间不跑任何自动化。
-2. **开始实验时**：
-   - 只建 1 个任务，间隔 60 分钟，翻 1 页，每次最多打开 3 个详情页；
-   - 只在白天运行；
-   - 连续一周没有触发验证，再逐步调到默认值。
-3. **同一时间只在一个环境里跑**：同一个账号同时出现在两台机器上，本身就是异常。先在 Mac 上跑有界面的 Chrome，再在 Mac 的 Docker 里跑 Xvfb 模式（验证服务器那条路），最后在 Windows 上跑，每个阶段各一周。
+2. **实验时访问量很小**：每次只做几次搜索、打开两三个详情，分几天做，只在白天。
+3. **同一时间只在一个地方用程序登录这个号**：同一个账号同时出现在两台机器的程序里，本身就是异常。
 4. **手机 App 照常登录使用**：作者手动刷闲鱼不受影响，反而让账号看起来更正常。
-5. 一旦触发验证，按第四节处理，并在实验记录里写清楚当时的参数、时间和触发前的操作。
+5. 一旦触发验证，按第四节处理，并在实验记录里写清楚当时做了什么、什么时间。
