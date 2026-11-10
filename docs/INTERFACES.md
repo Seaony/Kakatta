@@ -179,6 +179,8 @@ func (s *Sender) Send(ctx context.Context, config ChannelConfig, message Message
 
 ## 纯分析规则
 
+卖家主页可用与评价取得分开：`SellerInput.RatesAvailable` 只有明确取得评价（含空列表）才为真，未取得不能给「无中差评」奖励，也不能把相关检查项写成正常。`RiskNameKey(string)` 复用统一名称规整，供清单外发现转检查项防重。
+
 `internal/analysis` 只接收已经取得的数据，不读库、不联网、不自行取当前时间。类型保持 `DOMAIN.md` 的 JSON：`Profile`、生成清单的独立 `GeneratedProfile`、`Facts`、`ItemSpecs`、`UserOverrides`；金额为整数分，可空字段用指针，模型原话不翻译。以下入口固定，具体输入结构只含对应规则实际使用的数据：
 
 ```go
@@ -241,6 +243,16 @@ func BuildMarket(Snapshot, *int64, analysis.MarketResult) (client.Request, error
 模板与 Schema 按 `DOMAIN.md` 8.2、8.6 原文，不加内部 `rev`。模型输入和核对证据使用同一份独立来源快照，评价用规定的前 60 字摘要；持久事实重算不再核对当前来源。源金额为整数分，发模型时精确转元；字段按白名单投影，缺失不伪装成零。
 
 `internal/analysis/images` 用任务账号固定代理、无 Cookie 的 HTTP 依赖，只准备详情图，不接搜索缩略图。`New(Dependencies)` 构造准备器，`Prepare(ctx, detailURLs, imageCount)` 返回保序的图片和逐图跳过原因，`Result.DataURLs()` 返回独立数组，`JPEG(source, Limits)` 做纯转换。每准备器跨调用总共三张同时下载，单图三十秒，源图最多 20 MiB、四千万像素；先读头检查资源再解码，最长边 1024、不放大小图、校正方向、透明白底、JPEG 质量 80。先取前 N 张，坏图不从后面补，取消时停止并等待已开始任务。边界是内部资源保护，不新增用户设置，不截断允许的 `image_count`。
+
+## 通知业务编排
+
+`internal/notification` 组合既有 `service.Task/Finding/Listing`，不复制实体；只通过传入事务的 `service.NotificationTaskTx/NotificationFindingTx` 薄入口复用唯一读取。构造只依赖数据库、设置、加密器、既有渠道 Sender、时钟和发布函数，不需要业务 Service 实例，先构造通知再注入业务服务，避免初始化循环。
+
+- `New(Dependencies)` 构造唯一通知服务，`Close(ctx)` 取消并等待；`FlushRun(ctx,RunRef,firstConclusionIDs)`、`System(ctx,eventID)` 精确实现已有 `service.Notifier`。
+- 渠道 `List/Get/Create/Update/Delete/Test/ChannelDeliveries` 只回脱敏配置和逐键已配置标记。写入保留 presence，未提供的秘密保持原值、可选空值明确清除；验证整块后按 UUID 加密，不回传明文或密文。
+- 唯一渠道队列按 ID 与 UUID 管理，许可、等待后重读当前配置和启用状态，不在队列缓存秘密；完成有界落盘后才释放，间隔从实际 Sender 返回开始。任务、系统事件和测试共用同一队列。
+- 先在事务保存意图，再到事务外发送；每次物理投递与完整发现和意图关联。任一成功先保存送达再处理取消，同轮其余已选渠道继续，下轮不补失败渠道；全部失败只累计本意图的次数。
+- 同事务隐藏、屏蔽或删除商品时，用 `cancelPendingIntentsForFindingsTx/ForItemsTx/ForSellerTx` 取消待发意图，不删除已结算历史。任务改代和清理复用同一取消语义。
 
 ## 集成分工
 
