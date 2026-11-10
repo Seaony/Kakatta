@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/Seaony/Kakatta/internal/auth"
+	"github.com/Seaony/Kakatta/internal/config"
 	"github.com/Seaony/Kakatta/internal/store"
 	"golang.org/x/term"
 )
@@ -32,6 +33,17 @@ func maintenance(ctx context.Context, command string, args []string, input io.Re
 	}
 	if flags.NArg() != 0 || *data == "" {
 		return errors.New("维护命令参数无效")
+	}
+	restoreLock, err := config.AcquireRestoreLock(*data, false)
+	if err != nil {
+		return err
+	}
+	defer restoreLock.Close()
+	if _, err := os.Lstat(filepath.Join(*data, config.RestoreStateName)); !errors.Is(err, os.ErrNotExist) {
+		if err != nil {
+			return errors.New("无法检查恢复状态，维护命令未执行")
+		}
+		return errors.New("恢复尚未完成，维护命令未执行")
 	}
 	path := filepath.Join(*data, "kakatta.db")
 	info, err := os.Lstat(path)
