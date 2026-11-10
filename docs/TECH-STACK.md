@@ -35,7 +35,7 @@ go-rod 的接口比 chromedp 好写，但维护基本停了：最后一个版本
 ## 其他选择
 
 - **SQLite**：用纯 Go 的 `modernc.org/sqlite`，不用 cgo。Dalibre 这个真实的 MyGo 应用也在用它（v1.62.0），见 `REFERENCES.md`。
-- **前端**（网页端；桌面端选网页界面时也用它，见 `OPEN-QUESTIONS.md`）：
+- **前端**（网页端和桌面端共用，`DECISIONS.md` 第 34 条）：
   - React + Vite + TypeScript；
   - 路由用 TanStack Router，接口数据用 TanStack Query；
   - 接口调用代码由服务端的 OpenAPI 描述自动生成（openapi-typescript + openapi-fetch），Go 和 TypeScript 之间不用手动同步；

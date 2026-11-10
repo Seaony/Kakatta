@@ -34,6 +34,14 @@ Kakatta（かかった，「上钩了！」）是一个开源的闲鱼监控项�
 - 只是倾向、还没拍板的，放 `OPEN-QUESTIONS.md`，不放 `DECISIONS.md`。
 - 有了新结论，从 `OPEN-QUESTIONS.md` 移到 `DECISIONS.md`，不要两边都留。
 
+## 提交规范
+
+- 做完一块就提交并推送（`git push origin master`），不用等作者确认。作者原话：「改动还是像 Mekke 一样，做完就自动提交推送，不用等我确认」。
+- 提交信息用简体中文，一句话说清楚做了什么，不写正文和列表，不加 `feat:` 之类的前缀。
+- 提交信息、代码注释和文档里不出现 AI、Claude、Codex、Generated、Co-Authored-By 之类的字样。
+- 只在 `master` 上提交；不建分支，不 amend、不 rebase、不强推。推送失败就停下来告诉作者。
+- 提交前至少通过 `git diff --check`；有代码以后，构建和测试也必须通过。
+
 ## 参考资料（只读）
 
 - `~/code/ai-goofish-monitor`：上游参考项目（MIT），闲鱼页面操作、接口名、字段路径以它为准。只读，不在里面改文件，不运行它的脚本。
