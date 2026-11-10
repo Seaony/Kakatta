@@ -93,6 +93,24 @@ func (s *Service) Before(ctx context.Context, start client.CallStart) (client.Ti
 	if err != nil {
 		return client.Ticket{}, storageFailure(err)
 	}
+	guard := probeFromContext(ctx)
+	if guard != nil {
+		if start.Purpose != "probe" || start.Provider != guard.provider {
+			return client.Ticket{}, client.ErrConfigChanged
+		}
+		if !guard.started {
+			due, err := probeDueTx(ctx, tx, p, clock, now)
+			if err != nil {
+				return client.Ticket{}, storageFailure(err)
+			}
+			if !due {
+				if err := commitClock(ctx, tx, clock); err != nil {
+					return client.Ticket{}, storageFailure(err)
+				}
+				return client.Ticket{}, client.ErrConfigChanged
+			}
+		}
+	}
 	limit, used, err := budgetUsageTx(ctx, tx, snapshot, clock)
 	if err != nil {
 		return client.Ticket{}, storageFailure(err)
@@ -141,6 +159,10 @@ func (s *Service) Before(ctx context.Context, start client.CallStart) (client.Ti
 			return client.Ticket{}, err
 		}
 		return client.Ticket{}, s.accounting.fault
+	}
+	if guard != nil {
+		// 同一逻辑探测的参数兼容重发仍逐次记账，但不按当天记录挡住自己。
+		guard.started = true
 	}
 	return ticket, nil
 }

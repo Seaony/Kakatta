@@ -31,9 +31,10 @@ type Service struct {
 	jobs   int
 	idle   chan struct{}
 
-	accounting accountingState
-	slots      slotState
-	network    networkState
+	accounting   accountingState
+	slots        slotState
+	network      networkState
+	probeRunning bool
 }
 
 func New(ctx context.Context, deps Dependencies) (_ *Service, err error) {

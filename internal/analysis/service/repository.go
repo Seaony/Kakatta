@@ -165,9 +165,17 @@ func (s *Service) Provider(ctx context.Context, id int64) (client.Provider, erro
 		return client.Provider{}, err
 	}
 	defer done()
-	record, err := scanProvider(s.db.QueryRowContext(ctx, `SELECT `+providerColumns+providerJoin+` WHERE p.id=?`, id))
+	var record providerRecord
+	if guard := probeFromContext(ctx); guard != nil {
+		record, err = s.probeProviderRecord(ctx, id, guard)
+	} else {
+		record, err = scanProvider(s.db.QueryRowContext(ctx, `SELECT `+providerColumns+providerJoin+` WHERE p.id=?`, id))
+	}
 	if errors.Is(err, sql.ErrNoRows) {
 		return client.Provider{}, client.ErrConfigChanged
+	}
+	if errors.Is(err, client.ErrConfigChanged) {
+		return client.Provider{}, err
 	}
 	if err != nil {
 		return client.Provider{}, storageFailure(err)
