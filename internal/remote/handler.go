@@ -42,9 +42,14 @@ func ControlPagePolicy() string {
 // Handler 的每一条请求都检查现有会话，空检查器不会放行。
 // 挂到子路径时由调用方使用 http.StripPrefix 去掉前缀。
 func (s *Session) Handler(authorized func(*http.Request) bool) http.Handler {
+	return s.HandlerWithViewer(authorized, nil)
+}
+
+// HandlerWithViewer 在升级成功后、转发画面前确认接手，失败只关闭当前连接。
+func (s *Session) HandlerWithViewer(authorized func(*http.Request) bool, onAccepted func(context.Context) error) http.Handler {
 	files, _ := fs.Sub(assets, "assets")
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /vnc", s.serveVNC)
+	mux.HandleFunc("GET /vnc", func(w http.ResponseWriter, r *http.Request) { s.serveVNC(w, r, onAccepted) })
 	mux.HandleFunc("GET /viewport", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		s.mu.Lock()
@@ -71,36 +76,57 @@ func originAllowed(r *http.Request) bool {
 	return err == nil && (origin.Scheme == "http" || origin.Scheme == "https") && strings.EqualFold(origin.Host, r.Host) && origin.User == nil && origin.Path == "" && origin.RawQuery == "" && origin.Fragment == ""
 }
 
-func (s *Session) serveVNC(w http.ResponseWriter, r *http.Request) {
+func (s *Session) serveVNC(w http.ResponseWriter, r *http.Request, onAccepted func(context.Context) error) {
 	if !originAllowed(r) {
 		http.Error(w, "远程画面只接受同一站点的连接", http.StatusForbidden)
 		return
 	}
-	upstream, err := (&net.Dialer{Timeout: 3 * time.Second}).DialContext(s.ctx, "tcp4", s.address)
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+	stopSession := context.AfterFunc(s.ctx, cancel)
+	defer stopSession()
+	if s.ctx.Err() != nil {
+		cancel()
+	}
+	upstream, err := (&net.Dialer{Timeout: 3 * time.Second}).DialContext(ctx, "tcp4", s.address)
 	if err != nil {
 		http.Error(w, "远程画面已关闭，请重新打开", http.StatusServiceUnavailable)
 		return
 	}
 	defer upstream.Close()
-	if !s.register(upstream) {
-		http.Error(w, "远程画面已关闭，请重新打开", http.StatusServiceUnavailable)
-		return
-	}
-	defer s.unregister(upstream)
 	ws, err := websocket.Accept(w, r, nil)
 	if err != nil {
 		return
 	}
-	defer ws.CloseNow()
-	ctx, cancel := context.WithCancel(s.ctx)
-	defer cancel()
+	if !s.register(upstream) {
+		ws.CloseNow()
+		return
+	}
+	defer func() {
+		upstream.Close()
+		ws.CloseNow()
+		s.unregister(upstream)
+	}()
+	if onAccepted != nil {
+		if err := onAccepted(ctx); err != nil {
+			return
+		}
+	}
 	client := websocket.NetConn(ctx, ws, websocket.MessageBinary)
 	finished := make(chan struct{}, 2)
 	go func() { io.Copy(upstream, client); finished <- struct{}{} }()
 	go func() { io.Copy(client, upstream); finished <- struct{}{} }()
-	<-finished
+	completed := 0
+	select {
+	case <-finished:
+		completed++
+	case <-ctx.Done():
+	}
 	cancel()
 	upstream.Close()
 	ws.CloseNow()
-	<-finished
+	for completed < 2 {
+		<-finished
+		completed++
+	}
 }
