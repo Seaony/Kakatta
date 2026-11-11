@@ -266,6 +266,12 @@ describe('结果契约映射', () => {
     expect(view.container.querySelector('img')?.getAttribute('src')).toBe('/api/v1/listings/8001/thumbnail?finding_id=31');
   });
 
+  test('关键词卡片完整显示两个命中词', () => {
+    const item = finding({ decision: 'matched', score: null, grade: null, matched_keywords: ['q1', '收音机'] });
+    render(<I18nProvider instance={createI18n()}><FindingCard finding={item} selected={false} selectionFull={false} busy={false} onSelect={() => {}} onOpen={() => {}} onAction={() => {}} /></I18nProvider>);
+    expect(screen.getAllByText(/^(q1|收音机)$/).map((node) => node.textContent)).toEqual(['q1', '收音机']);
+  });
+
   test.each(['zh-CN', 'en'] as const)('固定风险按ID取%s译名，自定义同名风险保留原文', (locale) => {
     const profile: Schema<'AnalysisProfileFields'> = { summary: '', specs: [], musts: [], bonuses: [], allowed_kinds: [], next_no: 2,
       risks: ['fake', 'u_1'].map((id) => ({ id, name: 'fake', attitude: 'confirm', source: 'user', edited: true, rev: 1 })) };

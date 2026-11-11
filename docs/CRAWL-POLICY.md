@@ -41,7 +41,7 @@
   - `chrome_crashpad_handler` 在 Linux 上用参数关不掉，不去关它，改为保证它不出问题：给它可写的目录，关浏览器时把残留进程一起结束（`DECISIONS.md` 第 59 条）。
   - 另加 `--disk-cache-size`，按配置项限制每个账号浏览器的磁盘缓存（`DOMAIN.md` 第 3 节，默认 256MB）。
   - **不加** `--disable-blink-features=AutomationControlled`：它本质上就是在改 webdriver，有界面时还会弹出「不受支持的命令行标记」提示条。
-- **不往页面注入任何脚本**：读数据靠 CDP 网络事件（`Network.getResponseBody`），找元素靠 DOM 查询，点击和输入用 `Input.dispatchMouseEvent` 和 `Input.dispatchKeyEvent`，坐标取元素中心附近的随机点。
+- **不往闲鱼页面主动执行脚本**：读数据靠 CDP 网络事件（`Network.getResponseBody`），找元素靠 DOM 查询，点击和输入用 `Input.dispatchMouseEvent` 和 `Input.dispatchKeyEvent`，坐标取元素中心附近的随机点。每个目标只在 `about:blank` 初始化时执行一次 `self`，随后立即停用 Runtime；初始化失败就终止启动（第 85 条）。
 - **chromedp 的坑**（实现时必须处理）：
   - 事件回调里不能阻塞，取响应正文要放到别的 goroutine 里；
   - 要等 `loadingFinished` 之后再取正文；

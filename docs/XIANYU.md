@@ -540,8 +540,8 @@ Kakatta 的判断（三条都满足才算成功）：
 | 昵称 | `base.displayName` | 字符串 | 空 |
 | 头像 | `base.avatar.avatar` | 字符串 | 空；`//` 开头补 `https:` |
 | 签名 | `base.introduction` | 字符串 | 空字符串 |
-| 商品数 | `tabs.item.number` | 整数 | 0 |
-| 收到的评价数 | `tabs.rate.number` | 整数 | 0 |
+| 商品数 | `tabs.item.number` | 可空整数 | 空值，表示未取得 |
+| 收到的评价数 | `tabs.rate.number` | 可空整数 | 空值，表示未取得 |
 | 卖家信用 | `base.ylzTags[]` 里 `attributes.role` 为 `seller` 那一项的 `text`；等级在 `attributes.level` | 字符串 | 空（上游 `"暂无"`） |
 | 买家信用 | 同上，`attributes.role` 为 `buyer` | 字符串 | 空（上游 `"暂无"`） |
 

@@ -499,7 +499,10 @@ func (s *Service) advanceDeadlines(ctx context.Context) (*time.Time, error) {
 		return nil, storageFailure(err)
 	}
 	for _, id := range tasks {
-		if _, err = tx.ExecContext(ctx, `UPDATE tasks SET failure_paused_until=NULL WHERE id=?`, id); err != nil {
+		// 清掉暂停前保留真正可运行的时间，避免旧计划恢复后插队。
+		if _, err = tx.ExecContext(ctx, `UPDATE tasks SET
+			next_run_at=CASE WHEN next_run_at IS NULL OR next_run_at<failure_paused_until THEN failure_paused_until ELSE next_run_at END,
+			failure_paused_until=NULL WHERE id=?`, id); err != nil {
 			return nil, storageFailure(err)
 		}
 		if _, err = s.events.ResolveTx(ctx, tx, "task_failure_pause", id); err != nil {

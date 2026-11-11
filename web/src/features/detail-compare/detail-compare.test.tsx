@@ -94,6 +94,14 @@ describe('商品详情的接口与状态', () => {
     expect(screen.getByRole('img').getAttribute('src')).toBe('https://example.invalid/original.jpg');
   });
 
+  test('关键词详情完整显示两个命中词', async () => {
+    const initial = fixture(); initial.decision = 'matched'; initial.score = null; initial.grade = null;
+    initial.matched_keywords = ['q1', '收音机'];
+    initial.task = { ...initial.task, judge_mode: 'keyword', profile: {} };
+    mount(<FindingDetail findingId={1} onClose={() => {}} onNavigate={() => {}} timeZone="UTC" />, fakeAPI(initial).api);
+    expect(await screen.findByText('q1 · 收音机')).toBeTruthy();
+  });
+
   test('价格走势展示成功和失败的合并降价投递', async () => {
     const initial = fixture();
     const drop: Schema<'DeliverySummary'> = { id: 1, at: timestamp, channel_id: 1, channel_name: 'Bark', task_id: 5, kind: 'summary', item_count: 3, ok: true, error: null };
