@@ -194,6 +194,129 @@ describe('账号连接与人工会话', () => {
     view.unmount(); view.queryClient.clear();
   });
 
+  test.each(['signed_out', 'expired'] as const)('%s账号完成登录后不读取旧会话，后来验证必须重新接手', async (state) => {
+    let current = account({ state });
+    const sessionReads: string[] = [];
+    const connected = mock((_account: Schema<'AccountView'>) => {});
+    const view = mount(<AccountConnect initialAccountId={7} onConnected={connected} />, (request) => {
+      const path = new URL(request.url).pathname;
+      if (request.method === 'GET' && path === '/api/v1/accounts') return json({ items: [current], total: 1, next_cursor: null });
+      if (request.method === 'GET' && path === '/api/v1/accounts/7') return json(current);
+      if (request.method === 'GET' && path.includes('/sessions/')) {
+        sessionReads.push(path);
+        return current.session ? json(current.session) : failure(404, 'runtime.session_not_found');
+      }
+      if (path.endsWith('/login')) { current = { ...current, session: session() }; return json(current.session, 202); }
+      if (path.endsWith('/verification')) {
+        current = { ...current, session: { ...current.session!, kind: 'verification', phase: 'verifying' } };
+        return json(current.session, 202);
+      }
+      return failure(404, 'http.not_found');
+    });
+    try {
+      await userEvent.click(await screen.findByRole('button', { name: state === 'expired' ? '重新扫码登录' : '扫码登录' }));
+      await screen.findByText('排队中');
+      expect(view.container.querySelector('iframe')).toBeNull();
+      expect(connected).not.toHaveBeenCalled();
+      current = { ...current, session: session({ phase: 'waiting_login', remote_path: '/remote/sessions/session-opaque-7/' }) };
+      await view.queryClient.invalidateQueries({ queryKey: ['api', 'accounts'] });
+      await waitFor(() => expect(view.container.querySelector('iframe')?.getAttribute('src')).toBe('http://localhost/remote/sessions/session-opaque-7/#lang=zh-CN'));
+      current = { ...current, state: 'active', session: session({ phase: 'closing' }) };
+      await view.queryClient.invalidateQueries({ queryKey: ['api', 'accounts'] });
+      await waitFor(() => expect(view.container.querySelector('iframe') === null).toBe(true));
+      expect(connected).not.toHaveBeenCalled();
+      current = { ...current, session: null };
+      await view.queryClient.invalidateQueries({ queryKey: ['api', 'accounts'] });
+      await waitFor(() => expect(connected).toHaveBeenCalledTimes(1));
+      expect(screen.queryByRole('button', { name: '结束会话' })).toBeNull();
+      expect(sessionReads).toEqual([]);
+      current = { ...current, state: 'needs_verification', session: session({
+        id: 'verification-8', kind: 'run', phase: 'verify_hold', remote_path: '/remote/sessions/verification-8/',
+      }) };
+      await view.queryClient.invalidateQueries({ queryKey: ['api', 'accounts'] });
+      await screen.findByRole('button', { name: '去验证' });
+      expect(view.container.querySelector('iframe')).toBeNull();
+      await userEvent.click(screen.getByRole('button', { name: '去验证' }));
+      await waitFor(() => expect(view.container.querySelector('iframe')?.getAttribute('src')).toBe('http://localhost/remote/sessions/verification-8/#lang=zh-CN'));
+      current = { ...current, session: session({ id: 'verification-9', kind: 'run', phase: 'verify_hold', remote_path: '/remote/sessions/verification-9/' }) };
+      await view.queryClient.invalidateQueries({ queryKey: ['api', 'accounts'] });
+      await waitFor(() => expect(view.container.querySelector('iframe') === null).toBe(true));
+      expect(screen.getByRole('button', { name: '去验证' })).toBeTruthy();
+    } finally { view.unmount(); view.queryClient.clear(); }
+  });
+
+  test('开始扫码先取消旧账号查询，旧的空会话不能覆盖已确认的排队状态', async () => {
+    let current = account();
+    let holdRead = false;
+    let oldReadSignal: AbortSignal | undefined;
+    let releaseOldRead!: (response: Response) => void;
+    let releaseNewRead!: (response: Response) => void;
+    const oldRead = new Promise<Response>((resolve) => { releaseOldRead = resolve; });
+    const newRead = new Promise<Response>((resolve) => { releaseNewRead = resolve; });
+    const view = mount(<AccountConnect initialAccountId={7} onConnected={() => {}} />, (request) => {
+      const path = new URL(request.url).pathname;
+      if (request.method === 'GET' && path === '/api/v1/accounts') return json({ items: [current], total: 1, next_cursor: null });
+      if (request.method === 'GET' && path === '/api/v1/accounts/7') {
+        if (holdRead) { holdRead = false; oldReadSignal = request.signal; return oldRead; }
+        if (current.session) return newRead;
+        return json(current);
+      }
+      if (request.method === 'GET' && path.includes('/sessions/')) return json(current.session);
+      if (path.endsWith('/login')) { current = { ...current, session: session() }; return json(current.session, 202); }
+      return failure(404, 'http.not_found');
+    });
+    try {
+      const login = await screen.findByRole('button', { name: '扫码登录' });
+      holdRead = true;
+      const refreshing = view.queryClient.refetchQueries({ queryKey: ['api', 'accounts', 'detail', 7], exact: true });
+      await waitFor(() => expect(oldReadSignal).toBeDefined());
+      const latest = account({ nickname: '刚更新的昵称', proxy_id: 11, quota: { ...quota, hourly_used: 9 } });
+      view.queryClient.setQueryData(['api', 'accounts', 'detail', 7], latest);
+      await userEvent.click(login);
+      await screen.findByText('排队中');
+      await waitFor(() => expect(oldReadSignal?.aborted).toBe(true));
+      expect(view.queryClient.getQueryData<Schema<'AccountView'>>(['api', 'accounts', 'detail', 7])).toMatchObject({
+        nickname: latest.nickname, proxy_id: latest.proxy_id, quota: latest.quota, session: { id: 'session-opaque-7' },
+      });
+      releaseOldRead(json(account()));
+      await refreshing;
+      releaseNewRead(json(current));
+      expect(view.queryClient.getQueryData<Schema<'AccountView'>>(['api', 'accounts', 'detail', 7])?.session?.id).toBe('session-opaque-7');
+      expect(screen.getByText('排队中')).toBeTruthy();
+    } finally { releaseOldRead(json(account())); releaseNewRead(json(current)); view.unmount(); view.queryClient.clear(); }
+  });
+
+  test('账号状态读取失败时保留当前画面，明确重试后恢复新会话字段', async () => {
+    let disconnected = false;
+    let current = account({ state: 'needs_verification', session: session({
+      kind: 'verification', phase: 'verifying', remote_path: '/remote/sessions/session-opaque-7/',
+    }) });
+    const writes: string[] = [];
+    const view = mount(<AccountConnect initialAccountId={7} onConnected={() => {}} />, (request) => {
+      const path = new URL(request.url).pathname;
+      if (request.method !== 'GET') { writes.push(path); return failure(500, 'http.internal_error'); }
+      if (path === '/api/v1/accounts') return json({ items: [current], total: 1, next_cursor: null });
+      if (path === '/api/v1/accounts/7') return disconnected ? failure(503, 'http.unavailable') : json(current);
+      return failure(404, 'http.not_found');
+    });
+    try {
+      await userEvent.click(await screen.findByRole('button', { name: '打开远程画面' }));
+      await waitFor(() => expect(view.container.querySelector('iframe') !== null).toBe(true));
+      const frame = view.container.querySelector('iframe');
+      disconnected = true;
+      await view.queryClient.invalidateQueries({ queryKey: ['api', 'accounts'] });
+      await screen.findByText(/暂时无法确认会话状态，请先重新读取/);
+      expect(view.container.querySelector('iframe') === frame).toBe(true);
+      disconnected = false;
+      current = { ...current, session: { ...current.session!, refresh_verification: true } };
+      await userEvent.click(screen.getByRole('button', { name: '重新读取会话' }));
+      await screen.findByText('当前画面没有验证框，请在画面里刷新一下页面。');
+      expect(screen.queryByText(/暂时无法确认会话状态，请先重新读取/)).toBeNull();
+      expect(view.container.querySelector('iframe') === frame).toBe(true);
+      expect(writes).toEqual([]);
+    } finally { view.unmount(); view.queryClient.clear(); }
+  });
+
   test('重开无验证框和未恢复接口验证都提示在原画面手动刷新', async () => {
     const path = '/remote/sessions/session-opaque-7/';
     let current = session({ kind: 'verification', phase: 'verifying', remote_path: path, refresh_verification: true });
@@ -201,7 +324,7 @@ describe('账号连接与人工会话', () => {
     const requests: unknown[] = [];
     const view = mount(<ManualSession account={account({ state: 'needs_verification' })} session={current} timeZone="Asia/Shanghai"
       reveal onReveal={() => {}} onChanged={updated} onGone={() => {}} />, async (request) => {
-      if (request.method === 'GET') return json(current);
+      if (request.method === 'GET') return json(account({ state: 'needs_verification', session: current }));
       requests.push(await request.json());
       return failure(409, 'remote.verification_refresh_confirm');
     });

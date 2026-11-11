@@ -5,6 +5,11 @@ import vm from 'node:vm';
 import { attachTextInput } from './assets/text-entry.js';
 
 const source = (await readFile(new URL('./assets/viewer.js', import.meta.url), 'utf8')).replace(/^import .*$/gm, '');
+const rfbSource = await readFile(new URL('./assets/novnc/core/rfb.js', import.meta.url), 'utf8');
+const transitionStart = rfbSource.indexOf('    _updateConnectionState(state) {');
+const transitionEnd = rfbSource.indexOf('\n    /* Print errors and disconnect', transitionStart);
+assert.ok(transitionStart >= 0 && transitionEnd > transitionStart);
+const transition = rfbSource.slice(transitionStart, transitionEnd).trim().replace('_updateConnectionState(state)', 'function(state)');
 const region = { x: 400, y: 300, width: 200, height: 200 };
 const dictionaries = Object.fromEntries(await Promise.all(['zh-CN', 'en', 'ja'].map(async language => {
     const dictionary = JSON.parse(await readFile(new URL(`../locales/${language}.json`, import.meta.url), 'utf8'));
@@ -27,11 +32,21 @@ const event = (node, name) => node.dispatchEvent(new Event(name));
 
 function viewer(language = 'zh-CN', hash = '') {
     let instances = 0, fetches = 0;
+    const errors = [], trace = [];
+    const updateConnectionState = vm.runInNewContext(`(${transition})`, {
+        Log: { Debug() {}, Error(message) { errors.push(message); } },
+        setTimeout: () => 1, clearTimeout() {}, DISCONNECT_TIMEOUT: 3,
+        CustomEvent: class { constructor(type, options) { this.type = type; this.detail = options.detail; } },
+    });
     const rfb = {
         events: {}, keys: [], disconnects: 0,
+        _rfbConnectionState: 'connecting', _disconnTimer: null, _rfbCleanDisconnect: true,
+        _sock: { off() {} }, _disconnect() {},
+        _updateConnectionState(state) { trace.push(`${this._rfbConnectionState}->${state}`); updateConnectionState.call(this, state); },
+        dispatchEvent(event) { this.lastEvent = this.events[event.type]?.(event); },
         addEventListener(type, handler) { this.events[type] = handler; },
         sendKey(keysym, code) { this.keys.push({ keysym, code }); },
-        disconnect() { this.disconnects++; },
+        disconnect() { this.disconnects++; this._updateConnectionState('disconnecting'); },
     };
     const scroll = { scrollLeft: 0, scrollTop: 0, clientWidth: 200, clientHeight: 100 };
     const canvas = new Element();
@@ -55,7 +70,10 @@ function viewer(language = 'zh-CN', hash = '') {
         attachTouch: () => () => {}, attachTextInput,
         fetch: () => { fetches++; return response; },
     });
-    return { scroll, help, frames, receive, rfb, nodes, canvas, document, location, connect: rfb.events.connect,
+    return { scroll, help, frames, receive, rfb, nodes, canvas, document, location, errors, trace,
+        connect() { rfb._updateConnectionState('connected'); return rfb.lastEvent; },
+        serverDisconnect() { rfb._updateConnectionState('disconnecting'); rfb._updateConnectionState('disconnected'); },
+        finishDisconnect() { rfb._updateConnectionState('disconnected'); },
         get instances() { return instances; }, get fetches() { return fetches; },
         language(value) { location.hash = `#lang=${value}`; window.events.hashchange(); },
         leave() { window.events.pagehide(); },
@@ -133,7 +151,7 @@ for (const language of ['zh-CN', 'en', 'ja']) {
         assert.deepEqual(v.rfb.keys.map(key => key.keysym), [0x01004e2d, 0x01006587, 0x0100304b, 0x0100306a, 0x31, 0x32, 0x33, 0x0101f600]);
         v.rfb.events.securityfailure();
         assert.equal(v.nodes.get('#status').textContent, copy.connectionFailed);
-        v.rfb.events.disconnect();
+        v.serverDisconnect();
         assert.equal(v.nodes.get('#status').textContent, copy.disconnected);
         assert.equal(v.help.textContent, copy.helpDisconnected);
         assert.equal(v.nodes.get('#text-entry').hidden, true);
@@ -141,7 +159,8 @@ for (const language of ['zh-CN', 'en', 'ja']) {
         assert.equal(v.instances, 1);
         assert.equal(v.fetches, 1);
         v.leave();
-        assert.equal(v.rfb.disconnects, 1);
+        assert.equal(v.rfb.disconnects, 0);
+        assert.deepEqual(v.errors, []);
     });
 }
 
@@ -186,10 +205,55 @@ test('Hash语言覆盖请求语言且切换不重连、不重新定位、不发�
     v.language('fr');
     assert.equal(v.document.documentElement.lang, 'en');
     assert.equal(v.location.href, 'http://localhost/remote/#lang=ja');
-    v.rfb.events.disconnect();
+    v.serverDisconnect();
     v.language('ja');
     assert.equal(v.nodes.get('#status').textContent, dictionaries.ja.disconnected);
     assert.equal(v.nodes.get('#text-toggle').disabled, true);
     assert.equal(v.instances, 1);
     assert.equal(v.fetches, 1);
+});
+
+test('服务端已断开后离开画面，不再次切换已终止的RFB状态', async () => {
+    const v = viewer();
+    const connected = v.connect();
+    v.receive({ ok: true, json: async () => null });
+    await connected;
+    event(v.nodes.get('#text-toggle'), 'click');
+    v.nodes.get('#text-input').value = '未发送内容';
+    v.serverDisconnect();
+    v.leave();
+    assert.equal(v.rfb.disconnects, 0, `调用顺序：${v.trace.join(', ')}；错误：${v.errors.join(', ')}`);
+    assert.deepEqual(v.errors, []);
+    assert.equal(v.nodes.get('#text-input').value, '');
+    assert.equal(v.nodes.get('#text-entry').hidden, true);
+    assert.equal(v.nodes.get('#text-toggle').disabled, true);
+});
+
+test('仍在连接或已连接时离开画面，仍正常关闭RFB并清掉输入', async () => {
+    for (const connected of [false, true]) {
+        const v = viewer();
+        if (connected) {
+            const pending = v.connect();
+            v.receive({ ok: true, json: async () => null });
+            await pending;
+            event(v.nodes.get('#text-toggle'), 'click');
+            v.nodes.get('#text-input').value = '本地草稿';
+        }
+        v.leave();
+        assert.equal(v.rfb.disconnects, 1);
+        assert.equal(v.rfb._rfbConnectionState, 'disconnecting');
+        v.finishDisconnect();
+        v.leave();
+        assert.equal(v.rfb.disconnects, 1);
+        assert.deepEqual(v.errors, []);
+        assert.equal(v.nodes.get('#text-input').value, '');
+    }
+});
+
+test('原始noVNC状态机能识别重复关闭终态，错误断言不会空过', () => {
+    const v = viewer();
+    v.serverDisconnect();
+    v.rfb.disconnect();
+    assert.deepEqual(v.errors, ['Tried changing state of a disconnected RFB object']);
+    assert.equal(v.rfb._rfbConnectionState, 'disconnected');
 });

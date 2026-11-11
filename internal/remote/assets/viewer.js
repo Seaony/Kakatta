@@ -131,6 +131,6 @@ rfb.addEventListener('securityfailure', () => { connection = 'connectionFailed';
 window.addEventListener('message', event => {
     if (event.origin === location.origin && event.source === window.parent && event.data?.type === 'kakatta:viewport') focusRegion(event.data.region);
 });
-window.addEventListener('pagehide', () => { detachTouch(); textInput.dispose(); rfb.disconnect(); });
+window.addEventListener('pagehide', () => { detachTouch(); textInput.dispose(); if (connection !== 'disconnected') rfb.disconnect(); });
 window.addEventListener('hashchange', showCopy);
 showCopy();

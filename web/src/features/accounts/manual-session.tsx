@@ -1,13 +1,11 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
 import { apiData, useApi, useApiError } from '../../api/hooks';
-import { apiKey } from '../../api/keys';
 import { ApiError } from '../../api/errors';
 import { useAuthentication } from '../../app/auth-state';
 import { Button, InlineMessage, StatusBadge } from '../../components/ui';
 import { useTranslation, type Locale } from '../../i18n';
 import { formatDateTime } from '../../i18n/format';
-import { useAccountCache, useOperation } from './data';
+import { useAccount, useAccountCache, useOperation } from './data';
 import type { Account, Session } from './data';
 
 export function remotePath(path: string | null, origin: string, locale?: Locale): string | null {
@@ -35,17 +33,10 @@ export function ManualSession({ account, session, timeZone, reveal, onReveal, on
   const describe = useApiError();
   const operation = useOperation();
   const cache = useAccountCache();
-  const queryClient = useQueryClient();
   const frame = useRef<HTMLIFrameElement>(null);
   const params = { path: { account_id: account.id, session_id: session.id } };
-  const state = useQuery({
-    enabled: auth?.authenticated !== false,
-    queryKey: apiKey('accounts', 'session', account.id, session.id),
-    queryFn: async ({ signal }) => apiData(await api.GET('/api/v1/accounts/{account_id}/sessions/{session_id}', { params, signal })),
-    initialData: session,
-    refetchInterval: (query) => auth?.authenticated === false || query.state.error ? false : 2_000,
-  });
-  const current = state.data;
+  const state = useAccount(account.id);
+  const current = state.data?.session ?? session;
   const path = remotePath(current.remote_path, globalThis.location.origin, locale);
   const showViewer = auth?.authenticated !== false && reveal && path !== null && current.phase !== 'queued' && current.phase !== 'closing';
   const refreshAfterConfirm = operation.error instanceof ApiError && operation.error.reason.code === 'remote.verification_refresh_confirm';
@@ -54,9 +45,6 @@ export function ManualSession({ account, session, timeZone, reveal, onReveal, on
   const width = current.viewport?.width ?? null;
   const height = current.viewport?.height ?? null;
 
-  useEffect(() => {
-    if (state.error instanceof ApiError && state.error.status === 404) onGone();
-  }, [state.error, onGone]);
   useEffect(() => {
     const region = x === null || y === null || width === null || height === null ? null : { x, y, width, height };
     if (showViewer) frame.current?.contentWindow?.postMessage({ type: 'kakatta:viewport', region }, globalThis.location.origin);
@@ -89,12 +77,10 @@ export function ManualSession({ account, session, timeZone, reveal, onReveal, on
           params: { path: { account_id: account.id } }, body: { session_id: current.id },
         })), (updated) => {
           cache.save(updated); cache.changed(); onChanged(updated);
-          void queryClient.invalidateQueries({ queryKey: apiKey('accounts', 'session', account.id, current.id) });
         });
       }}>{t('remote.confirm_verification')}</Button>}
       <Button busy={operation.pending} disabled={current.phase === 'closing'} onClick={() => {
         void operation.run(async () => { await api.DELETE('/api/v1/accounts/{account_id}/sessions/{session_id}', { params }); }, () => {
-          queryClient.removeQueries({ queryKey: apiKey('accounts', 'session', account.id, session.id) });
           cache.changed(); onGone();
         });
       }}>{t('remote.finish')}</Button>

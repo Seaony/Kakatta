@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useState } from 'react';
 import { apiData, useApi, useApiError, useMessageText } from '../../api/hooks';
 import { ApiError } from '../../api/errors';
@@ -9,7 +9,7 @@ import { useTranslation } from '../../i18n';
 import { formatDateTime, formatInteger } from '../../i18n/format';
 import { AccountForm } from './account-form';
 import { useAccount, useAccountCache, useOperation, useProxies, uniqueByID } from './data';
-import type { Account, Session } from './data';
+import type { Account } from './data';
 import { ManualSession } from './manual-session';
 
 const tones = { signed_out: 'neutral', active: 'positive', cooling: 'warning', needs_verification: 'warning', denied: 'danger', expired: 'danger' } as const;
@@ -30,11 +30,11 @@ export function AccountWorkspace({ accountId, onDeleted, onAccount }: {
   const accountQuery = useAccount(accountId);
   const proxies = useProxies();
   const cache = useAccountCache();
+  const queryClient = useQueryClient();
   const operation = useOperation();
   const [editing, setEditing] = useState(false);
   const [confirm, setConfirm] = useState<'delete' | 'logout' | null>(null);
-  const [acceptedSession, setAcceptedSession] = useState<Session | null>(null);
-  const [revealed, setRevealed] = useState(false);
+  const [revealedSessionID, setRevealedSessionID] = useState<string | null>(null);
   const settings = useQuery({
     enabled: auth?.authenticated !== false,
     queryKey: apiKey('settings'),
@@ -43,16 +43,19 @@ export function AccountWorkspace({ accountId, onDeleted, onAccount }: {
   const settingZone = settings.data?.values['general.timezone'];
   const timeZone = typeof settingZone === 'string' ? settingZone : 'UTC';
   const account = accountQuery.data;
-  const session = acceptedSession ?? account?.session ?? null;
+  const session = account?.session ?? null;
+  const revealed = session !== null && session.id === revealedSessionID;
   const sessionGone = useCallback(() => {
-    setAcceptedSession(null); setRevealed(false);
+    setRevealedSessionID(null);
     void accountQuery.refetch();
   }, [accountQuery.refetch]);
 
   useEffect(() => {
     if (account && !accountQuery.error && !accountQuery.isFetching && auth?.authenticated !== false) onAccount?.(account);
   }, [account, accountQuery.error, accountQuery.isFetching, onAccount, auth?.authenticated]);
-  useEffect(() => { if (auth?.authenticated === false) setRevealed(false); }, [auth?.authenticated]);
+  useEffect(() => {
+    if (auth?.authenticated === false || session?.id !== revealedSessionID) setRevealedSessionID(null);
+  }, [auth?.authenticated, session?.id, revealedSessionID]);
 
   if (!account || (accountQuery.error instanceof ApiError && accountQuery.error.status === 404 && confirm === null)) {
     if (accountQuery.isPending) return <StatePanel kind="pending" label={t('common.loading')}><Skeleton className="h-[8rem]" /></StatePanel>;
@@ -69,8 +72,12 @@ export function AccountWorkspace({ accountId, onDeleted, onAccount }: {
   const open = (kind: 'login' | 'verification') => {
     void operation.run(async () => kind === 'login'
       ? apiData(await api.POST('/api/v1/accounts/{account_id}/login', { params: { path: { account_id: account.id } } }))
-      : apiData(await api.POST('/api/v1/accounts/{account_id}/verification', { params: { path: { account_id: account.id } } })), (started) => {
-        setAcceptedSession(started); setRevealed(true); cache.changed();
+      : apiData(await api.POST('/api/v1/accounts/{account_id}/verification', { params: { path: { account_id: account.id } } })), async (started) => {
+        const key = apiKey('accounts', 'detail', account.id);
+        // 旧查询里的空会话不能覆盖刚开始的会话。
+        await queryClient.cancelQueries({ queryKey: key, exact: true });
+        queryClient.setQueryData<Account>(key, (latest) => ({ ...(latest ?? account), session: started }));
+        setRevealedSessionID(started.id); cache.changed();
       });
   };
 
@@ -106,8 +113,8 @@ export function AccountWorkspace({ accountId, onDeleted, onAccount }: {
     </div>
     {session && !manualSession && <StatusBadge tone="info">{t(`remote.phase.${session.phase}`)}</StatusBadge>}
     {session && manualSession && <ManualSession key={session.id} account={account} session={session} timeZone={timeZone} reveal={revealed}
-      onReveal={() => session.phase === 'verify_hold' ? open('verification') : setRevealed(true)}
-      onChanged={(updated) => { setAcceptedSession(null); cache.save(updated); if (!updated.session) setRevealed(false); }} onGone={sessionGone} />}
+      onReveal={() => session.phase === 'verify_hold' ? open('verification') : setRevealedSessionID(session.id)}
+      onChanged={(updated) => { cache.save(updated); if (!updated.session) setRevealedSessionID(null); }} onGone={sessionGone} />}
     <section className="space-y-lg border-t border-border pt-xl" aria-label={t('accounts.quota.title')}>
       <h3 className="text-section font-semibold">{t('accounts.quota.title')}</h3>
       <dl className="space-y-md text-body">{([
@@ -126,10 +133,10 @@ export function AccountWorkspace({ accountId, onDeleted, onAccount }: {
       confirmLabel={t(confirm === 'delete' ? 'accounts.delete' : 'accounts.logout')} cancelLabel={t('common.cancel')}
       pending={operation.pending} {...(operation.errorText ? { error: operation.errorText } : {})} destructive onConfirm={() => {
         if (confirm === 'delete') void operation.run(async () => { await api.DELETE('/api/v1/accounts/{account_id}', { params: { path: { account_id: account.id } } }); }, () => {
-          cache.changed(); setConfirm(null); setAcceptedSession(null); onDeleted?.();
+          cache.changed(); setConfirm(null); setRevealedSessionID(null); onDeleted?.();
         });
         else if (confirm === 'logout') void operation.run(async () => apiData(await api.POST('/api/v1/accounts/{account_id}/logout', { params: { path: { account_id: account.id } } })), (updated) => {
-          cache.save(updated); cache.changed(); setConfirm(null); setAcceptedSession(null); setRevealed(false);
+          cache.save(updated); cache.changed(); setConfirm(null); setRevealedSessionID(null);
         });
       }} />
   </section>;
