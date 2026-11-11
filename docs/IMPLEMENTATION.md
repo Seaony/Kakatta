@@ -312,6 +312,12 @@ Go 全量测试、构建、静态检查，网页 399 项测试、类型和字典
 
 网页全量 426 项、类型、字典、生成与构建通过。新导出弹窗在桌面及手机、中英文下通过真实接口冒烟，检查安全文件清单、登录截图排除说明和长路径没有横向溢出；四张新图已逐一查看，人工 Dia 及 Safari 16 仍未执行。最终暂存源码的 Go 全量测试、构建与静态检查通过；服务、资源、HTTP 和正式入口四包完整竞态通过（分别为 316.199、2.036、194.998、197.066 秒）。严格 seccomp、断网的整仓容器中 40 个包全部通过，真实浏览器、十一类实验故障及正式主流程门禁启用，退出无 Chrome、crashpad、Xvfb、x11vnc 残留。源码散列在门禁期间没有变化。证据为 `build/readiness-final-{go-test,go-build,go-vet,race,container,web-smoke}.log`；网页全量在 `build/readiness-web-check.log`。Mac bind mount 已从已提交版本实跑通过；没有把工作区内容混入镜像。
 
+### 顾问复核后的摘要修正
+
+验证码遮罩原先只写「步骤失败」，摘要只收集「风控信号」，因此旧现场的 `reason` 有遮罩而 `signals` 为空。统一风险错误出口现补发类型、命中位置和值，沿用既有去重及脱敏；同一命中不因上层步骤名变化重复，不改变停手、账号保护或额度。四类页面风险的落盘摘要回归均先在旧代码失败，真实 Chrome 假验证码也实际复现旧摘要空数组。新现场见 `build/_summary-signal-final/artifacts/TestControllerDiagnosticFaultFiles-验证码/logs/summaries/summary-20261111-072313-2147855053/summary.json`，旧现场保留，不改写历史摘要。
+
+原版红测在 `build/summary-signal-final-red.log`，真实浏览器旧版红测在 `build/summary-signal-browser-red.log`；修后 Go 全量、构建、静态检查与实验及网页抓取包竞态通过（`build/summary-signal-final-{all-go-test,build,vet,race}.log`）。严格 seccomp 及断网容器中的实验工具、网页抓取两个完整包均通过，含真实验证码摘要断言；退出无 Chrome、crashpad、Xvfb、x11vnc 残留，日志为 `build/summary-signal-final-container.log`。本轮只修该摘要缺口，完成提交后等待作者真实测试，不继续扩展。
+
 ### Mac 真实挂载生命周期
 
 实际环境是 Mac、OrbStack 的 `orbstack` context，挂载文件系统为 `fuse`；不是 Docker Desktop/virtiofs，不把该组合写成已经验收。用提交 `109f2defab6ced84f460f19399e2087ee83588ba` 的 `git archive` 构建 arm64 镜像，归档 SHA-256 为 `0c141e3e882ed177e2f4a35bd05dc26873ca6e1ba965824174d1ea54b8c799cd`，镜像编号为 `sha256:378ce763c7b4e402e0a373a903267d8c8a18ea68db42df58d110bb918eef5933`。完整结果是 `build/_compose-check/bind-ywtek_cz/result.json`，退出码 0，耗时 24.959 秒。

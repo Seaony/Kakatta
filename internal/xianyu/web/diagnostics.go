@@ -44,6 +44,7 @@ func (r *Runner) ReportFailure(ctx context.Context, step string, err error, resp
 	if errors.As(err, &risk) {
 		fields["信号"] = risk.Signal
 		fields["命中位置"] = risk.Where
+		r.signal(map[string]any{"类型": risk.Kind.Error(), "命中位置": risk.Where, "值": risk.Signal})
 	}
 	if d.URL != "" {
 		fields["网址"] = d.URL

@@ -148,6 +148,33 @@ func TestControllerDiagnosticFaultFiles(t *testing.T) {
 			if len(summaries) != 1 {
 				t.Fatalf("单次流程摘要数量不对：%v", summaries)
 			}
+			if tc.name == "验证码" {
+				data, err := os.ReadFile(summaries[0])
+				if err != nil {
+					t.Fatal(err)
+				}
+				var summary experimentSummary
+				if err := json.Unmarshal(data, &summary); err != nil {
+					t.Fatal(err)
+				}
+				found := false
+				seen := map[string]bool{}
+				for _, signal := range summary.Signals {
+					where, _ := signal["命中位置"].(string)
+					value, _ := signal["值"].(string)
+					if signal["类型"] == web.ErrNeedVerify.Error() && where != "" && strings.HasPrefix(value, "遮罩 ") {
+						key := where + "|" + value
+						if seen[key] {
+							t.Fatalf("同一验证码命中被多层上报重复保存：%v", signal)
+						}
+						seen[key] = true
+						found = true
+					}
+				}
+				if !found {
+					t.Fatalf("实际验证码现场没有写入摘要信号：信号=%v，原因=%s", summary.Signals, summary.Reason)
+				}
+			}
 			assertExperimentDiagnosticSecretsAbsent(t, experimentLogDir(c.opts))
 			t.Logf("故障=%s；事件=%s/events-*.jsonl；摘要=%s；诊断=%s/bundles", tc.name, experimentLogDir(c.opts), summaries[0], experimentLogDir(c.opts))
 		})

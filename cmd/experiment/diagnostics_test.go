@@ -29,6 +29,50 @@ func newDiagnosticsController(t *testing.T) *controller {
 	return c
 }
 
+func TestExperimentRiskSummaryKeepsSignalTypeLocationAndValue(t *testing.T) {
+	for _, tc := range []struct {
+		name, where, value string
+		kind               error
+	}{
+		{"验证码遮罩", "提交搜索后", "遮罩 #captcha-mask", web.ErrNeedVerify},
+		{"环境提示", "打开首页", "页面文字「非法访问」", web.ErrEnvBlocked},
+		{"处罚网址", "打开详情", "主框架拒绝访问", web.ErrDenied},
+		{"登录跳转", "搜索完成", "跳到了登录页", web.ErrLoginExpired},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := newDiagnosticsController(t)
+			c.beginSummary("run")
+			runner := &web.Runner{Log: c.log}
+			risk := &web.RiskError{Kind: tc.kind, Where: tc.where, Signal: tc.value}
+			for _, step := range []string{tc.where, "整次运行收尾"} {
+				if err := runner.ReportFailure(t.Context(), step, risk, nil); !errors.Is(err, tc.kind) {
+					t.Fatalf("取证改变了风控错误：%v", err)
+				}
+			}
+			c.phase("failed", risk)
+			files, err := filepath.Glob(filepath.Join(experimentLogDir(c.opts), "summaries", "*", "summary.json"))
+			if err != nil || len(files) != 1 {
+				t.Fatalf("摘要没有落盘：%v，%v", files, err)
+			}
+			data, err := os.ReadFile(files[0])
+			if err != nil {
+				t.Fatal(err)
+			}
+			var summary experimentSummary
+			if err := json.Unmarshal(data, &summary); err != nil {
+				t.Fatal(err)
+			}
+			if len(summary.Signals) != 1 {
+				t.Fatalf("摘要必须记录命中的信号且不重复：信号=%v，原因=%s", summary.Signals, summary.Reason)
+			}
+			signal := summary.Signals[0]
+			if signal["类型"] != tc.kind.Error() || signal["命中位置"] != tc.where || signal["值"] != tc.value {
+				t.Fatalf("摘要丢了信号类型、命中位置或值：%v", signal)
+			}
+		})
+	}
+}
+
 func TestExperimentFailureKeepsSummaryAndOnlyFailedResponse(t *testing.T) {
 	c := newDiagnosticsController(t)
 	c.beginSummary("run")
