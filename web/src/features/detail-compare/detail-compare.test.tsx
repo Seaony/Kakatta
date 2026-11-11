@@ -424,13 +424,18 @@ describe('比较和局部阅读', () => {
       seller_good_rate: null, buyer_good_rate: null, seller_good_count: null, seller_rate_count: null, buyer_good_count: null, buyer_rate_count: null,
       recent_items: null, recent_rates: null, fetched_at: timestamp,
     };
-    mount(<FindingDetail findingId={1} onClose={() => {}} onNavigate={() => {}} timeZone="UTC" />, fakeAPI(finding).api);
+    const backend = fakeAPI(finding);
+    mount(<FindingDetail findingId={1} onClose={() => {}} onNavigate={() => {}} timeZone="UTC" />, backend.api);
     await screen.findByRole('heading', { name: '本地商品 1' });
     expect(screen.getByText('部分资料的卖家')).toBeTruthy();
     expect(screen.getByText('保留卖家介绍')).toBeTruthy();
     expect(screen.getByText('来闲鱼 1 年 2 个月')).toBeTruthy();
     const reviews = screen.getByRole('heading', { name: '最近评价' }).parentElement!;
     expect(within(reviews).getByText('未知')).toBeTruthy();
+    backend.update({ ...finding, seller: { ...finding.seller, recent_rates: [{ role: 'seller', kind: 'bad', text: '本地差评原文' }] } });
+    await userEvent.setup().click(screen.getByRole('button', { name: '刷新已存数据' }));
+    await within(reviews).findByText('本地差评原文');
+    expect(within(reviews).getByText('作为卖家 · 差评')).toBeTruthy();
   });
 
   test('当前有效结论直接用后台checks，旧覆盖不能把程序卖家风险显示成没问题', async () => {

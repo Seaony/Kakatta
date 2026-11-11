@@ -186,7 +186,7 @@ describe('账号连接与人工会话', () => {
     await screen.findByText('需要验证');
     expect(view.container.querySelector('iframe')).toBeNull();
     await user.click(screen.getByRole('button', { name: '去验证' }));
-    await waitFor(() => expect(view.container.querySelector('iframe')?.getAttribute('src')).toBe('http://localhost/remote/sessions/session-opaque-7/'));
+    await waitFor(() => expect(view.container.querySelector('iframe')?.getAttribute('src')).toBe('http://localhost/remote/sessions/session-opaque-7/#lang=zh-CN'));
     await user.click(await screen.findByRole('button', { name: '我已完成验证' }));
     await waitFor(() => expect(confirmations).toEqual([{ session_id: 'session-opaque-7' }]));
     expect(accepted).toBe(0);
@@ -209,7 +209,7 @@ describe('账号连接与人工会话', () => {
     const firstHint = '当前画面没有验证框，请在画面里刷新一下页面。';
     await screen.findByText(firstHint);
     const frame = view.container.querySelector('iframe');
-    expect(frame?.getAttribute('src')).toBe(`http://localhost${path}`);
+    expect(frame?.getAttribute('src')).toBe(`http://localhost${path}#lang=zh-CN`);
     current = { ...current, refresh_verification: false };
     await user.click(screen.getByRole('button', { name: '重新读取会话' }));
     await waitFor(() => expect(screen.queryByText(firstHint)).toBeNull());
@@ -246,6 +246,7 @@ describe('账号连接与人工会话', () => {
 
   test('远程地址仅接受同源remote路径', () => {
     expect(remotePath('/remote/sessions/opaque/', 'https://kakatta.example')).toBe('https://kakatta.example/remote/sessions/opaque/');
+    expect(remotePath('/remote/sessions/opaque/', 'https://kakatta.example', 'en')).toBe('https://kakatta.example/remote/sessions/opaque/#lang=en');
     for (const value of ['https://other.example/remote/', '//other.example/remote/', '/api/v1/accounts', 'javascript:alert(1)', '/remote/../../login', null]) {
       expect(remotePath(value, 'https://kakatta.example')).toBeNull();
     }

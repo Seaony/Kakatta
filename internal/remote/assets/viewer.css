@@ -38,6 +38,7 @@ button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .text-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
 #text-status { color: var(--muted); }
 #screen { flex: 1; min-height: 0; overflow: hidden; background: var(--control); }
+#preview-frame { display: block; width: 100%; height: 100%; object-fit: contain; }
 #screen canvas { touch-action: none; user-select: none; -webkit-user-select: none; }
 #screen canvas:focus-visible { outline: 2px solid var(--focus) !important; outline-offset: -2px; }
 #screen[data-panning="true"] canvas { cursor: grab !important; }

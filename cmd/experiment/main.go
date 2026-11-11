@@ -302,10 +302,11 @@ func experimentHandler(c *controller, a *access) http.Handler {
 			http.Error(w, "还没有打开浏览器", 409)
 			return
 		}
-		if strings.HasSuffix(r.URL.Path, "/vnc") {
+		view := res.remote.HandlerWithViewer(a.authorized, func(context.Context) error {
 			c.viewing(res)
-		}
-		http.StripPrefix("/remote", res.remote.Handler(a.authorized)).ServeHTTP(w, r)
+			return nil
+		})
+		http.StripPrefix("/remote", view).ServeHTTP(w, r)
 	}))
 	return new(http.CrossOriginProtection).Handler(noCache(mux))
 }

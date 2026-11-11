@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"sync"
 	"time"
 
 	"github.com/Seaony/Kakatta/internal/analysis"
@@ -38,6 +39,15 @@ type detailMarketSnapshot struct {
 	result  *analysis.MarketResult
 }
 
+type detailModelJob struct {
+	index     int
+	profile   analysis.Profile
+	originals analysis.EvidenceOriginals
+	done      chan struct{}
+	result    client.Result
+	err       error
+}
+
 var errDetailWorkChanged = errors.New("详情工作已变化")
 
 func (s *Service) runDetail(ctx context.Context, run *runExecution) error {
@@ -55,8 +65,51 @@ func (s *Service) runDetailWith(ctx context.Context, run *runExecution, open fun
 		return storageFailure(err)
 	}
 	var market detailMarketSnapshot
+	modelCtx, cancelModels := context.WithCancel(ctx)
+	var workers sync.WaitGroup
+	stopModels := func() {
+		cancelModels()
+		workers.Wait()
+	}
+	defer stopModels()
+	var pending []*detailModelJob
+	flush := func(leave int, wait bool) (bool, error) {
+		for len(pending) > leave {
+			job := pending[0]
+			if !wait {
+				select {
+				case <-job.done:
+				default:
+					return false, nil
+				}
+			}
+			work := run.P[job.index]
+			err := s.finishDetailModel(ctx, run, work, job)
+			pending[0] = nil
+			pending = pending[1:]
+			if errors.Is(err, client.ErrNoProvider) || errors.Is(err, client.ErrDailyLimit) {
+				cause := "no_provider"
+				if errors.Is(err, client.ErrDailyLimit) {
+					cause = "daily_limit"
+				}
+				stopModels()
+				return true, s.detailAwait(ctx, run.P[job.index:], cause)
+			}
+			var failure *client.Failure
+			if errors.As(err, &failure) {
+				err = s.detailFailure(ctx, work, failure.Last, failure.Retryable, false)
+			}
+			if err != nil {
+				return true, err
+			}
+		}
+		return false, nil
+	}
 	for index, work := range run.P {
 		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if stop, err := flush(0, false); stop {
 			return err
 		}
 		input, current, err := s.detailInput(ctx, work)
@@ -67,6 +120,9 @@ func (s *Service) runDetailWith(ctx context.Context, run *runExecution, open fun
 			continue
 		}
 		if input.Item.IsDismissed || input.Blocked {
+			if stop, err := flush(0, true); stop {
+				return err
+			}
 			code := "findings.blocked_seller"
 			if input.Item.IsDismissed {
 				code = "findings.dismissed"
@@ -79,10 +135,10 @@ func (s *Service) runDetailWith(ctx context.Context, run *runExecution, open fun
 		}
 		if !detailCached(input.Item.DetailFetchedAt, input.Now) {
 			if run.CachedOnly {
-				return nil
+				break
 			}
 			if run.DetailCount+run.SellerPageCount >= limit {
-				return nil
+				break
 			}
 			// Runner 自己申请额度并等待，编排层只限制本次打开数量。
 			opened := false
@@ -94,9 +150,12 @@ func (s *Service) runDetailWith(ctx context.Context, run *runExecution, open fun
 				return err
 			}
 			if errors.Is(openErr, web.ErrQuota) {
-				return nil
+				break
 			}
 			if openErr != nil {
+				if stop, err := flush(0, true); stop {
+					return err
+				}
 				if err := s.detailFailure(ctx, work, findingMessage("run.detail_failed", nil), true, false); err != nil {
 					return err
 				}
@@ -114,6 +173,9 @@ func (s *Service) runDetailWith(ctx context.Context, run *runExecution, open fun
 			}
 		}
 		if input.Item.IsDismissed || input.Blocked {
+			if stop, err := flush(0, true); stop {
+				return err
+			}
 			code := "findings.blocked_seller"
 			if input.Item.IsDismissed {
 				code = "findings.dismissed"
@@ -126,30 +188,60 @@ func (s *Service) runDetailWith(ctx context.Context, run *runExecution, open fun
 		}
 		layer := analysis.JudgeKeyword(input.Item.Title, findingString(input.Item.Description), input.Task.MatchKeywords, input.Task.ExcludeKeywords)
 		if input.Task.JudgeMode == analysis.ModeKeyword || layer.Rejected && layer.RejectKind == analysis.RejectExcluded {
+			if stop, err := flush(0, true); stop {
+				return err
+			}
 			if err := s.detailConclusion(ctx, run, work, Conclusion{Layer: &layer}); err != nil {
 				return err
 			}
 			continue
 		}
-		if err := s.detailModel(ctx, run, work, input, limit, &market); err != nil {
-			if errors.Is(err, client.ErrNoProvider) || errors.Is(err, client.ErrDailyLimit) {
-				cause := "no_provider"
-				if errors.Is(err, client.ErrDailyLimit) {
-					cause = "daily_limit"
-				}
-				return s.detailAwait(ctx, run.P[index:], cause)
-			}
-			var failure *client.Failure
-			if errors.As(err, &failure) {
-				if err := s.detailFailure(ctx, work, failure.Last, failure.Retryable, false); err != nil {
-					return err
-				}
-				continue
-			}
+		pendingLimit, err := accountSetting(input.Snapshot.Values, "ai.max_concurrent_requests")
+		if err != nil {
+			return storageFailure(err)
+		}
+		seller, pictures, err := s.prepareDetailModel(ctx, run, work, input, limit)
+		if err != nil {
 			return err
 		}
+		// 先准备下一件，再等出一个提交位置。全局模型名额仍由模型服务分配。
+		if int64(len(pending)) >= pendingLimit {
+			if stop, err := flush(int(pendingLimit)-1, true); stop {
+				return err
+			}
+		}
+		fair, err := s.detailFair(ctx, work, input.Item, &market)
+		if errors.Is(err, errDetailWorkChanged) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		source := detailProductSource(input.Item, seller)
+		request, originals, err := prompts.BuildAnalysis(run.Prompts, &work.TaskID, input.Task.Profile, source, fair, pictures)
+		if err != nil {
+			return storageFailure(err)
+		}
+		job := &detailModelJob{index: index, profile: input.Task.Profile, originals: originals, done: make(chan struct{})}
+		runID := run.Ref.RunID
+		if err := s.guardedWork(ctx, run, "商品判断", func(workCtx context.Context) error {
+			if err := workCtx.Err(); err != nil {
+				return err
+			}
+			workers.Add(1)
+			go func() {
+				defer workers.Done()
+				defer close(job.done)
+				job.result, job.err = s.completeRunModel(modelCtx, runID, request)
+			}()
+			return nil
+		}); err != nil {
+			return err
+		}
+		pending = append(pending, job)
 	}
-	return nil
+	_, err = flush(0, true)
+	return err
 }
 
 func detailStop(ctx context.Context, err error) error {
@@ -316,26 +408,26 @@ func (s *Service) detailAwait(ctx context.Context, works []WorkRef, cause string
 	return nil
 }
 
-func (s *Service) detailModel(ctx context.Context, run *runExecution, work WorkRef, input detailInput, limit int64, market *detailMarketSnapshot) error {
+func (s *Service) prepareDetailModel(ctx context.Context, run *runExecution, work WorkRef, input detailInput, limit int64) (*SellerProfile, []string, error) {
 	if s.models == nil {
-		return fmt.Errorf("%w：商品判断服务未配置", client.ErrInfrastructure)
+		return nil, nil, fmt.Errorf("%w：商品判断服务未配置", client.ErrInfrastructure)
 	}
 	seller, err := s.detailSeller(ctx, run, work, input, limit)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	count, err := accountSetting(input.Snapshot.Values, "ai.image_count")
 	if err != nil {
-		return storageFailure(err)
+		return nil, nil, storageFailure(err)
 	}
 	transport, err := detailImageTransport(run.Spec.Proxy)
 	if err != nil {
-		return storageFailure(err)
+		return nil, nil, storageFailure(err)
 	}
 	defer transport.CloseIdleConnections()
 	preparer, err := images.New(images.Dependencies{HTTP: &http.Client{Transport: transport}})
 	if err != nil {
-		return storageFailure(err)
+		return nil, nil, storageFailure(err)
 	}
 	var pictures images.Result
 	err = s.guardedWork(ctx, run, "准备详情图片", func(workCtx context.Context) error {
@@ -344,28 +436,22 @@ func (s *Service) detailModel(ctx context.Context, run *runExecution, work WorkR
 		return prepareErr
 	})
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	for _, skipped := range pictures.Skipped {
 		run.Warnings = append(run.Warnings, skipped.Reason)
 	}
-	fair, err := s.detailFair(ctx, work, input.Item, market)
-	if errors.Is(err, errDetailWorkChanged) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	source := detailProductSource(input.Item, seller)
-	request, originals, err := prompts.BuildAnalysis(run.Prompts, &work.TaskID, input.Task.Profile, source, fair, pictures.DataURLs())
-	if err != nil {
-		return storageFailure(err)
-	}
-	var result client.Result
-	err = s.guardedWork(ctx, run, "商品判断", func(workCtx context.Context) error {
-		var modelErr error
-		result, modelErr = s.completeRunModel(workCtx, run.Ref.RunID, request)
-		return modelErr
+	return seller, pictures.DataURLs(), nil
+}
+
+func (s *Service) finishDetailModel(ctx context.Context, run *runExecution, work WorkRef, job *detailModelJob) error {
+	err := s.guardedWork(ctx, run, "商品判断", func(workCtx context.Context) error {
+		select {
+		case <-job.done:
+			return job.err
+		case <-workCtx.Done():
+			return workCtx.Err()
+		}
 	})
 	if stopped := detailStop(ctx, err); stopped != nil {
 		return stopped
@@ -373,12 +459,13 @@ func (s *Service) detailModel(ctx context.Context, run *runExecution, work WorkR
 	if err != nil {
 		return err
 	}
-	facts, warnings, err := analysis.ParseFacts([]byte(result.Text), input.Task.Profile, originals)
+	result := job.result
+	facts, warnings, err := analysis.ParseFacts([]byte(result.Text), job.profile, job.originals)
 	if err != nil {
 		return fmt.Errorf("%w：商品判断返回未通过校验：%v", client.ErrInfrastructure, err)
 	}
 	run.Warnings = append(run.Warnings, warnings...)
-	conclusion := Conclusion{RequestProfile: input.Task.Profile, Facts: &facts, Warnings: warnings}
+	conclusion := Conclusion{RequestProfile: job.profile, Facts: &facts, Warnings: warnings}
 	if result.ProviderID > 0 {
 		conclusion.ProviderID = &result.ProviderID
 	}

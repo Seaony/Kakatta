@@ -36,7 +36,7 @@ type Factory struct {
 	startChrome  func(context.Context, browser.Options) (*browser.Session, error)
 	closeChrome  func(*browser.Session)
 	newRunner    func(*browser.Session, *pacer.Pacer, pacer.Range, web.Site, web.Pace, web.Budget, web.Logger) *web.Runner
-	startRemote  func(context.Context, string) (*remote.Session, error)
+	startRemote  func(context.Context, string, func(context.Context) ([]byte, error)) (*remote.Session, error)
 	closeRemote  func(*remote.Session) error
 }
 
@@ -57,7 +57,7 @@ func New(site web.Site) (*Factory, error) {
 		startChrome: browser.Start,
 		closeChrome: func(chrome *browser.Session) { chrome.Close() },
 		newRunner:   web.NewRunner,
-		startRemote: remote.Start,
+		startRemote: remote.StartWithFallback,
 		closeRemote: func(view *remote.Session) error { return view.Close() },
 	}, nil
 }
@@ -170,7 +170,7 @@ func (r *resource) OpenRemote(ctx context.Context) (*remote.Session, error) {
 	r.openingCancel = cancel
 	r.mu.Unlock()
 	stop := context.AfterFunc(ctx, cancel)
-	view, err := r.factory.startRemote(life, r.display.Name())
+	view, err := r.factory.startRemote(life, r.display.Name(), r.chrome.ScreenshotJPEG)
 	stop()
 	if err == nil {
 		err = ctx.Err()

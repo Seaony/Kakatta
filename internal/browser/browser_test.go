@@ -1,9 +1,11 @@
 package browser
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"image/jpeg"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -107,6 +109,14 @@ func TestSessionAgainstLocalPage(t *testing.T) {
 
 	if err := s.Navigate(srv.URL, 15*time.Second); err != nil {
 		t.Fatal(err)
+	}
+	frame, err := s.ScreenshotJPEG(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	picture, err := jpeg.DecodeConfig(bytes.NewReader(frame))
+	if err != nil || picture.Width == 0 || picture.Height == 0 {
+		t.Fatalf("当前页面没有有效的 JPEG 画面：%+v %v", picture, err)
 	}
 	// 主进程加上渲染等子进程，至少几十 MB。
 	if mem, err := TreeMemory(s.PID()); err != nil || mem < 20<<20 {

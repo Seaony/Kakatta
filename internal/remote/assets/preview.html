@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="{{.Current.Lang}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="viewer.css">
+<title>{{.Current.Title}} · Kakatta</title>
+</head>
+<body>
+<header><div><strong id="preview-heading">{{.Current.Heading}}</strong><span id="status" role="status">{{.Current.Connecting}}</span></div></header>
+<p id="help">{{.Current.Help}}</p>
+<div id="screen"><img id="preview-frame" alt="{{.Current.Alt}}" hidden></div>
+<template id="preview-copy">
+{{range .Copies}}<span lang="{{.Lang}}" data-title="{{.Title}}" data-heading="{{.Heading}}" data-help="{{.Help}}" data-alt="{{.Alt}}" data-connecting="{{.Connecting}}" data-connected="{{.Connected}}" data-disconnected="{{.Disconnected}}"></span>
+{{end}}</template>
+<script type="module" src="preview.js"></script>
+</body>
+</html>

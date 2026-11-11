@@ -170,7 +170,15 @@ export function Seller({ finding, timeZone }: { finding: Finding; timeZone?: str
       <div className="space-y-md">
         <h3 className="text-body font-medium">{t('web.detail.reviews')}</h3>
         {seller.recent_rates === null ? <p className="text-body text-text-secondary">{t('web.detail.unknown')}</p>
-          : seller.recent_rates.map((rate, index) => <blockquote key={index} className="break-words border-b border-border pb-md text-body"><p>{rate.text ?? t('web.detail.unknown')}</p><footer className="mt-sm text-caption text-text-secondary">{[rate.role, rate.kind].filter(Boolean).join(' · ')}</footer></blockquote>)}
+          : seller.recent_rates.map((rate, index) => {
+            const role = rate.role === 'seller' ? t('web.detail.review_as_seller') : rate.role === 'buyer' ? t('web.detail.review_as_buyer') : '';
+            const kind = rate.kind === 'good' || rate.kind === 'neutral' || rate.kind === 'bad' ? t(`web.detail.review_${rate.kind}`) : '';
+            const label = [role, kind].filter(Boolean).join(' · ');
+            return <blockquote key={index} className="break-words border-b border-border pb-md text-body">
+              <p>{rate.text ?? t('web.detail.unknown')}</p>
+              {label && <footer className="mt-sm text-caption text-text-secondary">{label}</footer>}
+            </blockquote>;
+          })}
       </div>
     </> : <p className="text-body text-text-secondary">{t(finding.seller_assessment ? 'web.detail.seller_cache_missing' : 'analysis.seller_unavailable')}</p>}
     {finding.analysis?.seller_signals.map((signal, index) => <Evidence key={index} source="text" evidence={signal.evidence} />)}

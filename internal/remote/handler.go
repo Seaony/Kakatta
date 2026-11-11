@@ -56,7 +56,14 @@ func (s *Session) HandlerWithViewer(authorized func(*http.Request) bool, onAccep
 		defer s.mu.Unlock()
 		json.NewEncoder(w).Encode(s.viewport)
 	})
-	mux.Handle("GET /", http.FileServerFS(files))
+	fileServer := http.FileServerFS(files)
+	if s.preview == nil {
+		mux.Handle("GET /", fileServer)
+	} else {
+		mux.HandleFunc("GET /{$}", s.previewDocument)
+		mux.Handle("GET /preview.js", fileServer)
+		mux.Handle("GET /viewer.css", fileServer)
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -87,6 +94,10 @@ func (s *Session) serveVNC(w http.ResponseWriter, r *http.Request, onAccepted fu
 	defer stopSession()
 	if s.ctx.Err() != nil {
 		cancel()
+	}
+	if s.preview != nil {
+		s.servePreview(ctx, w, r, onAccepted)
+		return
 	}
 	upstream, err := (&net.Dialer{Timeout: 3 * time.Second}).DialContext(ctx, "tcp4", s.address)
 	if err != nil {

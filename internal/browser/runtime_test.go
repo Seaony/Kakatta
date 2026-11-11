@@ -66,6 +66,8 @@ func (w *runtimeWire) Write(ctx context.Context, msg *cdproto.Message) error {
 		}
 	case "Page.getFrameTree":
 		response.Result = []byte(`{"frameTree":{"frame":{"id":"main","loaderId":"initial","url":"about:blank","securityOrigin":"null","mimeType":"text/html"}}}`)
+	case "Page.captureScreenshot":
+		response.Result = []byte(`{"data":"/9j/2Q=="}`)
 	case "DOM.getDocument":
 		response.Result = []byte(`{"root":{"nodeId":1,"backendNodeId":1,"nodeType":9,"nodeName":"#document","localName":"","nodeValue":""}}`)
 	}

@@ -5,16 +5,18 @@ import { apiKey } from '../../api/keys';
 import { ApiError } from '../../api/errors';
 import { useAuthentication } from '../../app/auth-state';
 import { Button, InlineMessage, StatusBadge } from '../../components/ui';
-import { useTranslation } from '../../i18n';
+import { useTranslation, type Locale } from '../../i18n';
 import { formatDateTime } from '../../i18n/format';
 import { useAccountCache, useOperation } from './data';
 import type { Account, Session } from './data';
 
-export function remotePath(path: string | null, origin: string): string | null {
+export function remotePath(path: string | null, origin: string, locale?: Locale): string | null {
   if (!path?.startsWith('/remote/') || path.startsWith('//')) return null;
   try {
     const url = new URL(path, origin);
-    return url.origin === origin && url.pathname.startsWith('/remote/') && !url.username && !url.password && !url.hash ? url.href : null;
+    if (url.origin !== origin || !url.pathname.startsWith('/remote/') || url.username || url.password || url.hash) return null;
+    if (locale) url.hash = `lang=${locale}`;
+    return url.href;
   } catch { return null; }
 }
 
@@ -44,7 +46,7 @@ export function ManualSession({ account, session, timeZone, reveal, onReveal, on
     refetchInterval: (query) => auth?.authenticated === false || query.state.error ? false : 2_000,
   });
   const current = state.data;
-  const path = remotePath(current.remote_path, globalThis.location.origin);
+  const path = remotePath(current.remote_path, globalThis.location.origin, locale);
   const showViewer = auth?.authenticated !== false && reveal && path !== null && current.phase !== 'queued' && current.phase !== 'closing';
   const refreshAfterConfirm = operation.error instanceof ApiError && operation.error.reason.code === 'remote.verification_refresh_confirm';
   const x = current.viewport?.x ?? null;

@@ -47,6 +47,9 @@ func detailTestRun(t *testing.T, count int) (*Service, *runExecution, int64) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := config.Apply(t.Context(), settings.Values{"ai.max_concurrent_requests": json.RawMessage(`1`)}); err != nil {
+		t.Fatal(err)
+	}
 	s := &Service{db: db.DB(), settings: config, now: func() time.Time { return now }}
 	detailExec(t, s.db, `INSERT INTO tasks(id,name,keyword,max_pages,interval_minutes,judge_mode,notify_policy,sort_index) VALUES(1,'相机','相机',1,30,'keyword','recommended',0)`)
 	run := &runExecution{Ref: RunRef{RunID: 1, TaskID: 1, SearchGeneration: 1}, Config: settings.Values{"max_details_per_run": json.RawMessage(`5`)}}
@@ -83,6 +86,150 @@ func detailAI(t *testing.T, s *Service, run *runExecution, now int64) {
 }
 
 const detailFactsJSON = `{"checks":[],"musts":[{"id":"m1","status":"met","source":"text","evidence":"国行"}],"adjust":{"value":0,"reason":""},"summary":"符合要求"}`
+
+func TestRunDetailOneModelSlotStillOverlapsNextPage(t *testing.T) {
+	s, run, now := detailTestRun(t, 2)
+	detailAI(t, s, run, now)
+	run.CachedOnly = false
+	detailExec(t, s.db, `UPDATE listings SET detail_fetched_at=NULL WHERE item_id='2'`)
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	firstStarted, nextPage := make(chan struct{}), make(chan struct{})
+	var calls, active atomic.Int64
+	var exceeded atomic.Bool
+	s.models = detailModelsFunc(func(ctx context.Context, _ client.Request) (client.Result, error) {
+		if active.Add(1) > 1 {
+			exceeded.Store(true)
+		}
+		defer active.Add(-1)
+		if calls.Add(1) == 1 {
+			close(firstStarted)
+			select {
+			case <-nextPage:
+			case <-ctx.Done():
+				return client.Result{}, ctx.Err()
+			}
+		}
+		return client.Result{Text: detailFactsJSON}, nil
+	})
+	err := s.runDetailWith(ctx, run, func(ctx context.Context, _ string, started func()) (xianyu.Detail, error) {
+		select {
+		case <-firstStarted:
+		case <-ctx.Done():
+			return xianyu.Detail{}, ctx.Err()
+		}
+		started()
+		close(nextPage)
+		return xianyu.Detail{Description: "国行"}, nil
+	})
+	if err != nil || calls.Load() != 2 || exceeded.Load() || run.DetailCount != 1 || !reflect.DeepEqual(run.FirstConclusionIDs, []int64{1, 2}) {
+		t.Fatalf("一个模型名额仍应与下一件浏览重叠：err=%v，调用=%d，超并发=%t，详情=%d，结论=%v", err, calls.Load(), exceeded.Load(), run.DetailCount, run.FirstConclusionIDs)
+	}
+}
+
+func TestRunDetailCommitsConcurrentModelsInProcessingOrder(t *testing.T) {
+	s, run, now := detailTestRun(t, 2)
+	detailAI(t, s, run, now)
+	detailExec(t, s.db, `UPDATE listings SET title='第一件商品' WHERE item_id='1'`)
+	if _, err := s.settings.Apply(t.Context(), settings.Values{"ai.max_concurrent_requests": json.RawMessage(`2`)}); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	firstStarted, firstRelease, secondReturned := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	s.models = detailModelsFunc(func(ctx context.Context, request client.Request) (client.Result, error) {
+		if strings.Contains(request.User, "第一件商品") {
+			close(firstStarted)
+			select {
+			case <-firstRelease:
+			case <-ctx.Done():
+				return client.Result{}, ctx.Err()
+			}
+		} else {
+			select {
+			case <-firstStarted:
+			case <-ctx.Done():
+				return client.Result{}, ctx.Err()
+			}
+			close(secondReturned)
+		}
+		return client.Result{Text: detailFactsJSON}, nil
+	})
+	done := make(chan struct{})
+	var runErr error
+	go func() {
+		defer close(done)
+		runErr = s.runDetail(ctx, run)
+	}()
+	defer func() {
+		cancel()
+		<-done
+	}()
+	select {
+	case <-secondReturned:
+	case <-ctx.Done():
+		t.Fatal("第二件没有和第一件并发判断")
+	}
+	if finding := detailFinding(t, s, 2); finding.Decision != DecisionPending || finding.Attempts != 0 {
+		t.Fatalf("第二件先返回也不能先落盘：%+v", finding)
+	}
+	close(firstRelease)
+	<-done
+	if runErr != nil || !reflect.DeepEqual(run.FirstConclusionIDs, []int64{1, 2}) {
+		t.Fatalf("结论没有按处理顺序提交：%v %v", run.FirstConclusionIDs, runErr)
+	}
+}
+
+func TestRunDetailStopsOverlappingModelOnRiskButSettlesOnPageQuota(t *testing.T) {
+	for _, pageErr := range []error{web.ErrDenied, web.ErrQuota} {
+		t.Run(pageErr.Error(), func(t *testing.T) {
+			s, run, now := detailTestRun(t, 2)
+			detailAI(t, s, run, now)
+			run.CachedOnly = false
+			detailExec(t, s.db, `UPDATE listings SET detail_fetched_at=NULL WHERE item_id='2'`)
+			ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+			defer cancel()
+			modelStarted, modelStopped, pageStopped := make(chan struct{}), make(chan struct{}), make(chan struct{})
+			s.models = detailModelsFunc(func(ctx context.Context, _ client.Request) (client.Result, error) {
+				close(modelStarted)
+				defer close(modelStopped)
+				if pageErr == web.ErrQuota {
+					select {
+					case <-pageStopped:
+						return client.Result{Text: detailFactsJSON}, nil
+					case <-ctx.Done():
+						return client.Result{}, ctx.Err()
+					}
+				}
+				<-ctx.Done()
+				return client.Result{}, ctx.Err()
+			})
+			err := s.runDetailWith(ctx, run, func(ctx context.Context, _ string, started func()) (xianyu.Detail, error) {
+				select {
+				case <-modelStarted:
+				case <-ctx.Done():
+					return xianyu.Detail{}, ctx.Err()
+				}
+				if pageErr == web.ErrDenied {
+					started()
+				}
+				close(pageStopped)
+				return xianyu.Detail{}, pageErr
+			})
+			select {
+			case <-modelStopped:
+			default:
+				t.Fatal("runDetail 返回前没有等模型退出")
+			}
+			first, second := detailFinding(t, s, 1), detailFinding(t, s, 2)
+			if pageErr == web.ErrDenied && (!errors.Is(err, web.ErrDenied) || run.DetailCount != 1 || first.Decision != DecisionPending) ||
+				pageErr == web.ErrQuota && (err != nil || run.DetailCount != 0 || first.Decision != analysis.DecisionScored) ||
+				second.Decision != DecisionPending || second.Attempts != 0 {
+				t.Fatalf("停止后的模型结论或访问计数错误：%v, %d, %s, %s", err, run.DetailCount, first.Decision, second.Decision)
+			}
+		})
+	}
+}
 
 func TestRunDetailKeepsTheSameMarketReferenceThroughoutTheRun(t *testing.T) {
 	s, run, now := detailTestRun(t, 5)

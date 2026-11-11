@@ -237,7 +237,7 @@ func (c *controller) makeResources(ctx context.Context, manual bool) (r *resourc
 	if err != nil {
 		return r, err
 	}
-	r.remote, err = remote.Start(life, r.display.Name())
+	r.remote, err = remote.StartWithFallback(life, r.display.Name(), r.chrome.ScreenshotJPEG)
 	if err != nil {
 		return r, err
 	}

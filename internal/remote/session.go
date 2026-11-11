@@ -4,7 +4,6 @@ package remote
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"os/exec"
@@ -31,12 +30,14 @@ type Session struct {
 	address   string
 	cmd       *exec.Cmd
 	done      chan struct{}
+	preview   *readOnlyPreview
 	closeOnce sync.Once
 	closeErr  error
 	mu        sync.Mutex
 	closed    bool
 	viewport  *Viewport
 	conns     map[net.Conn]struct{}
+	readers   int
 	active    sync.WaitGroup
 }
 
@@ -53,11 +54,11 @@ func Start(ctx context.Context, display string) (*Session, error) {
 	}
 	path, err := exec.LookPath("x11vnc")
 	if err != nil {
-		return nil, errors.New("找不到 x11vnc，请检查容器镜像")
+		return nil, &vncStartError{"reason_missing", err}
 	}
 	l, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
-		return nil, fmt.Errorf("无法分配远程画面端口：%w", err)
+		return nil, &vncStartError{"reason_port", err}
 	}
 	address := l.Addr().String()
 	_, port, _ := net.SplitHostPort(address)
@@ -68,7 +69,7 @@ func Start(ctx context.Context, display string) (*Session, error) {
 	s := &Session{ctx: sessionCtx, cancel: cancel, address: address, cmd: cmd, done: make(chan struct{}), conns: map[net.Conn]struct{}{}}
 	if err := cmd.Start(); err != nil {
 		cancel()
-		return nil, fmt.Errorf("启动远程画面失败：%w", err)
+		return nil, &vncStartError{"reason_start", err}
 	}
 	go func() {
 		cmd.Wait()
@@ -83,7 +84,9 @@ func Start(ctx context.Context, display string) (*Session, error) {
 		}
 	}()
 	if err := s.waitReady(ctx); err != nil {
-		s.Close()
+		if closeErr := s.Close(); closeErr != nil {
+			return nil, closeErr
+		}
 		return nil, err
 	}
 	if err := ctx.Err(); err != nil {
@@ -116,11 +119,11 @@ func (s *Session) waitReady(ctx context.Context) error {
 		}
 		select {
 		case <-s.done:
-			return errors.New("远程画面启动失败，请检查虚拟屏幕是否运行")
+			return &vncStartError{reason: "reason_exit"}
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-deadline.C:
-			return errors.New("等待远程画面启动超时")
+			return &vncStartError{reason: "reason_timeout"}
 		case <-tick.C:
 		}
 	}
@@ -131,7 +134,7 @@ func (s *Session) Address() string { return s.address }
 func (s *Session) HasViewer() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return len(s.conns) > 0
+	return len(s.conns) > 0 || s.readers > 0
 }
 
 func (s *Session) SetViewport(view *Viewport) error {
