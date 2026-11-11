@@ -77,7 +77,7 @@ export function ManualSession({ account, session, timeZone, reveal, onReveal, on
       <p className="max-w-prose text-body text-text-body">{t(current.kind === 'login' ? 'remote.login_help' : 'remote.verification_help')}</p>
       {(refreshAfterConfirm || current.refresh_verification) && <InlineMessage tone="warning">{t(refreshAfterConfirm ? 'remote.verification_refresh_confirm' : 'remote.verification_refresh_page')}</InlineMessage>}
       <iframe ref={frame} src={path} title={t('remote.viewer_title', { name: account.name })}
-        className="block h-[min(75vh,52rem)] min-h-[24rem] w-full rounded-control border border-border bg-inset supports-[height:100dvh]:h-[min(75dvh,52rem)]"
+        className="block h-[min(75vh,52rem)] min-h-[24rem] w-full rounded-control border border-border bg-inset supports-[height:100dvh]:h-[min(75dvh,75vh,52rem)]"
         referrerPolicy="same-origin" onLoad={() => frame.current?.contentWindow?.postMessage({ type: 'kakatta:viewport', region: current.viewport }, globalThis.location.origin)} />
     </> : current.remote_path !== null && !path ? <InlineMessage tone="danger">{t('remote.invalid_path')}</InlineMessage>
       : <p className="text-body text-text-secondary">{t('remote.no_viewer')}</p>}

@@ -28,7 +28,7 @@ export type ConfirmDialogProps = {
 
 const overlayClass = "fixed inset-0 z-[var(--layer-overlay)] bg-overlay";
 const contentClass =
-  "fixed inset-lg top-[max(var(--space-lg),env(safe-area-inset-top))] bottom-[max(var(--space-lg),env(safe-area-inset-bottom))] z-[var(--layer-dialog)] flex min-h-0 flex-col gap-lg overflow-hidden rounded-panel border border-border bg-raised p-lg text-text-primary shadow-[var(--shadow-overlay)] sm:inset-auto sm:left-1/2 sm:top-1/2 sm:max-h-[calc(100vh_-_var(--space-lg)_-_var(--space-lg))] sm:w-[calc(100vw_-_var(--space-lg)_-_var(--space-lg))] sm:max-w-[var(--dialog-width,36rem)] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:p-xl supports-[height:100dvh]:sm:max-h-[calc(100dvh_-_var(--space-lg)_-_var(--space-lg))]";
+  "fixed inset-lg top-[max(var(--space-lg),env(safe-area-inset-top))] bottom-[max(var(--space-lg),env(safe-area-inset-bottom))] z-[var(--layer-dialog)] flex min-h-0 flex-col gap-lg overflow-hidden rounded-panel border border-border bg-raised p-lg text-text-primary shadow-[var(--shadow-overlay)] sm:inset-auto sm:left-1/2 sm:top-1/2 sm:max-h-[calc(100vh_-_var(--space-lg)_-_var(--space-lg))] sm:w-[calc(100vw_-_var(--space-lg)_-_var(--space-lg))] sm:max-w-[var(--dialog-width,36rem)] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:p-xl supports-[height:100dvh]:sm:max-h-[calc(min(100dvh,100vh)_-_var(--space-lg)_-_var(--space-lg))]";
 
 function useReturnFocus(hasTrigger: boolean) {
   const previousFocus = useRef<HTMLElement | null>(null);
