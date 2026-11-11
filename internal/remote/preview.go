@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"html/template"
+	"io"
 	"log/slog"
 	"net/http"
 	"sync"
@@ -38,6 +39,12 @@ type readOnlyPreview struct {
 // StartWithFallback 只在 x11vnc 启动失败时，改用当前浏览器的只读画面。
 func StartWithFallback(ctx context.Context, display string, capture func(context.Context) ([]byte, error)) (*Session, error) {
 	return startWithFallback(ctx, display, capture, Start)
+}
+
+func StartWithFallbackLog(ctx context.Context, display string, capture func(context.Context) ([]byte, error), output io.Writer) (*Session, error) {
+	return startWithFallback(ctx, display, capture, func(ctx context.Context, display string) (*Session, error) {
+		return StartWithLog(ctx, display, output)
+	})
 }
 
 func startWithFallback(ctx context.Context, display string, capture func(context.Context) ([]byte, error), start func(context.Context, string) (*Session, error)) (*Session, error) {

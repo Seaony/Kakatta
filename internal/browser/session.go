@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -34,6 +35,7 @@ type Options struct {
 	Width      int
 	Height     int
 	WebGL      string // 仅供实验选择实际渲染后端
+	Output     io.Writer
 }
 
 type Session struct {
@@ -46,6 +48,8 @@ type Session struct {
 	cmd         *exec.Cmd
 	navigation  *navigationState
 	Capture     *Capture
+	domReadOnce sync.Once
+	domRead     chan struct{}
 }
 
 var startMu sync.Mutex
@@ -132,6 +136,9 @@ func Start(parent context.Context, o Options) (*Session, error) {
 	)
 	if o.Proxy != "" {
 		opts = append(opts, chromedp.ProxyServer(o.Proxy))
+	}
+	if o.Output != nil {
+		opts = append(opts, chromedp.CombinedOutput(o.Output))
 	}
 	// 运行超时要先正常关闭，不能让父上下文直接杀掉浏览器。
 	baseCtx, cancelBase := context.WithCancel(context.WithoutCancel(parent))
@@ -238,6 +245,11 @@ func prepareProfile(dir string) error {
 		}
 	}
 	return nil
+}
+
+func (s *Session) domReadPermit() chan struct{} {
+	s.domReadOnce.Do(func() { s.domRead = make(chan struct{}, 1) })
+	return s.domRead
 }
 
 func (s *Session) Context() context.Context { return s.ctx }

@@ -3,6 +3,7 @@
 package browser
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -76,5 +77,21 @@ func TestCancelDuringChromeStartupReturnsPromptly(t *testing.T) {
 	}
 	if time.Since(start) > 3*time.Second {
 		t.Fatal("父上下文取消后仍在等浏览器启动")
+	}
+}
+
+func TestChromeStartupFailureKeepsProcessOutput(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "failed-chrome")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nprintf 'local-chrome-startup-error\\n' >&2\nexit 1\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	if session, err := Start(ctx, Options{ExecPath: path, ProfileDir: t.TempDir(), Output: &output}); session != nil || err == nil {
+		t.Fatal("故障浏览器被当成启动成功")
+	}
+	if !bytes.Contains(output.Bytes(), []byte("local-chrome-startup-error")) {
+		t.Fatal("启动失败前的标准错误输出丢失", output.String())
 	}
 }

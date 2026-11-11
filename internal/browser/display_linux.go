@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -30,7 +31,15 @@ func StartDisplay(ctx context.Context, accountID int) (*Display, error) {
 	return startDisplay(ctx, accountID, 10*time.Second)
 }
 
+func StartDisplayWithLog(ctx context.Context, accountID int, output io.Writer) (*Display, error) {
+	return startDisplayWithLog(ctx, accountID, 10*time.Second, output)
+}
+
 func startDisplay(ctx context.Context, accountID int, timeout time.Duration) (*Display, error) {
+	return startDisplayWithLog(ctx, accountID, timeout, os.Stderr)
+}
+
+func startDisplayWithLog(ctx context.Context, accountID int, timeout time.Duration, output io.Writer) (*Display, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -57,7 +66,7 @@ func startDisplay(ctx context.Context, accountID int, timeout time.Duration) (*D
 	}
 	cmd := exec.CommandContext(context.WithoutCancel(ctx), "Xvfb", ":"+strconv.Itoa(number), "-screen", "0", "1920x1080x24", "-nolisten", "tcp", "-noreset")
 	configureProcessGroup(cmd)
-	cmd.Stderr = os.Stderr
+	cmd.Stderr = output
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("启动虚拟屏幕失败：%w", err)
 	}

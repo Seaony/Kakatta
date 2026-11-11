@@ -36,7 +36,7 @@ type Human struct {
 
 // NewHuman 创建操作者。keyDelay 是逐字输入时每个字之间的间隔。
 func NewHuman(s *Session, p *pacer.Pacer, keyDelay pacer.Range) *Human {
-	return &Human{s: s, queries: chromedp.FromContext(s.Context()).Target, domRead: make(chan struct{}, 1), p: p, keyDelay: keyDelay, x: 200, y: 200}
+	return &Human{s: s, queries: chromedp.FromContext(s.Context()).Target, domRead: s.domReadPermit(), p: p, keyDelay: keyDelay, x: 200, y: 200}
 }
 
 // 重取文档会清掉前端编号，同一条读取链结束后才能开始下一条。

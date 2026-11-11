@@ -43,6 +43,10 @@ type Session struct {
 
 // Start 只接已有的虚拟屏幕，端口始终只在本机开放。
 func Start(ctx context.Context, display string) (*Session, error) {
+	return StartWithLog(ctx, display, nil)
+}
+
+func StartWithLog(ctx context.Context, display string, output io.Writer) (*Session, error) {
 	if runtime.GOOS != "linux" {
 		return nil, errors.New("远程画面需要 Linux 容器")
 	}
@@ -64,6 +68,7 @@ func Start(ctx context.Context, display string) (*Session, error) {
 	_, port, _ := net.SplitHostPort(address)
 	l.Close()
 	cmd := exec.Command(path, x11vncArgs(display, port)...)
+	cmd.Stderr = output
 	configureProcess(cmd)
 	sessionCtx, cancel := context.WithCancel(context.Background())
 	s := &Session{ctx: sessionCtx, cancel: cancel, address: address, cmd: cmd, done: make(chan struct{}), conns: map[net.Conn]struct{}{}}
