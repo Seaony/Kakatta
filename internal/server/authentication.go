@@ -26,7 +26,19 @@ func (s *Server) authenticated(next http.Handler) http.Handler {
 			WriteError(w, r, http.StatusUnauthorized, message("auth.unauthenticated"), nil)
 			return
 		}
-		identity, err := s.auth.Authenticate(r.Context(), token, kind)
+		var identity auth.Identity
+		readOnly := false
+		if (r.Method == http.MethodGet || r.Method == http.MethodHead) && s.runtimeFailure != nil && s.runtimeFailure() != nil {
+			switch r.URL.Path {
+			case "/api/v1/me", "/api/v1/settings", "/api/v1/settings/definitions", "/api/v1/system/status":
+				readOnly = true
+			}
+		}
+		if readOnly {
+			identity, err = s.auth.AuthenticateReadOnly(r.Context(), token, kind)
+		} else {
+			identity, err = s.auth.Authenticate(r.Context(), token, kind)
+		}
 		if err != nil {
 			if errors.Is(err, auth.ErrUnauthenticated) {
 				s.clearCookie(w, r)
@@ -34,7 +46,7 @@ func (s *Server) authenticated(next http.Handler) http.Handler {
 			s.writeFailure(w, r, err)
 			return
 		}
-		if kind == auth.WebSession {
+		if kind == auth.WebSession && !readOnly {
 			s.setCookie(w, r, token, identity.CookieExpiresAt)
 		}
 		ctx := context.WithValue(r.Context(), identityKey, identity)

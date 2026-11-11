@@ -25,6 +25,11 @@ import (
 
 func accountTestService(t *testing.T) *Service {
 	t.Helper()
+	return accountTestServiceWithClock(t, func() time.Time { return time.Date(2026, 11, 11, 5, 0, 0, 0, time.UTC) })
+}
+
+func accountTestServiceWithClock(t *testing.T, now func() time.Time) *Service {
+	t.Helper()
 	data := t.TempDir()
 	if _, err := config.CreateDataDirectories(data); err != nil {
 		t.Fatal(err)
@@ -34,7 +39,6 @@ func accountTestService(t *testing.T) *Service {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { database.Close() })
-	now := func() time.Time { return time.Date(2026, 11, 11, 5, 0, 0, 0, time.UTC) }
 	preferences, err := appsettings.New(t.Context(), database.DB(), settings.Environment{TZ: "UTC"}, now)
 	if err != nil {
 		t.Fatal(err)

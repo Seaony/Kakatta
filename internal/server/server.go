@@ -13,6 +13,7 @@ import (
 
 	"github.com/Seaony/Kakatta/api"
 	"github.com/Seaony/Kakatta/internal/auth"
+	"github.com/Seaony/Kakatta/internal/locales"
 	"github.com/Seaony/Kakatta/internal/settings"
 )
 
@@ -50,6 +51,8 @@ type Server struct {
 	closed    chan struct{}
 	closeOnce sync.Once
 	heartbeat time.Duration
+
+	runtimeFailure func() *locales.Message
 }
 
 type contextKey uint8
@@ -163,6 +166,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if badOrigin || len(origins) > 1 || len(r.Header.Values("Sec-Fetch-Site")) > 1 || s.cross.Check(check) != nil {
 		WriteError(w, r, http.StatusForbidden, message("http.forbidden"), nil)
 		return
+	}
+	if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions && s.runtimeFailure != nil {
+		if reason := s.runtimeFailure(); reason != nil {
+			WriteError(w, r, http.StatusServiceUnavailable, *reason, nil)
+			return
+		}
 	}
 	s.mux.ServeHTTP(w, r)
 }

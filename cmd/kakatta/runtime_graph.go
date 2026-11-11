@@ -119,7 +119,7 @@ func newRuntimeGraphWithSite(life context.Context, cfg config.Config, paths conf
 		return nil, err
 	}
 	g.handler, err = server.New(server.Dependencies{
-		Auth: g.authentication, Settings: graphSettings{g}, Health: g.database.DB().PingContext,
+		Auth: g.authentication, Settings: graphSettings{g}, Health: g.core.Health,
 		Web: assets.Assets(), LoginFailure: g.recordLoginFailure,
 	})
 	if err != nil {
@@ -148,13 +148,23 @@ func (g *runtimeGraph) publish(kind string, reason *locales.Message, data json.R
 }
 
 func (g *runtimeGraph) notifyModelEvent(ctx context.Context, eventID int64) error {
-	if err := g.ctx.Err(); err != nil {
+	runtime := g.core.RuntimeContext()
+	if err := runtime.Err(); err != nil {
 		return err
 	}
-	work, cancel := context.WithCancel(ctx)
-	stop := context.AfterFunc(g.ctx, cancel)
-	defer func() { stop(); cancel() }()
-	return g.notifications.System(work, eventID)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	work, cancel := context.WithCancelCause(runtime)
+	stop := context.AfterFunc(ctx, func() { cancel(context.Cause(ctx)) })
+	defer func() { stop(); cancel(nil) }()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if failure := g.core.RuntimeFailure(); failure != nil {
+		return &service.ServiceError{Kind: service.ErrorUnavailable, Reason: *failure}
+	}
+	return errors.Join(g.notifications.System(work, eventID), ctx.Err())
 }
 
 func (g *runtimeGraph) recordLoginFailure(ctx context.Context, event server.LoginFailureEvent) error {

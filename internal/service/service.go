@@ -53,12 +53,15 @@ type Service struct {
 	background          sync.WaitGroup
 	systemCtx           context.Context
 	cancelSystem        context.CancelCauseFunc
+	runtimeCtx          context.Context
+	runtimeCancel       context.CancelCauseFunc
 	runs                map[int64]*runExecution
 	sessions            map[string]*sessionWork
 	queue               []*startRequest
 	nextWakeAt          *int64
 	pageLimit           int64
 	runtimeErr          error
+	runtimeStopDone     chan struct{}
 	mutations           int
 	schedulerStarted    bool
 	closeDone           chan struct{}
@@ -109,6 +112,7 @@ func (s *Service) initRuntime() {
 			s.ctx, s.cancel = context.WithCancelCause(context.Background())
 		}
 		s.systemCtx, s.cancelSystem = context.WithCancelCause(s.ctx)
+		s.runtimeCtx, s.runtimeCancel = context.WithCancelCause(s.ctx)
 		s.wake = make(chan struct{}, 1)
 		s.cleanupWake = make(chan struct{}, 1)
 		s.changed = make(chan struct{})
@@ -335,7 +339,7 @@ func (s *Service) Start() error {
 	s.maintenance--
 	s.schedulerStarted = true
 	s.background.Add(1)
-	go func() { defer s.background.Done(); s.cleanupLoop(s.ctx) }()
+	go func() { defer s.background.Done(); s.cleanupLoop(s.runtimeCtx) }()
 	go func() { defer close(s.done); s.schedulerLoop(s.ctx) }()
 	s.stopParent = context.AfterFunc(s.ctx, func() { _ = s.Close() })
 	s.signalRuntimeLocked()
@@ -389,6 +393,12 @@ func (s *Service) Close() error {
 	s.mu.Unlock()
 	if started {
 		<-s.done
+	}
+	s.mu.Lock()
+	stopped := s.runtimeStopDone
+	s.mu.Unlock()
+	if stopped != nil {
+		<-stopped
 	}
 	s.mu.Lock()
 	s.closeErr = err

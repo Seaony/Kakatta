@@ -371,11 +371,59 @@ func (s *Service) setNextWake(at *int64) {
 }
 
 func (s *Service) setRuntimeError(err error) {
+	if err == nil {
+		return
+	}
 	s.initRuntime()
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.setRuntimeErrorLocked(err)
+}
+
+func (s *Service) setRuntimeErrorLocked(err error) {
+	if s.runtimeErr != nil {
+		return
+	}
 	s.runtimeErr = err
+	done := make(chan struct{})
+	s.runtimeStopDone = done
+	failure := &causedServiceError{service: &ServiceError{Kind: ErrorUnavailable,
+		Reason: locales.Message{Code: "service.storage_failure", Args: map[string]any{}}, Fields: []settings.Issue{}}, cause: err}
+	s.runtimeCancel(failure)
+	for _, run := range s.runs {
+		run.Cancel(failure)
+	}
+	for _, job := range s.insights {
+		job.Cancel(failure)
+	}
+	s.cancelSystem(failure)
+	sessions := make([]*sessionWork, 0, len(s.sessions))
+	for _, session := range s.sessions {
+		session.Closing = true
+		session.View.Phase = SessionClosing
+		if session.Timer != nil {
+			session.Timer.Stop()
+		}
+		session.Cancel(failure)
+		sessions = append(sessions, session)
+	}
+	s.queue = nil
 	s.signalRuntimeLocked()
+	// 失败可能来自当前执行者的收尾，不能同步等待自己关闭。
+	go func() {
+		var closing sync.WaitGroup
+		for _, session := range sessions {
+			closing.Add(1)
+			go func() {
+				defer closing.Done()
+				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cancel()
+				_ = s.closeSessionWork(ctx, session)
+			}()
+		}
+		closing.Wait()
+		close(done)
+	}()
 }
 
 func (s *Service) reserveStart(request startRequest, limit int64, now time.Time) (*sessionWork, bool, error) {
@@ -462,7 +510,6 @@ func (s *Service) releaseReservation(sessionID string) {
 				close(session.OpenDone)
 			}
 		})
-		session.closeOnce.Do(func() { close(session.Closed) })
 	}
 	queue := s.queue[:0]
 	for _, request := range s.queue {
@@ -476,6 +523,9 @@ func (s *Service) releaseReservation(sessionID string) {
 		s.signalRuntimeLocked()
 	}
 	s.mu.Unlock()
+	if discard {
+		session.closeOnce.Do(func() { close(session.Closed) })
+	}
 }
 
 func (s *Service) completeResourceOpen(session *sessionWork, resource SessionResource) {
@@ -707,7 +757,7 @@ func (s *Service) closeSessionWork(ctx context.Context, session *sessionWork) er
 			}
 			s.queue = queue
 		} else {
-			s.runtimeErr = session.CloseErr
+			s.setRuntimeErrorLocked(session.CloseErr)
 		}
 		close(session.Closed)
 		s.signalRuntimeLocked()
@@ -1271,7 +1321,7 @@ func (s *Service) reanalyzeCached(ctx context.Context, work WorkRef) error {
 	defer cancel(nil)
 	run := &runExecution{Ref: work.RunRef, Task: task, Account: account, Snapshot: snapshot, Config: config, Prompts: promptSnapshot, Spec: spec, CachedOnly: true, Context: life, Cancel: cancel, Done: make(chan struct{}), Backlog: []Finding{finding}, P: []WorkRef{work}, Warnings: []locales.Message{}}
 	s.mu.Lock()
-	if s.closing || s.maintenance > 0 || s.pausedTasks[task.ID] > 0 {
+	if s.closing || s.maintenance > 0 || s.runtimeErr != nil || s.pausedTasks[task.ID] > 0 {
 		s.mu.Unlock()
 		return &ServiceError{Kind: ErrorUnavailable, Reason: locales.Message{Code: "runtime.closed", Args: map[string]any{}}}
 	}

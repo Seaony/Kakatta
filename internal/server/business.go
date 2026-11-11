@@ -47,6 +47,7 @@ func (s *Server) RegisterService(business *service.Service) error {
 	if _, pattern := s.mux.Handler(probe); pattern != "" && pattern != "/" {
 		return errors.New("业务接口已经注册")
 	}
+	s.runtimeFailure = business.RuntimeFailure
 	for _, route := range businessRoutes(s, business) {
 		s.RegisterProtected(route.pattern, route.handler)
 	}

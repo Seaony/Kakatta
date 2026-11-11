@@ -249,6 +249,45 @@ test('系统页显示真实额度与未知资源，health 503与空闲浏览器�
   expect(fixture.calls.every((call) => call.method === 'GET')).toBe(true);
 });
 
+for (const locale of ['zh-CN', 'en'] as const) {
+  for (const [reason, chinese, english] of [
+    ['runtime.storage_full', '存储出错，调度已停止：磁盘空间不足。请清出数据目录所在磁盘的空间，再重启容器。', 'Storage error; scheduling has stopped: the disk is full. Free space on the disk containing the data directory, then restart the container.'],
+    ['runtime.storage_locked', '存储出错，调度已停止：数据库被占用。请解除数据库占用，再重启容器。', 'Storage error; scheduling has stopped: the database is locked. Release the database lock, then restart the container.'],
+    ['runtime.storage_unavailable', '存储出错，调度已停止：无法读取或保存数据。请检查数据目录的空间、权限和数据库占用，排除问题后重启容器。', 'Storage error; scheduling has stopped: data could not be read or saved. Check space, permissions and database locks in the data directory, then restart the container after resolving the problem.'],
+  ] as const) {
+    test(`${locale} 系统页在 ${reason} 时显示停机原因和恢复办法`, async () => {
+      const fixture = await page(SystemPage, (call) => {
+        if (call.path === '/healthz') return Response.json({ status: 'unavailable' }, { status: 503 });
+        if (call.path === '/api/v1/system/status') return failure(503, reason);
+        if (call.path === '/api/v1/system/events') return failure(503, 'auth.storage');
+        return undefined;
+      }, locale);
+      expect(await screen.findByText(locale === 'zh-CN' ? chinese : english)).toBeTruthy();
+      expect(screen.getByText(locale === 'zh-CN' ? '服务不可用' : 'Service unavailable')).toBeTruthy();
+      expect(screen.queryByText(locale === 'zh-CN' ? '运行中' : 'Running')).toBeNull();
+      expect(screen.queryByRole('heading', { name: locale === 'zh-CN' ? '未解决的系统事件' : 'Unresolved system events' }) === null).toBe(true);
+      expect(fixture.calls.every((call) => call.method === 'GET')).toBe(true);
+    });
+  }
+}
+
+test('存储停机后不再把已缓存的正常调度读数显示为当前状态', async () => {
+  let stopped = false;
+  const data: components['schemas']['SystemStatus'] = { as_of: at, scheduler: { running: true, accepting: true, running_count: 0, queued_count: 0, next_wake_at: null }, browsers: { active: 0, limit: 1, sessions: [] }, configuration: [], resources: { disk_free_bytes: null, disk_total_bytes: null, memory_total_bytes: null, memory_used_bytes: null }, quotas: [] };
+  const fixture = await page(SystemPage, (call) => {
+    if (call.path === '/healthz') return Response.json({ status: stopped ? 'unavailable' : 'ok' }, { status: stopped ? 503 : 200 });
+    if (call.path === '/api/v1/system/status') return stopped ? failure(503, 'runtime.storage_locked') : Response.json(data);
+    if (call.path === '/api/v1/system/events') return stopped ? failure(503, 'auth.storage') : Response.json({ items: [], next_cursor: null, total: 0 });
+    return undefined;
+  });
+  await screen.findByText('运行中');
+  stopped = true;
+  await fixture.user.click(screen.getByRole('button', { name: '刷新' }));
+  await screen.findByText('存储出错，调度已停止：数据库被占用。请解除数据库占用，再重启容器。');
+  expect(screen.queryByText('运行中') === null).toBe(true);
+  expect(screen.queryByText('接收新运行') === null).toBe(true);
+});
+
 test('导出只提交备份密码，收到有效 ZIP 后下载并清空密码', async () => {
   let downloaded: { filename: string; href: string } | undefined;
   const click = spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {

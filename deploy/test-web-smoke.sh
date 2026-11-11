@@ -33,7 +33,7 @@ docker run --rm --pull=never --network none --no-healthcheck --cidfile "$work/co
     "$image" /bin/sh -eu -c '
         test "$(id -u)" -ne 0
         export KAKATTA_WEB_SMOKE=1
-        /tests/web.test -test.run "^TestWebSmoke$" -test.v -test.timeout=4m
+        /tests/web.test -test.run "^TestWeb(Smoke|StorageFailureSmoke)$" -test.v -test.timeout=4m
         for attempt in 1 2 3 4 5; do
             remaining=
             for file in /proc/[0-9]*/comm; do

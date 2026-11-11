@@ -41,13 +41,14 @@ func (g *runtimeGraph) wakeMaintenance() {
 
 func (g *runtimeGraph) maintenanceLoop() {
 	defer close(g.maintenanceDone)
-	for g.ctx.Err() == nil {
+	ctx := g.core.RuntimeContext()
+	for ctx.Err() == nil {
 		select {
 		case <-g.maintenanceWake:
 		default:
 		}
 		next := g.maintain()
-		if g.ctx.Err() != nil {
+		if ctx.Err() != nil {
 			return
 		}
 		var timer *time.Timer
@@ -57,7 +58,7 @@ func (g *runtimeGraph) maintenanceLoop() {
 			due = timer.C
 		}
 		select {
-		case <-g.ctx.Done():
+		case <-ctx.Done():
 		case <-g.maintenanceWake:
 		case <-due:
 		}
@@ -68,29 +69,45 @@ func (g *runtimeGraph) maintenanceLoop() {
 }
 
 func (g *runtimeGraph) maintain() *time.Time {
-	next, err := g.nextProbeWake(g.ctx, time.Now())
-	g.logMaintenance(err)
-	if err == nil && next != nil {
-		g.logMaintenance(g.models.ProbeDue(g.ctx))
-		next, err = g.nextProbeWake(g.ctx, time.Now())
-		g.logMaintenance(err)
-	}
-	if g.ctx.Err() != nil {
+	ctx := g.core.RuntimeContext()
+	if ctx.Err() != nil {
 		return nil
 	}
-	status, err := g.updates.Read(g.ctx)
+	next, err := g.nextProbeWake(ctx, time.Now())
+	if ctx.Err() != nil {
+		return nil
+	}
+	g.logMaintenance(err)
+	if err == nil && next != nil {
+		g.logMaintenance(g.models.ProbeDue(ctx))
+		if ctx.Err() != nil {
+			return nil
+		}
+		next, err = g.nextProbeWake(ctx, time.Now())
+		g.logMaintenance(err)
+	}
+	if ctx.Err() != nil {
+		return nil
+	}
+	status, err := g.updates.Read(ctx)
+	if ctx.Err() != nil {
+		return nil
+	}
 	g.logMaintenance(err)
 	if err != nil {
 		return next
 	}
 	if status.Enabled && status.NextCheckAt != nil && *status.NextCheckAt <= time.Now().UnixMilli() {
-		g.logMaintenance(g.updates.CheckDue(g.ctx))
-		if g.ctx.Err() != nil {
+		g.logMaintenance(g.updates.CheckDue(ctx))
+		if ctx.Err() != nil {
 			return nil
 		}
 		logGraphPublish(g.publish("update.changed", nil, nil))
-		status, err = g.updates.Read(g.ctx)
+		status, err = g.updates.Read(ctx)
 		g.logMaintenance(err)
+	}
+	if ctx.Err() != nil {
+		return nil
 	}
 	// 失败且没有推进期限时只等真实变更，不能用立即重试形成空转。
 	if err == nil && status.Enabled && status.NextCheckAt != nil && *status.NextCheckAt > time.Now().UnixMilli() {
@@ -156,7 +173,7 @@ func (g *runtimeGraph) nextProbeWake(ctx context.Context, observed time.Time) (*
 }
 
 func (g *runtimeGraph) logMaintenance(err error) {
-	if err == nil || g.ctx.Err() != nil || errors.Is(err, client.ErrDailyLimit) {
+	if err == nil || g.ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, client.ErrDailyLimit) {
 		return
 	}
 	reason := locales.Message{Code: "service.storage_failure", Args: map[string]any{}}

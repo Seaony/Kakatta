@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -231,6 +232,8 @@ type webSmokeEvents struct {
 	mu             sync.Mutex
 	base, page     string
 	allowSignedOut bool
+	allowedHTTP    map[string]int
+	readOnly       bool
 	issues         []string
 	pending        map[network.RequestID]struct{}
 	lastActivity   time.Time
@@ -242,6 +245,9 @@ func (events *webSmokeEvents) receive(event any) {
 	var issue string
 	switch value := event.(type) {
 	case *network.EventRequestWillBeSent:
+		if events.readOnly && value.Request.Method != http.MethodGet && value.Request.Method != http.MethodHead {
+			issue = "诊断页面发起了写请求"
+		}
 		address, err := url.Parse(value.Request.URL)
 		if err != nil || ((address.Scheme == "http" || address.Scheme == "https") && !strings.HasPrefix(value.Request.URL, events.base+"/")) {
 			issue = "请求离开本地测试服务"
@@ -254,7 +260,7 @@ func (events *webSmokeEvents) receive(event any) {
 		}
 	case *network.EventResponseReceived:
 		response := value.Response
-		if response.Status >= 400 && !(events.allowSignedOut && response.Status == 401 && response.URL == events.base+"/api/v1/me") {
+		if response.Status >= 400 && events.allowedHTTP[response.URL] != int(response.Status) && !(events.allowSignedOut && response.Status == 401 && response.URL == events.base+"/api/v1/me") {
 			issue = fmt.Sprintf("HTTP %d %s", int(response.Status), strings.TrimPrefix(response.URL, events.base))
 		}
 	case *network.EventLoadingFinished:
@@ -277,7 +283,8 @@ func (events *webSmokeEvents) receive(event any) {
 		}
 	case *log.EventEntryAdded:
 		entry := value.Entry
-		if entry.Level == log.EntryLevelError && !(events.allowSignedOut && entry.Source == log.EntrySourceNetwork &&
+		if entry.Level == log.EntryLevelError && !(entry.Source == log.EntrySourceNetwork && events.allowedHTTP[entry.URL] != 0 &&
+			strings.Contains(entry.Text, strconv.Itoa(events.allowedHTTP[entry.URL]))) && !(events.allowSignedOut && entry.Source == log.EntrySourceNetwork &&
 			entry.URL == events.base+"/api/v1/me" && strings.Contains(entry.Text, "401")) {
 			issue = entry.Text
 		}

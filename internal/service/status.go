@@ -18,6 +18,9 @@ func (s *Service) GetSystemStatus(ctx context.Context) (SystemStatus, error) {
 	if err := ctx.Err(); err != nil {
 		return SystemStatus{}, err
 	}
+	if failure := s.RuntimeFailure(); failure != nil {
+		return SystemStatus{}, &ServiceError{Kind: ErrorUnavailable, Reason: *failure}
+	}
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return SystemStatus{}, storageFailure(err)

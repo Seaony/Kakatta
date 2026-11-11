@@ -29,6 +29,7 @@ export function SystemPage() {
   const message = useMessageText();
   const time = useAdminTime();
   const status = useQuery({ queryKey: apiKey('system-status'), queryFn: async ({ signal }) => apiData(await api.GET('/api/v1/system/status', { signal })) });
+  const storageStopped = status.error instanceof ApiError && ['runtime.storage_full', 'runtime.storage_locked', 'runtime.storage_unavailable'].includes(status.error.reason.code);
   const definitions = useQuery({ queryKey: apiKey('setting-definitions'), queryFn: async ({ signal }) => apiData(await api.GET('/api/v1/settings/definitions', { signal })) });
   const health = useQuery({ queryKey: apiKey('system-status', 'health'), queryFn: async ({ signal }) => {
     try { return apiData(await api.GET('/healthz', { signal })).status === 'ok'; }
@@ -49,7 +50,7 @@ export function SystemPage() {
     </FormSection>
     {status.isError && <><ErrorNotice error={status.error} />{status.data && <InlineMessage tone="warning">{t('admin.stale')}</InlineMessage>}<Button onClick={() => void status.refetch()}>{t('common.retry')}</Button></>}
     {status.isPending && <StatePanel kind="pending" label={t('common.loading')} />}
-    {status.data && <>
+    {status.data && !storageStopped && <>
       <p className="text-caption text-text-secondary">{t('admin.system.as_of', { time: time(status.data.as_of) })}</p>
       <div className="grid min-w-0 gap-xxl lg:grid-cols-2">
         <FormSection title={t('admin.system.scheduler')}>
@@ -76,9 +77,9 @@ export function SystemPage() {
         ] as const).map(([key, value]) => <div key={key}><dt className="text-text-secondary">{t(key)}</dt><dd className="tabular-nums">{bytes(value)}</dd></div>)}</dl>
       </FormSection>
     </>}
-    <FormSection title={t('admin.system.events')}>
+    {!storageStopped && <FormSection title={t('admin.system.events')}>
       {events.isPending ? <StatePanel kind="pending" label={t('common.loading')} /> : rows.length ? <ul className="divide-y divide-border">{rows.map((event) => <li key={event.id} className="space-y-sm py-md"><p className="max-w-prose break-words text-body">{event.message ? message(event.message) : t('admin.unknown')}</p><p className="text-caption text-text-secondary">{time(event.created_at)}</p>{event.kind === 'login_failures' && <Link to="/settings/security" className="inline-flex min-h-control items-center text-accent-text underline">{t('admin.security.title')}</Link>}{event.subject_id !== null && event.subject_id > 0 && (event.kind === 'account_verify' || event.kind === 'account_deny' || event.kind === 'account_login') && <Link to="/accounts" search={{ account_id: event.subject_id }} className="inline-flex min-h-control items-center text-accent-text underline">{t('admin.system.accounts')}</Link>}{event.kind === 'ai_error' || event.kind === 'ai_budget' ? <Link to="/settings/ai" className="inline-flex min-h-control items-center text-accent-text underline">{t('admin.system.ai')}</Link> : null}{event.kind === 'task_failure_pause' && event.subject_id !== null && <Link to="/logs" search={{ task_id: event.subject_id }} className="inline-flex min-h-control items-center text-accent-text underline">{t('admin.system.logs')}</Link>}</li>)}</ul> : !events.isError && <StatePanel kind="empty" title={t('admin.system.empty_events')} />}
       <ErrorNotice error={events.error} />{events.hasNextPage && <Button onClick={() => void events.fetchNextPage()} busy={events.isFetchingNextPage}>{t('admin.more')}</Button>}
-    </FormSection>
+    </FormSection>}
   </div>;
 }

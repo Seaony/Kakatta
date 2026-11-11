@@ -360,8 +360,13 @@ func (f *manualFactory) Open(ctx context.Context, _ ResourceSpec) (SessionResour
 
 func sessionTestService(t *testing.T) *Service {
 	t.Helper()
-	s := accountTestService(t)
-	s.now = time.Now
+	now := time.Now()
+	return sessionTestServiceWithClock(t, func() time.Time { return now })
+}
+
+func sessionTestServiceWithClock(t *testing.T, now func() time.Time) *Service {
+	t.Helper()
+	s := accountTestServiceWithClock(t, now)
 	if _, err := s.settings.Apply(t.Context(), settings.Values{"crawl.quiet_hours": []byte(`{"enabled":false,"start":"01:00","end":"07:30"}`)}); err != nil {
 		t.Fatal(err)
 	}
@@ -399,40 +404,59 @@ func TestManualQueueDoesNotStartDeadlineAndSurvivesHTTPContext(t *testing.T) {
 }
 
 func TestManualQueueBypassesQuotaAndKeepsCooldown(t *testing.T) {
-	s := sessionTestService(t)
-	id := accountTestInsert(t, s, "旧冷却", AccountCooling, 1)
-	until := s.now().Add(time.Hour).UnixMilli()
-	if _, err := s.db.ExecContext(t.Context(), `UPDATE accounts SET cooldown_until=?,verify_level=2,cooldown_manual_used=1 WHERE id=?`, until, id); err != nil {
-		t.Fatal(err)
+	for _, initial := range []time.Time{
+		time.Date(2026, 11, 11, 3, 0, 0, 0, time.UTC),
+		time.Date(2037, 1, 1, 12, 0, 0, 0, time.UTC),
+	} {
+		t.Run(initial.Format(time.RFC3339), func(t *testing.T) {
+			now := initial
+			s := sessionTestServiceWithClock(t, func() time.Time { return now })
+			id := accountTestInsert(t, s, "旧冷却", AccountCooling, 1)
+			until := s.now().Add(time.Hour).UnixMilli()
+			if _, err := s.db.ExecContext(t.Context(), `UPDATE accounts SET cooldown_until=?,verify_level=2,cooldown_manual_used=1 WHERE id=?`, until, id); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.settings.Apply(t.Context(), settings.Values{
+				"crawl.account_hourly_visits": []byte(`1`), "crawl.account_daily_search_visits": []byte(`1`), "crawl.account_daily_detail_visits": []byte(`1`),
+			}); err != nil {
+				t.Fatal(err)
+			}
+			for range 2 {
+				if _, err := s.db.ExecContext(t.Context(), `INSERT INTO quota_events(account_id,kind,at) VALUES(?,'search',?)`, id, s.now().UnixMilli()); err != nil {
+					t.Fatal(err)
+				}
+			}
+			_, err := s.OpenLogin(t.Context(), id)
+			accountTestProblem(t, err, ErrorConflict, "run.account_cooling")
+			if len(s.queuedStarts()) != 0 || s.sessionSnapshot(id) != nil {
+				t.Fatal("冷却未到期仍接纳了扫码会话")
+			}
+			now = now.Add(2 * time.Hour)
+			for range 2 {
+				if _, err := s.db.ExecContext(t.Context(), `INSERT INTO quota_events(account_id,kind,at) VALUES(?,'search',?)`, id, s.now().UnixMilli()); err != nil {
+					t.Fatal(err)
+				}
+			}
+			view, err := s.OpenLogin(t.Context(), id)
+			if err != nil || view.Phase != SessionQueued {
+				t.Fatalf("额度已用完不应拦主动登录：%+v %v", view, err)
+			}
+			if err := s.CloseSession(t.Context(), id, view.ID); err != nil {
+				t.Fatal(err)
+			}
+			var state AccountState
+			var keptUntil int64
+			var manualUsed bool
+			if err := s.db.QueryRowContext(t.Context(), `SELECT state,cooldown_until,cooldown_manual_used FROM accounts WHERE id=?`, id).Scan(&state, &keptUntil, &manualUsed); err != nil || state != AccountCooling || keptUntil != until || !manualUsed {
+				t.Fatalf("排队清除了账号保护：%s %d %v %v", state, keptUntil, manualUsed, err)
+			}
+			if _, err := s.db.ExecContext(t.Context(), `INSERT INTO meta(key,value) VALUES(?, '1')`, "account.cleanup."+fmt.Sprint(id)); err != nil {
+				t.Fatal(err)
+			}
+			_, err = s.OpenLogin(t.Context(), id)
+			accountTestProblem(t, err, ErrorConflict, "accounts.cleanup_failed")
+		})
 	}
-	if _, err := s.settings.Apply(t.Context(), settings.Values{
-		"crawl.account_hourly_visits": []byte(`1`), "crawl.account_daily_search_visits": []byte(`1`), "crawl.account_daily_detail_visits": []byte(`1`),
-	}); err != nil {
-		t.Fatal(err)
-	}
-	for range 2 {
-		if _, err := s.db.ExecContext(t.Context(), `INSERT INTO quota_events(account_id,kind,at) VALUES(?,'search',?)`, id, s.now().UnixMilli()); err != nil {
-			t.Fatal(err)
-		}
-	}
-	view, err := s.OpenLogin(t.Context(), id)
-	if err != nil || view.Phase != SessionQueued {
-		t.Fatalf("额度已用完不应拦主动登录：%+v %v", view, err)
-	}
-	if err := s.CloseSession(t.Context(), id, view.ID); err != nil {
-		t.Fatal(err)
-	}
-	var state AccountState
-	var keptUntil int64
-	var manualUsed bool
-	if err := s.db.QueryRowContext(t.Context(), `SELECT state,cooldown_until,cooldown_manual_used FROM accounts WHERE id=?`, id).Scan(&state, &keptUntil, &manualUsed); err != nil || state != AccountCooling || keptUntil != until || !manualUsed {
-		t.Fatalf("排队清除了账号保护：%s %d %v %v", state, keptUntil, manualUsed, err)
-	}
-	if _, err := s.db.ExecContext(t.Context(), `INSERT INTO meta(key,value) VALUES(?, '1')`, "account.cleanup."+fmt.Sprint(id)); err != nil {
-		t.Fatal(err)
-	}
-	_, err = s.OpenLogin(t.Context(), id)
-	accountTestProblem(t, err, ErrorConflict, "accounts.cleanup_failed")
 }
 
 func TestManualStartRechecksRiskBeforeResourceOpen(t *testing.T) {

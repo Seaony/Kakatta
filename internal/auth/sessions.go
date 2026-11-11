@@ -51,11 +51,20 @@ func (r authRecord) valid(now int64) bool {
 }
 
 func (s *Service) Authenticate(ctx context.Context, token string, kind Kind) (Identity, error) {
+	return s.authenticate(ctx, token, kind, true)
+}
+
+// AuthenticateReadOnly 只用于存储停机后的诊断，不续期会话。
+func (s *Service) AuthenticateReadOnly(ctx context.Context, token string, kind Kind) (Identity, error) {
+	return s.authenticate(ctx, token, kind, false)
+}
+
+func (s *Service) authenticate(ctx context.Context, token string, kind Kind, renew bool) (Identity, error) {
 	hash := security.HashToken(token)
 	if (kind != WebSession && kind != APIToken) || !security.TokenMatches(token, hash) {
 		return Identity{}, ErrUnauthenticated
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: !renew})
 	if err != nil {
 		return Identity{}, stored(err)
 	}
@@ -67,6 +76,12 @@ func (s *Service) Authenticate(ctx context.Context, token string, kind Kind) (Id
 	now := s.now().UnixMilli()
 	if !r.valid(now) {
 		return Identity{}, ErrUnauthenticated
+	}
+	if !renew {
+		if r.expires.Valid {
+			r.identity.CookieExpiresAt = r.expires.Int64
+		}
+		return r.identity, nil
 	}
 	used := now
 	if r.used.Valid {

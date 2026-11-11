@@ -23,9 +23,28 @@ func (s *Service) finishRun(ctx context.Context, run *runExecution, stopCause er
 		return storageFailure(errors.New("运行结束信息缺失"))
 	}
 	s.initRuntime()
+	changed := errors.Is(stopCause, errSearchChanged) || errors.Is(stopCause, errTaskDeleted)
 	record := finishRecord(run, stopCause)
 	infrastructure := runInfrastructureFailure(stopCause)
-	changed := errors.Is(stopCause, errSearchChanged) || errors.Is(stopCause, errTaskDeleted)
+	refreshRuntimeFailure := func() {
+		if failure := s.RuntimeFailure(); failure != nil {
+			stopCause = errors.Join(stopCause, &ServiceError{Kind: ErrorUnavailable, Reason: *failure})
+			infrastructure = true
+			if !changed {
+				failed := finishRecord(run, stopCause)
+				record.Outcome, record.FailureKind, record.Message = failed.Outcome, failed.FailureKind, failed.Message
+			}
+		}
+	}
+	refreshRuntimeFailure()
+	// 本地收尾继续保存；只让对外请求随运行闭锁停止。
+	runtimeCtx := s.RuntimeContext()
+	notifyCtx, cancelNotify := context.WithCancelCause(runtimeCtx)
+	stopNotify := context.AfterFunc(ctx, func() { cancelNotify(context.Cause(ctx)) })
+	defer func() { stopNotify(); cancelNotify(nil) }()
+	if ctx.Err() != nil {
+		cancelNotify(context.Cause(ctx))
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return storageFailure(err)
@@ -44,6 +63,7 @@ func (s *Service) finishRun(ctx context.Context, run *runExecution, stopCause er
 	if err != nil {
 		return err
 	}
+	refreshRuntimeFailure()
 	if !changed && !infrastructure && task.JudgeMode == analysis.ModeAI {
 		if _, err := s.recalculateTaskTx(ctx, tx, task, now.UnixMilli()); err != nil {
 			return storageFailure(err)
@@ -55,14 +75,15 @@ func (s *Service) finishRun(ctx context.Context, run *runExecution, stopCause er
 	if err := tx.Commit(); err != nil {
 		return storageFailure(err)
 	}
+	refreshRuntimeFailure()
 
 	var notifyErr error
-	if !changed && !infrastructure {
+	if !changed && !infrastructure && notifyCtx.Err() == nil {
 		if s.notifier == nil {
 			notifyErr = errors.New("运行通知依赖缺失")
 		} else {
 			var result NotifyResult
-			result, notifyErr = s.notifier.FlushRun(ctx, run.Ref, append([]int64(nil), run.FirstConclusionIDs...))
+			result, notifyErr = s.notifier.FlushRun(notifyCtx, run.Ref, append([]int64(nil), run.FirstConclusionIDs...))
 			record.NotifiedCount = &result.NotifiedCount
 			record.Warnings = append(record.Warnings, result.Warnings...)
 		}
@@ -96,6 +117,7 @@ func (s *Service) finishRun(ctx context.Context, run *runExecution, stopCause er
 	if err != nil {
 		return errors.Join(err, notifyErr)
 	}
+	refreshRuntimeFailure()
 	endedAt := now.UnixMilli()
 	record.EndedAt = &endedAt
 	recommended, err := countRunRecommendationsTx(ctx, tx, run)
@@ -154,7 +176,10 @@ func (s *Service) finishRun(ctx context.Context, run *runExecution, stopCause er
 		return errors.Join(storageFailure(stopCause), emitErr)
 	}
 	for _, id := range eventIDs {
-		if err := s.notifier.System(ctx, id); err != nil {
+		if notifyCtx.Err() != nil {
+			return errors.Join(context.Cause(notifyCtx), emitErr)
+		}
+		if err := s.notifier.System(notifyCtx, id); err != nil {
 			return errors.Join(err, emitErr)
 		}
 	}
