@@ -1,10 +1,14 @@
-import { createFileRoute, Navigate } from '@tanstack/react-router';
+import { memo } from 'react';
+import { createFileRoute, Navigate as RouterNavigate } from '@tanstack/react-router';
 import { useTranslation } from '../i18n';
 import { useQuery } from '@tanstack/react-query';
 import { apiData, useApi, useApiError } from '../api/hooks';
 import { apiKey } from '../api/keys';
 import { StatePanel } from '../components/ui/state-panel';
 import { useAuthentication } from '../app/auth-state';
+
+// 同一目标的跳转在路由提交前不能随重新渲染重复发起。
+const Navigate = memo(RouterNavigate);
 
 function Start() {
   const { t } = useTranslation();

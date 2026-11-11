@@ -12,8 +12,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chromedp/cdproto/cdp"
+	"github.com/chromedp/cdproto/debugger"
 	"github.com/chromedp/cdproto/log"
 	"github.com/chromedp/cdproto/network"
+	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 )
 
@@ -40,6 +43,7 @@ type formalRequestAudit struct {
 	identity string
 	closed   bool
 	requests map[network.RequestID]*formalRequestRecord
+	scripts  map[cdp.ScriptID]string
 	writer   io.Writer
 	events   *webSmokeEvents
 	readBody func(network.RequestID) ([]byte, error)
@@ -51,7 +55,7 @@ func newFormalRequestAudit(stage string, writer io.Writer, events *webSmokeEvent
 	if stage == "first" {
 		identity = "setup"
 	}
-	return &formalRequestAudit{phase: "01身份/" + stage, identity: identity, requests: make(map[network.RequestID]*formalRequestRecord), writer: writer, events: events, readBody: readBody}
+	return &formalRequestAudit{phase: "01身份/" + stage, identity: identity, requests: make(map[network.RequestID]*formalRequestRecord), scripts: make(map[cdp.ScriptID]string), writer: writer, events: events, readBody: readBody}
 }
 
 func formalNetworkPhase(ctx context.Context, phase string) {
@@ -125,6 +129,21 @@ func (a *formalRequestAudit) receive(event any) {
 			a.pending.Add(1)
 			go a.checkIdentityReason(copy)
 		}
+	case *debugger.EventPaused:
+		stack := &runtime.StackTrace{}
+		for _, frame := range value.CallFrames {
+			location := frame.Location
+			var column int64
+			if location.ColumnNumber != nil {
+				column = *location.ColumnNumber
+			}
+			stack.CallFrames = append(stack.CallFrames, &runtime.CallFrame{FunctionName: frame.FunctionName, ScriptID: location.ScriptID, URL: a.scripts[location.ScriptID], LineNumber: location.LineNumber, ColumnNumber: column})
+		}
+		a.write(formalRequestRecord{Event: "debugger_paused", Phase: a.phase, Identity: a.identity, Reason: string(value.Reason), Initiator: &network.Initiator{Type: network.InitiatorTypeScript, Stack: stack}})
+	case *debugger.EventResumed:
+		a.write(formalRequestRecord{Event: "debugger_resumed", Phase: a.phase, Identity: a.identity})
+	case *debugger.EventScriptParsed:
+		a.scripts[value.ScriptID] = value.URL
 	case *log.EventEntryAdded:
 		entry := value.Entry
 		if entry.Level == log.EntryLevelError && entry.Source == log.EntrySourceNetwork && entry.URL == formalBaseURL+"/api/v1/me" && strings.Contains(entry.Text, "401") {

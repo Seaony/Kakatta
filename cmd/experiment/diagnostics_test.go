@@ -203,7 +203,18 @@ func TestExperimentStartupLogDoesNotBlockFirstSuccessfulInitialization(t *testin
 		t.Fatalf("日志目录让首次初始化被错判损坏：%v", err)
 	}
 	c.Close()
-	contents, _ := os.ReadFile(events[0])
+	events, err = filepath.Glob(filepath.Join(data, "experiment-fixture", "1", "logs", "events-*.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var contents []byte
+	for _, path := range events {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		contents = append(contents, data...)
+	}
 	if !bytes.Contains(contents, []byte("启动失败")) || !bytes.Contains(contents, []byte("启动环境")) {
 		t.Fatalf("重启覆盖了此前的失败：%s", contents)
 	}

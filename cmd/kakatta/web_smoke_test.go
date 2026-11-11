@@ -616,8 +616,8 @@ func waitWebSmoke(t *testing.T, browser context.Context, events *webSmokeEvents,
 	_, err := chromedp.Run(ctx, chromedp.PollFunction[bool](predicate, chromedp.WithPollingArgs(args...), chromedp.WithPollingInterval(40*time.Millisecond)))
 	events.assert(t)
 	if err != nil {
-		state, _ := chromedp.Run(browser, chromedp.Evaluate[string](`JSON.stringify({path:location.pathname+location.search,lang:document.documentElement.lang,width:screen.width,title:document.querySelector('main h1')?.textContent,text:document.querySelector('main')?.innerText.slice(0, 250),active:{tag:document.activeElement?.tagName,id:document.activeElement?.id,name:document.activeElement?.getAttribute('name'),text:document.activeElement?.tagName === 'BUTTON' ? document.activeElement.textContent.trim().slice(0,80) : undefined},dialogs:[...document.querySelectorAll('[role=dialog],[role=alertdialog]')].map(node => ({role:node.getAttribute('role'),title:node.querySelector('h2')?.textContent}))})`))
-		t.Fatalf("%s 等待条件未满足：%v %s", events.page, err, state)
+		state, captureErr := webSmokeFailureState(browser)
+		t.Fatalf("%s 等待条件未满足：%v；现场读取：%v %s", events.page, err, captureErr, state)
 	}
 	// 等本页请求完成，别在切到下一页时把慢响应取消掉。
 	ticker := time.NewTicker(25 * time.Millisecond)
@@ -636,6 +636,12 @@ func waitWebSmoke(t *testing.T, browser context.Context, events *webSmokeEvents,
 			t.Fatalf("%s 页面请求未在时限内结束", events.page)
 		}
 	}
+}
+
+func webSmokeFailureState(browser context.Context) (string, error) {
+	ctx, cancel := context.WithTimeout(browser, time.Second)
+	defer cancel()
+	return chromedp.Run(ctx, chromedp.Evaluate[string](`JSON.stringify({path:location.pathname+location.search,lang:document.documentElement.lang,width:screen.width,title:document.querySelector('main h1')?.textContent,text:document.querySelector('main')?.innerText.slice(0, 250),active:{tag:document.activeElement?.tagName,id:document.activeElement?.id,name:document.activeElement?.getAttribute('name'),text:document.activeElement?.tagName === 'BUTTON' ? document.activeElement.textContent.trim().slice(0,80) : undefined},dialogs:[...document.querySelectorAll('[role=dialog],[role=alertdialog]')].map(node => ({role:node.getAttribute('role'),title:node.querySelector('h2')?.textContent}))})`))
 }
 
 func writeWebSmokeScreenshot(t *testing.T, browser context.Context, events *webSmokeEvents, path string) {
