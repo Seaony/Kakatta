@@ -192,3 +192,5 @@ PUID=$(id -u) PGID=$(id -g) docker compose run --rm kakatta check --data /data
 ```
 
 脚本只从当前已提交版本归档构建，记录提交号和不可变镜像编号；在 `build/_compose-check/` 的独立目录挂载数据，使用当前 Mac 用户的 PUID/PGID。所有运行容器断网，只用本地假页面；先重复实验，再强杀并换容器主机名重启，核对旧 Chrome 锁、访问记录、恢复间隔和配置仍在；另启动空正式服务两次，核对 SQLite WAL、密钥和宿主权限。退出有截止和清理，结果保留在该目录。该脚本的实际结果见 `IMPLEMENTATION.md`；不能用语法检查代替运行。
+
+2026-11-11 在作者实际的 Mac + OrbStack（`orbstack` context、`fuse` 挂载）完成上述生命周期回归，使用提交 `109f2defab6ced84f460f19399e2087ee83588ba` 的归档镜像。重复运行、强杀后的保护和旧锁恢复、SQLite WAL、密钥保留及当前用户无需 sudo 读取私有日志和摘要全部通过，七个测试容器已清理。详细产物在 `build/_compose-check/bind-ywtek_cz/`。故障包的生成和宿主可读另由十一类故障矩阵覆盖。Docker Desktop/virtiofs 未在本机执行，不据此声称已验收该组合。

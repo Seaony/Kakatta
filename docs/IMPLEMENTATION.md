@@ -288,9 +288,9 @@ Go 全量测试、构建、静态检查，网页 399 项测试、类型和字典
 
 引用存在不等于事实成立。原文自身撒谎，或模型把「有 ID 锁」反向理解成正常，仍可能误荐；没有增加关键词黑名单或二次模型核验费用。明确图片编号以外的语义不猜，真实模型抵御注入的效果没有用假服务冒充验收。闸门审读仅完成隔离准备，尚未改生产代码；现按新的扫码优先级暂停。
 
-## 真实扫码准备（进行中）
+## 真实扫码准备（已完成自动验收）
 
-当前只推进作者真实扫码需要的排错与保护：有界落盘日志、只读现场、环境自检、实验与正式浏览器隔离、旧格式兼容和宿主挂载生命周期。诊断基础及独立自检包已实现：分块暂存源码的 Go 全量测试、构建和静态检查通过；三个诊断及浏览器包的完整竞态通过。严格断网容器实跑九项自检，Chrome 本地空白页、实际版本、Xvfb、x11vnc 和清理全部通过；没有访问外部页面。证据在 `build/readiness-foundation-*.log`、`build/_readiness-diagnostics-full.log`、`build/_readiness-process-final.log`。实验、正式服务、网页诊断清单与下载已接线，并通过统一门禁；Mac 宿主挂载生命周期仍须从已提交版本验收。
+当前只推进作者真实扫码需要的排错与保护：有界落盘日志、只读现场、环境自检、实验与正式浏览器隔离、旧格式兼容和宿主挂载生命周期。诊断基础及独立自检包已实现：分块暂存源码的 Go 全量测试、构建和静态检查通过；三个诊断及浏览器包的完整竞态通过。严格断网容器实跑九项自检，Chrome 本地空白页、实际版本、Xvfb、x11vnc 和清理全部通过；没有访问外部页面。证据在 `build/readiness-foundation-*.log`、`build/_readiness-diagnostics-full.log`、`build/_readiness-process-final.log`。实验、正式服务、网页诊断清单与下载已接线，并通过统一门禁；Mac 宿主挂载生命周期也已从提交归档的镜像完成验收，结果见下文。
 
 ### 实验故障定位
 
@@ -310,7 +310,19 @@ Go 全量测试、构建、静态检查，网页 399 项测试、类型和字典
 | 磁盘满 | `TestControllerCrashAndFullDiskKeepCause/磁盘满` | `build/_experiment-readiness/artifacts/TestControllerCrashAndFullDiskKeepCause-磁盘满/logs/events-*.jsonl` | 真实 `/dev/full` ENOSPC；保留之前日志，无法再落盘时明确错误在 `build/_experiment-readiness/artifacts/TestControllerCrashAndFullDiskKeepCause-磁盘满/stderr.txt`，闲鱼请求计数不再增加。 |
 | 代理不可达 | `TestExperimentCheckRecordsUnreachableProxy` | `build/_experiment-readiness/artifacts/TestExperimentCheckRecordsUnreachableProxy/logs/events-*.jsonl` | 本机关闭的端口，实际连接被拒绝；同次预检的 Chrome 空白页、Xvfb、x11vnc 和清理均通过。摘要 `build/_experiment-readiness/artifacts/TestExperimentCheckRecordsUnreachableProxy/logs/summaries/summary-20261111-062228-2255970144/summary.json`。 |
 
-网页全量 426 项、类型、字典、生成与构建通过。新导出弹窗在桌面及手机、中英文下通过真实接口冒烟，检查安全文件清单、登录截图排除说明和长路径没有横向溢出；四张新图已逐一查看，人工 Dia 及 Safari 16 仍未执行。最终暂存源码的 Go 全量测试、构建与静态检查通过；服务、资源、HTTP 和正式入口四包完整竞态通过（分别为 316.199、2.036、194.998、197.066 秒）。严格 seccomp、断网的整仓容器中 40 个包全部通过，真实浏览器、十一类实验故障及正式主流程门禁启用，退出无 Chrome、crashpad、Xvfb、x11vnc 残留。源码散列在门禁期间没有变化。证据为 `build/readiness-final-{go-test,go-build,go-vet,race,container,web-smoke}.log`；网页全量在 `build/readiness-web-check.log`。Mac bind mount 脚本已写好并通过静态检查，必须在本块提交后从归档版本实跑，当前不算已通过。
+网页全量 426 项、类型、字典、生成与构建通过。新导出弹窗在桌面及手机、中英文下通过真实接口冒烟，检查安全文件清单、登录截图排除说明和长路径没有横向溢出；四张新图已逐一查看，人工 Dia 及 Safari 16 仍未执行。最终暂存源码的 Go 全量测试、构建与静态检查通过；服务、资源、HTTP 和正式入口四包完整竞态通过（分别为 316.199、2.036、194.998、197.066 秒）。严格 seccomp、断网的整仓容器中 40 个包全部通过，真实浏览器、十一类实验故障及正式主流程门禁启用，退出无 Chrome、crashpad、Xvfb、x11vnc 残留。源码散列在门禁期间没有变化。证据为 `build/readiness-final-{go-test,go-build,go-vet,race,container,web-smoke}.log`；网页全量在 `build/readiness-web-check.log`。Mac bind mount 已从已提交版本实跑通过；没有把工作区内容混入镜像。
+
+### Mac 真实挂载生命周期
+
+实际环境是 Mac、OrbStack 的 `orbstack` context，挂载文件系统为 `fuse`；不是 Docker Desktop/virtiofs，不把该组合写成已经验收。用提交 `109f2defab6ced84f460f19399e2087ee83588ba` 的 `git archive` 构建 arm64 镜像，归档 SHA-256 为 `0c141e3e882ed177e2f4a35bd05dc26873ca6e1ba965824174d1ea54b8c799cd`，镜像编号为 `sha256:378ce763c7b4e402e0a373a903267d8c8a18ea68db42df58d110bb918eef5933`。完整结果是 `build/_compose-check/bind-ywtek_cz/result.json`，退出码 0，耗时 24.959 秒。
+
+- 同账号两次实验的访问记录从 6 增至 12，旧记录完整保留；182 条事件追加且序号递增，两份摘要保留实际 Chrome 版本和提交号。
+- 另一账号在已记一次访问后被 `docker kill` 强杀，退出 137。恢复后原访问保留，先重新等待账号间隔，拦截期间旧 Chrome 锁未动；到期后换主机名成功接管旧锁，保留浏览器目录标记并把累计访问从 1 增至 7。
+- 同挂载的空正式服务启动两次，健康检查通过；宿主只读 SQLite WAL 和完整性检查通过，五条迁移记录及主密钥保持。密钥、数据库和访问记录为 0600，数据与浏览器目录为 0700，属主为当前 Mac 用户 501:20。
+- 当前用户无需 sudo 可读本次的十二个日志和五份摘要。正常运行和整容器强杀未生成诊断包，不将本轮包数 0 算作生成验收；另直接读取故障矩阵的 216 个私有产物（34 份包、20 份摘要、32 张截图），没有权限不符，补足实际包的宿主可读验证。
+- 七个测试容器已逐个删除并由主执行者再次核对不存在，没有遗留服务。
+
+首次脚本将环境品牌写死而在构建前误拦；第二次脚本对合法初始 `visits:null` 取长度报错。分别保留于 `bind-_0r46gf8` 和 `bind-bdvhrxho`，两轮均清理完成。仅修测试判据，不改产品、额度或保护规则；第三次完整从头通过。最终脚本通过语法、ShellCheck、Compose 配置和差异检查；应用源码与此前全绿版本一致。
 
 ## 必须由作者完成的真实环境验证
 
