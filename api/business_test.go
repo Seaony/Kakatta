@@ -181,6 +181,7 @@ func TestSharedDTOsMatchOwningTypes(t *testing.T) {
 	definitions := map[string]ast.Expr{}
 	for _, source := range []struct{ pkg, path string }{
 		{"service", "../internal/service/types.go"}, {"service", "../internal/service/transfer_types.go"},
+		{"xianyu", "../internal/xianyu/seller_detail.go"},
 		{"analysis", "../internal/analysis/types.go"}, {"remote", "../internal/remote/session.go"},
 		{"modelservice", "../internal/analysis/service/types.go"}, {"client", "../internal/analysis/client/types.go"},
 		{"notification", "../internal/notification/types.go"}, {"notify", "../internal/notify/types.go"},

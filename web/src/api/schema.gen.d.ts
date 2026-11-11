@@ -2745,6 +2745,7 @@ export interface components {
             title: string;
             want_count: number | null;
             zhima_level: string | null;
+            seller_detail?: components["schemas"]["SellerDetailMetrics"] | null;
         };
         ListingView: {
             area: string | null;
@@ -2791,6 +2792,7 @@ export interface components {
             title: string;
             want_count: number | null;
             zhima_level: string | null;
+            seller_detail?: components["schemas"]["SellerDetailMetrics"] | null;
         };
         MarketInsight: {
             /** @description UTC Unix 整数毫秒；未知时为 null。 */
@@ -4647,6 +4649,15 @@ export interface components {
         DiagnosticExclusion: {
             path: string;
             reason: components["schemas"]["LocalizedMessage"];
+        };
+        SellerDetailMetrics: {
+            item_count?: number | null;
+            has_sold_num_integer?: number | null;
+            avg_reply_30d_long?: number | null;
+            new_good_ratio_rate?: string | null;
+            last_visit_time?: string | null;
+            idle_fish_credit_level?: string | null;
+            zhima_auth?: boolean | null;
         };
     };
     responses: {

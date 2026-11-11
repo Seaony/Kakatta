@@ -144,6 +144,7 @@ func searchObservations(items []xianyu.SearchItem, observedAt int64) []SearchObs
 		}{
 			{item.PriceText, &observation.PriceText}, {item.OriPriceText, &observation.OriginalPriceText},
 			{item.Image, &observation.ThumbnailURL}, {item.Area, &observation.Area}, {item.SellerNick, &observation.SellerNick},
+			{item.SellerID, &observation.SellerID},
 		} {
 			if field.value != "" {
 				value := field.value

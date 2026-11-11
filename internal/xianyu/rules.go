@@ -77,6 +77,7 @@ type protocolRules struct {
 			Image         []string `json:"image"`
 			Area          []string `json:"area"`
 			SellerNick    []string `json:"seller_nick"`
+			SellerID      []string `json:"seller_id"`
 			URL           []string `json:"url"`
 			Published     []string `json:"published"`
 			Want          []string `json:"want"`
@@ -86,16 +87,17 @@ type protocolRules struct {
 			PriceText     []string `json:"price_text"`
 		} `json:"search"`
 		Detail struct {
-			Item         []string   `json:"item"`
-			Seller       []string   `json:"seller"`
-			Images       []string   `json:"images"`
-			ImageURL     []string   `json:"image_url"`
-			Want         []string   `json:"want"`
-			Browse       []string   `json:"browse"`
-			SellerID     []string   `json:"seller_id"`
-			RegDays      []string   `json:"reg_days"`
-			Zhima        []string   `json:"zhima"`
-			Descriptions [][]string `json:"descriptions"`
+			Item          []string           `json:"item"`
+			Seller        []string           `json:"seller"`
+			Images        []string           `json:"images"`
+			ImageURL      []string           `json:"image_url"`
+			Want          []string           `json:"want"`
+			Browse        []string           `json:"browse"`
+			SellerID      []string           `json:"seller_id"`
+			RegDays       []string           `json:"reg_days"`
+			Zhima         []string           `json:"zhima"`
+			SellerMetrics *sellerMetricPaths `json:"seller_metrics"`
+			Descriptions  [][]string         `json:"descriptions"`
 		} `json:"detail"`
 		Seller struct {
 			Head struct {
@@ -154,6 +156,9 @@ func WebProtocol() WebRules {
 
 func decodeRules(data []byte) (protocolRules, error) {
 	var r protocolRules
+	// 旧的第4版规则没有搜索卖家编号，沿用后来确认的默认路径。
+	r.Fields.Search.SellerID = []string{"seller_id"}
+	r.Fields.Detail.SellerMetrics = defaultSellerMetricPaths()
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&r); err != nil {
@@ -187,6 +192,11 @@ func decodeRules(data []byte) (protocolRules, error) {
 
 func validateRuleStrings(value reflect.Value, name string) error {
 	switch value.Kind() {
+	case reflect.Pointer:
+		if value.IsNil() {
+			return fmt.Errorf("闲鱼规则缺少 %s", name)
+		}
+		return validateRuleStrings(value.Elem(), name)
 	case reflect.Struct:
 		for i := range value.NumField() {
 			key := value.Type().Field(i).Tag.Get("json")

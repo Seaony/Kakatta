@@ -6,16 +6,17 @@ import "strings"
 // WantKnown 为 false 时沿用搜索结果的想要人数。
 // Images 只保存详情图；缺图时界面可沿用搜索缩略图，模型分析不能用它补图。
 type Detail struct {
-	Images       []string
-	WantCnt      int
-	BrowseCnt    int
-	WantKnown    bool
-	BrowseKnown  bool
-	SellerID     string
-	RegDays      int // 用 RegDuration 换算
-	RegDaysKnown bool
-	Zhima        string
-	Description  string
+	Images        []string
+	WantCnt       int
+	BrowseCnt     int
+	WantKnown     bool
+	BrowseKnown   bool
+	SellerID      string
+	RegDays       int // 用 RegDuration 换算
+	RegDaysKnown  bool
+	Zhima         string
+	SellerMetrics *SellerDetailMetrics
+	Description   string
 }
 
 // ParseDetail 解析详情接口正文里的 data.itemDO 和 data.sellerDO（scraper.py:1068-1117）。
@@ -46,6 +47,7 @@ func ParseDetail(body []byte) (Detail, error) {
 		d.RegDays, d.RegDaysKnown = int(n), true
 	}
 	d.Zhima = asText(pathGet(seller, paths.Zhima...))
+	d.SellerMetrics = parseSellerDetailMetrics(seller)
 	// 取第一个字符串，即使内容为空也不跳到后面的路径。
 	for _, path := range paths.Descriptions {
 		if s, ok := pathGet(item, path...).(string); ok {

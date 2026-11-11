@@ -311,3 +311,58 @@ func TestBuildAnalysisRejectsInvalidRateOrFairBasis(t *testing.T) {
 		t.Fatal("坏提示词快照不能构造请求")
 	}
 }
+
+func TestBuildAnalysisKeepsSellerDetailMetricsRawAndSeparate(t *testing.T) {
+	for _, tc := range []struct{ name, source, want string }{
+		{"all_fields", `{"item_count":120,"on_sale_count":7,"sold_count":88,"seller_good_rate":0.93,"seller_credit":"信用良好","detail_metrics":{"item_count":9,"has_sold_num_integer":74,"avg_reply_30d_long":1.25,"new_good_ratio_rate":"0.98","last_visit_time":"18分钟前来过","idle_fish_credit_level":"L5","zhima_auth":true}}`, ""},
+		{"known_zero_and_false", `{"detail_metrics":{"item_count":0,"has_sold_num_integer":0,"avg_reply_30d_long":0,"zhima_auth":false}}`, ""},
+		{"unknown", `{"detail_metrics":null}`, `{}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var source SellerSource
+			if err := json.Unmarshal([]byte(tc.source), &source); err != nil {
+				t.Fatal(err)
+			}
+			before, err := json.Marshal(source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request, originals, err := BuildAnalysis(analysisTestSnapshot(t), nil, analysis.Profile{}, ProductSource{Title: "商品", Seller: &source}, nil, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, product, _ := analysisTestBlocks(t, request.User)
+			want := tc.want
+			if want == "" {
+				want = tc.source
+			}
+			decoder := json.NewDecoder(strings.NewReader(want))
+			decoder.UseNumber()
+			var expected map[string]any
+			if err := decoder.Decode(&expected); err != nil {
+				t.Fatal(err)
+			}
+			if seller := product["seller"].(map[string]any); !reflect.DeepEqual(seller, expected) {
+				t.Fatalf("详情指标没有原样保留，或覆盖了主页资料：得到%v，应为%v", seller, expected)
+			}
+			after, err := json.Marshal(source)
+			if err != nil || string(before) != string(after) {
+				t.Fatalf("构造请求改写了卖家来源：%s → %s，%v", before, after, err)
+			}
+			if originals.SellerIntroduction != "" || len(originals.RecentRateTexts) != 0 {
+				t.Fatalf("详情指标被当成简介或评价证据：%+v", originals)
+			}
+		})
+	}
+}
+
+func TestBuildAnalysisExplainsUnconfirmedSellerDetailMetrics(t *testing.T) {
+	request, _, err := BuildAnalysis(analysisTestSnapshot(t), nil, analysis.Profile{}, ProductSource{}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const rule = "seller.detail_metrics 保留商品详情里的卖家指标原值，单位和含义尚未确认，不得自行换算或推断信用等级，也不得据此加分。"
+	if strings.Count(request.System, rule) != 1 {
+		t.Fatal("分析模板缺少详情卖家指标的原值和信用判断限制")
+	}
+}

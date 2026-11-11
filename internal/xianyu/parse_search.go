@@ -16,6 +16,7 @@ type SearchItem struct {
 	OriPriceText         string
 	Image, Area          string
 	SellerNick           string
+	SellerID             string
 	WebURL, AppURL       string
 	PublishedAt          time.Time
 	PublishedKnown       bool
@@ -72,6 +73,7 @@ func parseSearchItem(raw any) (SearchItem, bool) {
 	it.Image = FixImageURL(asText(pathGet(ex, paths.Image...)))
 	it.Area = asText(pathGet(ex, paths.Area...))
 	it.SellerNick = asText(pathGet(ex, paths.SellerNick...))
+	it.SellerID = strings.TrimSpace(asScalarText(pathGet(args, paths.SellerID...)))
 	it.WebURL = WebLink(asText(pathGet(main, paths.URL...)))
 	it.AppURL = AppLink(it.ID)
 	if it.AppURL == "" {

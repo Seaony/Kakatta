@@ -1,7 +1,10 @@
 // Package prompts 构造模型输入，保存提示词和 Schema 的静态约定。
 package prompts
 
-import "github.com/Seaony/Kakatta/internal/analysis/client"
+import (
+	"github.com/Seaony/Kakatta/internal/analysis/client"
+	"github.com/Seaony/Kakatta/internal/xianyu"
+)
 
 const AssetVersion = 1
 
@@ -56,6 +59,8 @@ type SellerSource struct {
 	BuyerGoodRate    *float64           `json:"buyer_good_rate"`  // 0–1；无样本为 nil。
 	RecentRates      []RecentRateSource `json:"recent_rates"`
 	RecentItems      []RecentItemSource `json:"recent_items"`
+
+	DetailMetrics *xianyu.SellerDetailMetrics `json:"detail_metrics,omitempty"`
 }
 
 type RecentRateSource struct {

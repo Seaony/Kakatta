@@ -324,11 +324,11 @@ func validateStoredAccounts(ctx context.Context, tx *sql.Tx, cipher *security.Ci
 }
 
 func validateStoredListings(ctx context.Context, tx *sql.Tx) error {
-	if err := storedRows(ctx, tx, `SELECT item_id,price,image_urls_json,tags_json FROM listings`, func(rows *sql.Rows) error {
+	if err := storedRows(ctx, tx, `SELECT item_id,price,image_urls_json,tags_json,seller_detail_json FROM listings`, func(rows *sql.Rows) error {
 		var key string
 		var price *int64
-		var images, tags sql.NullString
-		if err := rows.Scan(&key, &price, &images, &tags); err != nil {
+		var images, tags, sellerDetail sql.NullString
+		if err := rows.Scan(&key, &price, &images, &tags, &sellerDetail); err != nil {
 			return err
 		}
 		if strings.TrimSpace(key) == "" || price != nil && *price < 0 {
@@ -337,6 +337,11 @@ func validateStoredListings(ctx context.Context, tx *sql.Tx) error {
 		for _, raw := range []sql.NullString{images, tags} {
 			if err := storedStrings(raw); err != nil {
 				return storedInvalid("listings", key, "json")
+			}
+		}
+		if sellerDetail.Valid {
+			if _, err := decodeSellerDetailMetrics(sellerDetail.String); err != nil {
+				return storedInvalid("listings", key, "seller_detail_json")
 			}
 		}
 		return nil

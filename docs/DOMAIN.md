@@ -274,14 +274,15 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 | image_urls_json | TEXT | 详情里的全部图片 |
 | desktop_url | TEXT NOT NULL | 网页版链接。手机端链接由商品 ID 现算，不存（见 13.1） |
 | area | TEXT | |
-| seller_id | TEXT | 打开详情后才知道 |
+| seller_id | TEXT | 搜索 `clickParam.args.seller_id` 或详情 `sellerDO.sellerId`；搜索未取得时保持未知 |
 | seller_nick | TEXT | |
 | published_at | INTEGER | |
 | want_count / browse_count | INTEGER | |
 | tags_json | TEXT | 如「包邮」「验货宝」 |
 | description | TEXT | 打开详情后才有 |
 | seller_registration_days | INTEGER | 详情里卖家的注册天数 |
-| zhima_level | TEXT | |
+| zhima_level | TEXT | 芝麻信用文字，缺失时不拿未确认等级号补齐 |
+| seller_detail_json | TEXT | 详情里的公开卖家原始指标（第 134 条），缺失为空；含 `item_count`、`has_sold_num_integer`、`avg_reply_30d_long`、`new_good_ratio_rate`、`last_visit_time`、`idle_fish_credit_level`、`zhima_auth`。前两项为非负整数，回复指标为非负数，比例和最近访问保留原字符串；等级和认证不等同信用结论。新非空对象整体替换旧快照，缺字段保持未知；没有新对象时保留已有观察 |
 | first_seen_at / last_seen_at | INTEGER NOT NULL | 任何任务搜到它都更新 `last_seen_at` |
 | detail_fetched_at | INTEGER | |
 | is_favorite | INTEGER NOT NULL DEFAULT 0 | 收藏 |
@@ -667,7 +668,7 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 每个新商品创建一条发现。先依次检查：
 
 1. 商品被标记过不感兴趣 → `skipped`，原因「不感兴趣」。
-2. 商品的 `seller_id` 已知（之前打开过详情）且卖家被屏蔽 → `skipped`，原因「已屏蔽卖家」。
+2. 商品的 `seller_id` 已知（搜索或之前的详情已取得）且卖家被屏蔽 → `skipped`，原因「已屏蔽卖家」。
 3. 第一层（5.1）不通过 → `rejected`，`decided_layer = 1`，`reject_kind` 按 5.1 填，原因写哪一条没通过。
 4. 其余的是候选。
 
@@ -849,7 +850,7 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 
   没有图片时在末尾加一行：`补充说明：本次没有提供商品图片，请只根据文字信息判断，不要推测图片内容。`
 - 清单 JSON：`specs[{name, options, values}]`；`musts[{id, text}]`、`bonuses[{id, text}]`（`id` 是清单里的固定编号，如 `m1`、`b2`，2.6）；`checks[{key, name, hint}]`：任务的检查项（含「无所谓」的，用来显示），`key` 是字典编号或自定义检查项的固定编号（如 `c3`）；字典项的 `name`、`hint` 用字典里的名称和判断说明（5.7），自定义检查项用它自己的 `name`、`hint`（`hint` 为空时用名称，2.6）。卖家检查项（`seller_*`）不放进去：它们由程序按 5.8 算，AI 对评价的判断另外用 `seller_signals` 给出。`fair_price`：这件所在配置的合理价、样本数和依据（12.1），无法比价时为 `null`。
-- 商品 JSON（键名英文、按键名排序、中文不转义）：`title`、`price`、`original_price`、`description`、`published_at`、`area`、`tags`、`want_count`、`browse_count`、`url`，以及 `seller{nickname,registration,introduction,zhima_level,seller_credit,buyer_credit,item_count,on_sale_count,sold_count,rate_count,seller_good_rate,buyer_good_rate,recent_rates[],recent_items[]}`。`registration` 写成「来闲鱼 X 年 Y 个月」。没有的字段省略。
+- 商品 JSON（键名英文、按键名排序、中文不转义）：`title`、`price`、`original_price`、`description`、`published_at`、`area`、`tags`、`want_count`、`browse_count`、`url`，以及 `seller{nickname,registration,introduction,zhima_level,seller_credit,buyer_credit,item_count,on_sale_count,sold_count,rate_count,seller_good_rate,buyer_good_rate,recent_rates[],recent_items[],detail_metrics{item_count,has_sold_num_integer,avg_reply_30d_long,new_good_ratio_rate,last_visit_time,idle_fish_credit_level,zhima_auth}}`。`registration` 写成「来闲鱼 X 年 Y 个月」。没有的字段省略。
 - 图片：取详情图片的前 `ai.image_count` 张，同时最多下载 3 张，不带 Cookie，走这个任务所用账号的代理（2.1）。最长边缩到 1024 像素，转成质量 80 的 JPEG，再编成 base64。下载或转换失败的图片直接跳过（包括 Go 解不了的格式）。不用搜索结果的缩略图代替。
 - AI 输出的是事实，不是分数（8.2）：
   - `specs`：从标题、描述和图片读出的规格，`brand_new`。
@@ -1038,7 +1039,7 @@ AI 任务最近 30 个第三层得出结论的发现（不含基线）里没有�
 
 ### 5.8 卖家画像
 
-数据来自卖家主页缓存（`seller_profiles`，现有设计本来就会打开，`crawl.seller_cache_hours` 内复用，占详情额度）和详情里的注册天数、芝麻信用。
+数据来自卖家主页缓存（`seller_profiles`，现有设计本来就会打开，`crawl.seller_cache_hours` 内复用，占详情额度）和详情里的注册天数、芝麻信用。详情公开指标另存为 `seller_detail_json`，在资料和商品判断的 `seller.detail_metrics` 中展示原值，不覆盖主页最近 20 条统计，也不参与卖家画像、信用加分或好评率计算；单位和含义由后续自然运行确认。
 
 分析时将卖家检查项状态、短证据和派生画像、信用加分资格另存为发现的 `seller_checks_json`。之后重算和画像用这些结论，原数字缓存照常过期清理，不因清理改分；真正重新分析才替换这份结论，不保存整份数字快照。
 
@@ -1481,6 +1482,7 @@ next_run_at = 结束时间 + interval_minutes × (1 + 随机[0, interval_jitter_
    - partial_refund：作为买家被评收货后压价、到手刀、恶意退款；
    - dealer_words：简介里有「工作室」「同行勿扰」「量大从优」这类商家用语。
    没有就给空数组。卖家信用、注册时长、在售数量由程序计算，你不用判断。
+   seller.detail_metrics 保留商品详情里的卖家指标原值，单位和含义尚未确认，不得自行换算或推断信用等级，也不得据此加分。
 7. price_note：如果价格明显低于清单里的 fair_price，卖家有没有在描述里给出可信的原因（例如写明急出的原因），有就原样摘抄，没有填 null。
 8. extra_findings：清单里没有、但这件商品明显存在的问题，最多 5 条，例如描述里写了「电池鼓包」而清单里没有这一项。name 是问题名称，不超过 10 个字。source 为 text 时，evidence 必须原样摘抄标题或描述里的一小段文字；source 为 image 时，evidence 写「第 N 张图：看到了什么」。清单里已有的问题写在 checks 里，不要重复写在这里；只写明显存在的问题，不要列可能有的风险。没有就给空数组。
 9. adjust：看完全部信息后的综合判断，-15 到 8 之间的整数，reason 用一句话写明依据。用来表达清单没覆盖到的情况，例如「+5：配件齐全、有购买发票」「-8：描述前后矛盾，先说自用后说帮朋友卖」。extra_findings 只通过这里影响分数：有 extra_findings 时，reason 里要写明考虑了哪几条。没有特别的就给 0。往下调可以大胆一些，往上调要谨慎。

@@ -17,7 +17,7 @@ var requiredColumns = map[string]string{
 	"quota_events":         "id account_id kind run_id at",
 	"tasks":                "id name keyword enabled account_id account_pinned min_price max_price personal_only free_shipping_only publish_window region_province region_city region_district max_pages interval_minutes crawl_overrides_json judge_mode requirement profile_json budget_min budget_max match_keywords_json exclude_keywords_json analyze_on_first_run notify_policy notify_price_drop search_generation baseline_pending sort_index created_at updated_at last_run_at last_success_at next_run_at last_run_outcome last_error consecutive_failures failure_paused_until no_good_hint_dismissed_at",
 	"task_channels":        "task_id channel_id",
-	"listings":             "item_id title price price_text original_price_text thumbnail_url image_urls_json desktop_url area seller_id seller_nick published_at want_count browse_count tags_json description seller_registration_days zhima_level first_seen_at last_seen_at detail_fetched_at is_favorite favorited_at is_dismissed last_drop_amount last_drop_at sale_status",
+	"listings":             "item_id title price price_text original_price_text thumbnail_url image_urls_json desktop_url area seller_id seller_nick published_at want_count browse_count tags_json description seller_registration_days zhima_level first_seen_at last_seen_at detail_fetched_at is_favorite favorited_at is_dismissed last_drop_amount last_drop_at sale_status seller_detail_json",
 	"price_points":         "id item_id price observed_at",
 	"task_sightings":       "task_id item_id day price last_seen_at",
 	"task_item_specs":      "task_id item_id kind specs_json brand_new config_key excluded source updated_at",

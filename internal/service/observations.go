@@ -30,20 +30,28 @@ func upsertSearchListingTx(ctx context.Context, tx *sql.Tx, observation SearchOb
 		}
 		tags = string(raw)
 	}
+	var sellerID *string
+	if observation.SellerID != nil {
+		value := strings.TrimSpace(*observation.SellerID)
+		if value != "" {
+			sellerID = &value
+		}
+	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO listings(item_id,title,desktop_url,price,price_text,
-		original_price_text,thumbnail_url,area,seller_nick,published_at,want_count,tags_json,first_seen_at,last_seen_at)
-		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(item_id) DO UPDATE SET
+		original_price_text,thumbnail_url,area,seller_id,seller_nick,published_at,want_count,tags_json,first_seen_at,last_seen_at)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(item_id) DO UPDATE SET
 		title=CASE WHEN excluded.title<>'' THEN excluded.title ELSE listings.title END,
 		desktop_url=CASE WHEN excluded.desktop_url<>'' THEN excluded.desktop_url ELSE listings.desktop_url END,
 		price=excluded.price,price_text=excluded.price_text,
 		original_price_text=COALESCE(excluded.original_price_text,listings.original_price_text),
 		thumbnail_url=COALESCE(excluded.thumbnail_url,listings.thumbnail_url),area=COALESCE(excluded.area,listings.area),
+		seller_id=COALESCE(excluded.seller_id,listings.seller_id),
 		seller_nick=COALESCE(excluded.seller_nick,listings.seller_nick),
 		published_at=COALESCE(excluded.published_at,listings.published_at),
 		want_count=COALESCE(excluded.want_count,listings.want_count),tags_json=COALESCE(excluded.tags_json,listings.tags_json),
 		last_seen_at=excluded.last_seen_at`, observation.ItemID, observation.Title, observation.DesktopURL,
 		observation.Price, observation.PriceText, observation.OriginalPriceText, observation.ThumbnailURL,
-		observation.Area, observation.SellerNick, observation.PublishedAt, observation.WantCount, tags,
+		observation.Area, sellerID, observation.SellerNick, observation.PublishedAt, observation.WantCount, tags,
 		observation.ObservedAt, observation.ObservedAt)
 	if err != nil {
 		return Listing{}, nil, err
@@ -128,12 +136,23 @@ func saveDetailTx(ctx context.Context, tx *sql.Tx, work WorkRef, observation Det
 		}
 		images = string(raw)
 	}
+	var sellerDetail any
+	if observation.SellerDetail != nil {
+		if err := validateSellerDetailMetrics(observation.SellerDetail); err != nil {
+			return err
+		}
+		raw, err := json.Marshal(observation.SellerDetail)
+		if err != nil {
+			return err
+		}
+		sellerDetail = string(raw)
+	}
 	_, err = tx.ExecContext(ctx, `UPDATE listings SET image_urls_json=COALESCE(?,image_urls_json),
 		description=COALESCE(?,description),want_count=COALESCE(?,want_count),browse_count=COALESCE(?,browse_count),
 		seller_id=COALESCE(?,seller_id),seller_registration_days=COALESCE(?,seller_registration_days),
-		zhima_level=COALESCE(?,zhima_level),sale_status=COALESCE(?,sale_status),detail_fetched_at=? WHERE item_id=?`,
+		zhima_level=COALESCE(?,zhima_level),sale_status=COALESCE(?,sale_status),seller_detail_json=COALESCE(?,seller_detail_json),detail_fetched_at=? WHERE item_id=?`,
 		images, observation.Description, observation.WantCount, observation.BrowseCount,
 		observation.SellerID, observation.SellerRegistrationDays, observation.ZhimaLevel,
-		observation.SaleStatus, observation.FetchedAt, observation.ItemID)
+		observation.SaleStatus, sellerDetail, observation.FetchedAt, observation.ItemID)
 	return err
 }

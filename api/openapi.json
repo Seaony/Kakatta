@@ -12606,6 +12606,16 @@
                 "type": "null"
               }
             ]
+          },
+          "seller_detail": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SellerDetailMetrics"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -12913,6 +12923,16 @@
             "anyOf": [
               {
                 "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "seller_detail": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SellerDetailMetrics"
               },
               {
                 "type": "null"
@@ -21555,6 +21575,70 @@
           "reason"
         ],
         "x-go-type": "server.DiagnosticExclusion"
+      },
+      "SellerDetailMetrics": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "item_count": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "has_sold_num_integer": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "avg_reply_30d_long": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "new_good_ratio_rate": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_visit_time": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "idle_fish_credit_level": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "zhima_auth": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "x-go-type": "xianyu.SellerDetailMetrics",
+        "required": []
       }
     },
     "responses": {

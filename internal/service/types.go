@@ -8,6 +8,7 @@ import (
 	"github.com/Seaony/Kakatta/internal/locales"
 	"github.com/Seaony/Kakatta/internal/remote"
 	"github.com/Seaony/Kakatta/internal/settings"
+	"github.com/Seaony/Kakatta/internal/xianyu"
 )
 
 // 时间用 UTC 毫秒，金额用整数分；未知字段保留 null，读取端把列表初始化为空数组。
@@ -107,33 +108,34 @@ type TaskSummary struct {
 }
 
 type Listing struct {
-	ItemID                 string   `json:"item_id"`
-	Title                  string   `json:"title"`
-	DesktopURL             string   `json:"desktop_url"`
-	FirstSeenAt            int64    `json:"first_seen_at"`
-	LastSeenAt             int64    `json:"last_seen_at"`
-	Price                  *int64   `json:"price"`
-	PriceText              *string  `json:"price_text"`
-	OriginalPriceText      *string  `json:"original_price_text"`
-	ThumbnailURL           *string  `json:"thumbnail_url"`
-	Area                   *string  `json:"area"`
-	SellerID               *string  `json:"seller_id"`
-	SellerNick             *string  `json:"seller_nick"`
-	Description            *string  `json:"description"`
-	ZhimaLevel             *string  `json:"zhima_level"`
-	SaleStatus             *string  `json:"sale_status"`
-	ImageURLs              []string `json:"image_urls"`
-	Tags                   []string `json:"tags"`
-	PublishedAt            *int64   `json:"published_at"`
-	WantCount              *int64   `json:"want_count"`
-	BrowseCount            *int64   `json:"browse_count"`
-	SellerRegistrationDays *int64   `json:"seller_registration_days"`
-	DetailFetchedAt        *int64   `json:"detail_fetched_at"`
-	IsFavorite             bool     `json:"is_favorite"`
-	IsDismissed            bool     `json:"is_dismissed"`
-	FavoritedAt            *int64   `json:"favorited_at"`
-	LastDropAmount         *int64   `json:"last_drop_amount"`
-	LastDropAt             *int64   `json:"last_drop_at"`
+	ItemID                 string                      `json:"item_id"`
+	Title                  string                      `json:"title"`
+	DesktopURL             string                      `json:"desktop_url"`
+	FirstSeenAt            int64                       `json:"first_seen_at"`
+	LastSeenAt             int64                       `json:"last_seen_at"`
+	Price                  *int64                      `json:"price"`
+	PriceText              *string                     `json:"price_text"`
+	OriginalPriceText      *string                     `json:"original_price_text"`
+	ThumbnailURL           *string                     `json:"thumbnail_url"`
+	Area                   *string                     `json:"area"`
+	SellerID               *string                     `json:"seller_id"`
+	SellerNick             *string                     `json:"seller_nick"`
+	Description            *string                     `json:"description"`
+	ZhimaLevel             *string                     `json:"zhima_level"`
+	SaleStatus             *string                     `json:"sale_status"`
+	ImageURLs              []string                    `json:"image_urls"`
+	Tags                   []string                    `json:"tags"`
+	PublishedAt            *int64                      `json:"published_at"`
+	WantCount              *int64                      `json:"want_count"`
+	BrowseCount            *int64                      `json:"browse_count"`
+	SellerRegistrationDays *int64                      `json:"seller_registration_days"`
+	SellerDetail           *xianyu.SellerDetailMetrics `json:"seller_detail,omitempty"`
+	DetailFetchedAt        *int64                      `json:"detail_fetched_at"`
+	IsFavorite             bool                        `json:"is_favorite"`
+	IsDismissed            bool                        `json:"is_dismissed"`
+	FavoritedAt            *int64                      `json:"favorited_at"`
+	LastDropAmount         *int64                      `json:"last_drop_amount"`
+	LastDropAt             *int64                      `json:"last_drop_at"`
 }
 
 type ListingPatch map[string]json.RawMessage
@@ -275,6 +277,7 @@ type SearchObservation struct {
 	ThumbnailURL      *string  `json:"thumbnail_url"`
 	Area              *string  `json:"area"`
 	SellerNick        *string  `json:"seller_nick"`
+	SellerID          *string  `json:"seller_id"`
 	PublishedAt       *int64   `json:"published_at"`
 	WantCount         *int64   `json:"want_count"`
 	Tags              []string `json:"tags"`
@@ -284,16 +287,17 @@ type SearchObservation struct {
 }
 
 type DetailObservation struct {
-	ItemID                 string   `json:"item_id"`
-	ImageURLs              []string `json:"image_urls"`
-	Description            *string  `json:"description"`
-	WantCount              *int64   `json:"want_count"`
-	BrowseCount            *int64   `json:"browse_count"`
-	SellerID               *string  `json:"seller_id"`
-	SellerRegistrationDays *int64   `json:"seller_registration_days"`
-	ZhimaLevel             *string  `json:"zhima_level"`
-	SaleStatus             *string  `json:"sale_status"`
-	FetchedAt              int64    `json:"fetched_at"`
+	ItemID                 string                      `json:"item_id"`
+	ImageURLs              []string                    `json:"image_urls"`
+	Description            *string                     `json:"description"`
+	WantCount              *int64                      `json:"want_count"`
+	BrowseCount            *int64                      `json:"browse_count"`
+	SellerID               *string                     `json:"seller_id"`
+	SellerRegistrationDays *int64                      `json:"seller_registration_days"`
+	SellerDetail           *xianyu.SellerDetailMetrics `json:"seller_detail,omitempty"`
+	ZhimaLevel             *string                     `json:"zhima_level"`
+	SaleStatus             *string                     `json:"sale_status"`
+	FetchedAt              int64                       `json:"fetched_at"`
 }
 
 type SearchSaved struct {

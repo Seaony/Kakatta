@@ -341,6 +341,7 @@ func (s *Service) detailSave(ctx context.Context, work WorkRef, result xianyu.De
 		if result.Zhima != "" {
 			observation.ZhimaLevel = &result.Zhima
 		}
+		observation.SellerDetail = result.SellerMetrics
 		return saveDetailTx(ctx, tx, work, observation)
 	})
 }
@@ -563,13 +564,13 @@ func detailProductSource(item Listing, seller *SellerProfile) prompts.ProductSou
 			source.OriginalPriceCents = &price
 		}
 	}
-	profile := &prompts.SellerSource{Nickname: item.SellerNick, ZhimaLevel: item.ZhimaLevel}
+	profile := &prompts.SellerSource{Nickname: item.SellerNick, ZhimaLevel: item.ZhimaLevel, DetailMetrics: item.SellerDetail}
 	if item.SellerRegistrationDays != nil && *item.SellerRegistrationDays > 0 {
 		days := int(*item.SellerRegistrationDays)
 		profile.RegistrationDays = &days
 	}
 	if seller == nil {
-		if profile.Nickname != nil || profile.ZhimaLevel != nil || profile.RegistrationDays != nil {
+		if profile.Nickname != nil || profile.ZhimaLevel != nil || profile.RegistrationDays != nil || profile.DetailMetrics != nil {
 			source.Seller = profile
 		}
 		return source

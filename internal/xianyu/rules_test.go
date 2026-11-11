@@ -26,6 +26,10 @@ func TestProtocolRulesRejectMalformedData(t *testing.T) {
 		{"missing item path", "fields.search.id", nil},
 		{"empty item path", "fields.search.id", []string{}},
 		{"blank path component", "fields.search.main", []string{"data", " "}},
+		{"null search seller path", "fields.search.seller_id", nil},
+		{"empty search seller path", "fields.search.seller_id", []string{}},
+		{"blank search seller path", "fields.search.seller_id", []string{" "}},
+		{"wrong search seller path type", "fields.search.seller_id", "seller_id"},
 		{"missing description paths", "fields.detail.descriptions", [][]string{}},
 		{"empty description path", "fields.detail.descriptions", [][]string{{}}},
 		{"missing seller cards", "fields.seller.cards", nil},
@@ -77,6 +81,40 @@ func TestProtocolRulesRejectMalformedData(t *testing.T) {
 	} {
 		if _, err := decodeRules(body); err == nil {
 			t.Fatal("接受了损坏规则或尾随内容")
+		}
+	}
+}
+
+func TestSearchSellerIDRuleKeepsPriorVersionFourCompatible(t *testing.T) {
+	var document map[string]any
+	if err := json.Unmarshal(bundledRules, &document); err != nil {
+		t.Fatal(err)
+	}
+	search := document["fields"].(map[string]any)["search"].(map[string]any)
+	for _, configured := range []bool{false, true} {
+		if configured {
+			search["seller_id"] = []string{"confirmed_seller"}
+		} else {
+			delete(search, "seller_id")
+		}
+		body, err := json.Marshal(document)
+		if err != nil {
+			t.Fatal(err)
+		}
+		decoded, err := decodeRules(body)
+		if err != nil {
+			t.Fatalf("第4版缺省或自定义搜索卖家编号路径不能拒绝：%v", err)
+		}
+		previous := rules
+		rules = decoded
+		items, parseErr := ParseSearch([]byte(`{"data":{"resultList":[{"data":{"item":{"main":{"exContent":{"itemId":"101"},"clickParam":{"args":{"seller_id":"default-seller","confirmed_seller":"configured-seller"}}}}}}]}}`))
+		rules = previous
+		want := "default-seller"
+		if configured {
+			want = "configured-seller"
+		}
+		if parseErr != nil || len(items) != 1 || items[0].SellerID != want || decoded.Version != 4 {
+			t.Fatalf("第4版卖家路径的缺省或覆盖未生效：%+v，%v", items, parseErr)
 		}
 	}
 }

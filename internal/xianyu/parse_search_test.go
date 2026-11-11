@@ -2,10 +2,41 @@ package xianyu
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
 	"testing"
 	"time"
 )
+
+func TestParseSearchSellerIDUsesConfirmedClickArgs(t *testing.T) {
+	for _, tc := range []struct {
+		name, args, want string
+	}{
+		{"字符串编号", `{"seller_id":"2200000000123"}`, "2200000000123"},
+		{"数字编号保留精度", `{"seller_id":9007199254740993123}`, "9007199254740993123"},
+		{"编号首尾空白", `{"seller_id":" 2200000000123 "}`, "2200000000123"},
+		{"字段缺失", `{}`, ""},
+		{"空值", `{"seller_id":null}`, ""},
+		{"空字符串", `{"seller_id":""}`, ""},
+		{"全空白", `{"seller_id":" \t"}`, ""},
+		{"布尔值不当编号", `{"seller_id":true}`, ""},
+		{"对象不当编号", `{"seller_id":{"id":"2201"}}`, ""},
+		{"数组不当编号", `{"seller_id":["2201"]}`, ""},
+		{"新旧冲突只认已确认字段", `{"seller_id":"2200000000123","userId":"old-user","sellerId":"old-seller"}`, "2200000000123"},
+		{"不猜旧候选字段", `{"userId":"old-user","sellerId":"old-seller"}`, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := fmt.Sprintf(`{"data":{"resultList":[{"data":{"item":{"main":{"exContent":{"itemId":"101","sellerId":"old-content-seller","userId":"old-content-user"},"sellerId":"old-main-seller","clickParam":{"args":%s}}}}}]}}`, tc.args)
+			items, err := ParseSearch([]byte(body))
+			if err != nil || len(items) != 1 {
+				t.Fatal("卖家编号缺失或变化不能丢掉商品", items, err)
+			}
+			if items[0].SellerID != tc.want {
+				t.Fatalf("卖家编号：得到 %q，期望 %q", items[0].SellerID, tc.want)
+			}
+		})
+	}
+}
 
 func TestParseSearch(t *testing.T) {
 	items, err := ParseSearch(readFixture(t, "search.json"))
@@ -145,6 +176,7 @@ func TestParseSearchUsesConfiguredPaths(t *testing.T) {
 	paths.Image = []string{"picture"}
 	paths.Area = []string{"location"}
 	paths.SellerNick = []string{"nick"}
+	paths.SellerID = []string{"identity", "seller"}
 	paths.URL = []string{"href"}
 	paths.Published = []string{"created"}
 	paths.Want = []string{"wanted"}
@@ -158,7 +190,7 @@ func TestParseSearchUsesConfiguredPaths(t *testing.T) {
 			"amount":[{"part":"当前价"},{"part":"¥"},{"part":0}],"old_amount":"¥0",
 			"picture":"//images.invalid/item.jpg","location":"杭州","nick":"卖家",
 			"labels":[{"label":"验货宝"}]},
-		"metadata":{"created":"1710000000000","wanted":0,"shipping":"freeship"},
+		"metadata":{"created":"1710000000000","wanted":0,"shipping":"freeship","identity":{"seller":9007199254740993123},"seller_id":"old-seller"},
 		"href":"fleamarket://item?id=9007199254740993"}}]}}`)
 	got, err := ParseSearch(body)
 	if err != nil {
@@ -167,7 +199,7 @@ func TestParseSearchUsesConfiguredPaths(t *testing.T) {
 	want := []SearchItem{{
 		ID: "9007199254740993", Title: "新路径商品", PriceText: "¥0", PriceKnown: true,
 		OriPriceText: "¥0", OriPriceKnown: true,
-		Image: "https://images.invalid/item.jpg", Area: "杭州", SellerNick: "卖家",
+		Image: "https://images.invalid/item.jpg", Area: "杭州", SellerNick: "卖家", SellerID: "9007199254740993123",
 		WebURL:      "https://www.goofish.com/item?id=9007199254740993",
 		AppURL:      "https://pages.goofish.com/sharexy?loadingVisible=false&bft=item&bfs=idlepc.item&spm=a21ybx.item.0.0&bfp=%7B%22id%22%3A9007199254740993%7D",
 		PublishedAt: time.UnixMilli(1710000000000).UTC(), PublishedKnown: true,

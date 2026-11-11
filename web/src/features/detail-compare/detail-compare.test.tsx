@@ -523,6 +523,72 @@ describe('比较和局部阅读', () => {
     expect(screen.getByText('卖家原始资料缓存已不可用，分析时的判断依据仍保留')).toBeTruthy();
   });
 
+  for (const locale of ['zh-CN', 'en'] as const) {
+    const title = locale === 'zh-CN' ? '详情中的卖家指标' : 'Seller metrics from item details';
+    const unknown = locale === 'zh-CN' ? '未知' : 'Unknown';
+    const labels = locale === 'zh-CN'
+      ? ['原始商品数', '原始已售数', '近 30 天回复指标原值', '好评指标原文', '最近访问原文', '闲鱼信用等级原值', '芝麻认证标记']
+      : ['Raw item count', 'Raw sold count', 'Raw 30-day reply metric', 'Raw positive-review metric', 'Last-visit text', 'Raw Xianyu credit level', 'Zhima authentication flag'];
+    const note = locale === 'zh-CN' ? '原始指标的含义或单位待确认，不参与评分。' : 'The meaning or units of these raw metrics are unconfirmed. They do not affect scoring.';
+    const cases: { name: string; metrics: Schema<'SellerDetailMetrics'>; values: string[] }[] = [
+      { name: '保留原值', metrics: { item_count: 42, has_sold_num_integer: 13, avg_reply_30d_long: 32.56789, new_good_ratio_rate: '98.7%', last_visit_time: ' 近日来过 ', idle_fish_credit_level: 'L5', zhima_auth: true }, values: ['42', '13', '32.56789', '98.7%', ' 近日来过 ', 'L5', locale === 'zh-CN' ? '是' : 'Yes'] },
+      { name: '零与否', metrics: { item_count: 0, has_sold_num_integer: 0, avg_reply_30d_long: 0, new_good_ratio_rate: '0', last_visit_time: '0', idle_fish_credit_level: '0', zhima_auth: false }, values: ['0', '0', '0', '0', '0', '0', locale === 'zh-CN' ? '否' : 'No'] },
+      { name: '缺失值', metrics: {}, values: Array<string>(7).fill(unknown) },
+      { name: '空白与空值', metrics: { item_count: null, has_sold_num_integer: null, avg_reply_30d_long: null, new_good_ratio_rate: ' \t', last_visit_time: '', idle_fish_credit_level: '\n ', zhima_auth: null }, values: Array<string>(7).fill(unknown) },
+    ];
+    for (const { name, metrics, values } of cases) {
+      test(`${locale}详情卖家指标${name}，没有主页资料也独立展示且不参与评分`, async () => {
+        const finding = fixture();
+        finding.listing.seller_detail = metrics;
+        finding.seller = null;
+        mount(<Seller finding={finding} timeZone="Asia/Shanghai" />, undefined, locale);
+        const section = within((await screen.findByRole('heading', { name: title })).parentElement!);
+        expect(section.getByText(note)).toBeTruthy();
+        labels.forEach((label, index) => expect(section.getByText(label).nextElementSibling?.textContent).toBe(values[index]));
+        expect(section.queryByText(locale === 'zh-CN' ? '最近一页好评率' : 'Positive reviews on the latest page')).toBeNull();
+        expect(section.queryByText(locale === 'zh-CN' ? '卖家信用' : 'Seller credit')).toBeNull();
+        expect(screen.getByText(locale === 'zh-CN' ? '卖家类型未知' : 'Unknown seller type')).toBeTruthy();
+      });
+    }
+    for (const metrics of [undefined, null]) {
+      test(`${locale}无详情卖家指标${String(metrics)}不插入全未知指标区`, async () => {
+        const finding = fixture();
+        if (metrics === null) finding.listing.seller_detail = null;
+        mount(<Seller finding={finding} />, undefined, locale);
+        await screen.findByText('本地卖家');
+        expect(screen.queryByRole('heading', { name: title })).toBeNull();
+      });
+    }
+    for (const [detailCredit, profileCredit, expected] of [
+      ['芝麻信用极好', '主页卖家信用', '芝麻信用极好'],
+      [' \t', '主页卖家信用', '主页卖家信用'],
+      [null, ' \t', unknown],
+      ['', null, unknown],
+    ] as const) {
+      test(`${locale}卖家信用按详情与主页优先级显示${String(detailCredit)}/${String(profileCredit)}`, async () => {
+        const finding = fixture();
+        finding.listing.zhima_level = detailCredit;
+        finding.seller = {
+          seller_id: 'seller-1', nick: null, avatar_url: null, introduction: null, seller_credit: profileCredit, buyer_credit: null,
+          seller_credit_level: null, buyer_credit_level: null, item_count: null, rate_count: null, on_sale_count: null, sold_count: null,
+          seller_good_rate: null, buyer_good_rate: null, seller_good_count: null, seller_rate_count: null, buyer_good_count: null, buyer_rate_count: null,
+          recent_items: null, recent_rates: null, fetched_at: timestamp,
+        };
+        mount(<Seller finding={finding} />, undefined, locale);
+        const label = await screen.findByText(locale === 'zh-CN' ? '卖家信用' : 'Seller credit');
+        expect(label.nextElementSibling?.textContent).toBe(expected);
+      });
+    }
+    test(`${locale}无卖家主页缓存仍显示已知芝麻信用`, async () => {
+      const finding = fixture();
+      finding.listing.zhima_level = '芝麻信用极好';
+      finding.seller = null;
+      mount(<Seller finding={finding} />, undefined, locale);
+      const label = await screen.findByText(locale === 'zh-CN' ? '卖家信用' : 'Seller credit');
+      expect(label.nextElementSibling?.textContent).toBe('芝麻信用极好');
+    });
+  }
+
   test('只取得部分卖家资料时，详情保留已取得的字段并把评价显示为未知', async () => {
     const finding = fixture();
     finding.listing.seller_registration_days = 426;

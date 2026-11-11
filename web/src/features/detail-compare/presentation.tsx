@@ -163,21 +163,39 @@ export function Deliveries({ finding, priceDrops = false, timeZone }: { finding:
 export function Seller({ finding, timeZone }: { finding: Finding; timeZone?: string }) {
   const { t, locale } = useTranslation();
   const seller = finding.seller;
+  const metrics = finding.listing.seller_detail;
+  const credit = finding.listing.zhima_level?.trim() || seller?.seller_credit?.trim() || t('web.detail.unknown');
+  const rawText = (value: string | null | undefined) => value?.trim() ? value : t('web.detail.unknown');
   const type = finding.seller_assessment?.type ?? finding.seller_type ?? 'unknown';
   return <div className="space-y-lg">
     <p className="flex flex-wrap items-center gap-sm"><strong className="break-words">{formatSellerName(seller?.nick, locale, finding.listing.seller_nick)}</strong><StatusBadge tone={type === 'dealer_suspect' ? 'warning' : 'neutral'}>{t(`web.detail.seller_type.${type}`)}</StatusBadge></p>
     <p className="text-body">{formatSellerRegistration(finding.listing.seller_registration_days, locale)}</p>
     {finding.seller_assessment && <div className="space-y-sm"><h3 className="text-body font-medium">{t('web.detail.seller_assessment')}</h3><p className="text-caption text-text-secondary"><DateText value={finding.analyzed_at} {...(timeZone ? { timeZone } : {})} /></p><ul className="space-y-sm">{finding.seller_assessment.reasons.map((reason, index) => <li key={index} className="break-words text-body"><StoredMessage message={reason} /></li>)}</ul></div>}
-    {seller ? <>
-      <p className="text-caption text-text-secondary">{t('web.detail.seller_sampling')}</p>
-      <dl className="grid grid-cols-1 gap-lg text-body sm:grid-cols-2">
-        <div><dt className="text-text-secondary">{t('web.detail.seller_credit')}</dt><dd className="mt-sm">{seller.seller_credit ?? t('web.detail.unknown')}</dd></div>
+    {seller && <p className="text-caption text-text-secondary">{t('web.detail.seller_sampling')}</p>}
+    <dl className="grid grid-cols-1 gap-lg text-body sm:grid-cols-2">
+      <div><dt className="text-text-secondary">{t('web.detail.seller_credit')}</dt><dd className="mt-sm break-words">{credit}</dd></div>
+      {seller && <>
         <div><dt className="text-text-secondary">{t('web.detail.buyer_credit')}</dt><dd className="mt-sm">{seller.buyer_credit ?? t('web.detail.unknown')}</dd></div>
         <div><dt className="text-text-secondary">{t('web.detail.seller_on_sale')}</dt><dd className="mt-sm tabular-nums">{seller.on_sale_count ?? t('web.detail.unknown')}</dd></div>
         <div><dt className="text-text-secondary">{t('web.detail.seller_sold')}</dt><dd className="mt-sm tabular-nums">{seller.sold_count ?? t('web.detail.unknown')}</dd></div>
         <div><dt className="text-text-secondary">{t('web.detail.seller_rates')}</dt><dd className="mt-sm tabular-nums">{seller.seller_good_rate === null ? t('web.detail.unknown') : new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 1 }).format(seller.seller_good_rate)}</dd></div>
         <div><dt className="text-text-secondary">{t('web.detail.updated_at')}</dt><dd className="mt-sm"><DateText value={seller.fetched_at} {...(timeZone ? { timeZone } : {})} /></dd></div>
+      </>}
+    </dl>
+    {metrics && <div className="space-y-md">
+      <h3 className="text-body font-medium">{t('web.detail.seller_detail.title')}</h3>
+      <p className="text-caption text-text-secondary">{t('web.detail.seller_detail.note')}</p>
+      <dl className="grid grid-cols-1 gap-lg text-body sm:grid-cols-2">
+        <div><dt className="text-text-secondary">{t('web.detail.seller_detail.item_count')}</dt><dd className="mt-sm tabular-nums">{metrics.item_count ?? t('web.detail.unknown')}</dd></div>
+        <div><dt className="text-text-secondary">{t('web.detail.seller_detail.sold_count')}</dt><dd className="mt-sm tabular-nums">{metrics.has_sold_num_integer ?? t('web.detail.unknown')}</dd></div>
+        <div><dt className="text-text-secondary">{t('web.detail.seller_detail.reply')}</dt><dd className="mt-sm tabular-nums">{metrics.avg_reply_30d_long ?? t('web.detail.unknown')}</dd></div>
+        <div><dt className="text-text-secondary">{t('web.detail.seller_detail.good_ratio')}</dt><dd className="mt-sm whitespace-pre-wrap break-words">{rawText(metrics.new_good_ratio_rate)}</dd></div>
+        <div><dt className="text-text-secondary">{t('web.detail.seller_detail.last_visit')}</dt><dd className="mt-sm whitespace-pre-wrap break-words">{rawText(metrics.last_visit_time)}</dd></div>
+        <div><dt className="text-text-secondary">{t('web.detail.seller_detail.credit_level')}</dt><dd className="mt-sm whitespace-pre-wrap break-words">{rawText(metrics.idle_fish_credit_level)}</dd></div>
+        <div><dt className="text-text-secondary">{t('web.detail.seller_detail.zhima_auth')}</dt><dd className="mt-sm">{metrics.zhima_auth == null ? t('web.detail.unknown') : t(metrics.zhima_auth ? 'web.detail.seller_detail.auth_true' : 'web.detail.seller_detail.auth_false')}</dd></div>
       </dl>
+    </div>}
+    {seller ? <>
       {seller.introduction && <p className="whitespace-pre-wrap break-words text-body">{seller.introduction}</p>}
       <div className="space-y-md">
         <h3 className="text-body font-medium">{t('web.detail.reviews')}</h3>
@@ -192,7 +210,7 @@ export function Seller({ finding, timeZone }: { finding: Finding; timeZone?: str
             </blockquote>;
           })}
       </div>
-    </> : <p className="text-body text-text-secondary">{t(finding.seller_assessment ? 'web.detail.seller_cache_missing' : 'analysis.seller_unavailable')}</p>}
+    </> : <p className="text-body text-text-secondary">{t(finding.seller_assessment ? 'web.detail.seller_cache_missing' : metrics || finding.listing.zhima_level?.trim() ? 'web.detail.seller_profile_missing' : 'analysis.seller_unavailable')}</p>}
     {finding.analysis?.seller_signals.map((signal, index) => <Evidence key={index} source="text" evidence={signal.evidence} />)}
   </div>;
 }

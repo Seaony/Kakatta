@@ -59,7 +59,7 @@ var schemaRequiredColumns = map[string]string{
 		seller_nick:TEXT published_at:INTEGER want_count:INTEGER browse_count:INTEGER tags_json:TEXT
 		description:TEXT seller_registration_days:INTEGER zhima_level:TEXT first_seen_at:INTEGER:n
 		last_seen_at:INTEGER:n detail_fetched_at:INTEGER is_favorite:INTEGER:n favorited_at:INTEGER
-		is_dismissed:INTEGER:n last_drop_amount:INTEGER last_drop_at:INTEGER sale_status:TEXT`,
+		is_dismissed:INTEGER:n last_drop_amount:INTEGER last_drop_at:INTEGER sale_status:TEXT seller_detail_json:TEXT`,
 	"price_points":   `id:INTEGER:p1 item_id:TEXT price:INTEGER:n observed_at:INTEGER:n`,
 	"task_sightings": `task_id:INTEGER:np1 item_id:TEXT:np3 day:TEXT:np2 price:INTEGER last_seen_at:INTEGER:n`,
 	"task_item_specs": `

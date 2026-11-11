@@ -404,7 +404,7 @@ AI 任务在卖家资料没有缓存或缓存已过期时打开卖家主页，�
 
 卖家流程遇到普通失败时，失败的部分留空，已取得的资料照常保留。商品继续判断，失败步骤记一条警告。遇到风控或登录失效则按第四节停止。
 
-**卖家 ID 从哪来**：只有详情接口里有（`data.sellerDO.sellerId`，`scraper.py:1117`）。上游的搜索结果解析不读卖家 ID，所以「屏蔽卖家」在打开详情之前只能靠以前抓过详情时记下的「商品 → 卖家」对应关系（Mekke 的做法）。搜索接口里有没有卖家 ID 字段，待用真实页面确认。
+**卖家 ID 从哪来**：2026-11-11 第三轮真实观察确认搜索 `data.resultList[].data.item.main.clickParam.args.seller_id` 是非空字符串，解析时转成字符串并落盘，因此第一次搜索也能在打开详情前检查屏蔽卖家。缺失时仍可用之前详情取得的 `data.sellerDO.sellerId`（`scraper.py:1117`）；不猜 `userId` 或别名。早先扫描只匹配 `sellerId`、`userId`，漏掉下划线字段，不能据其 `found=false` 认定没有编号。
 
 ---
 
@@ -498,6 +498,7 @@ Kakatta 采用本次人工会话的页面变化和已确认的用户昵称节点
 | 主图 | `ex.picUrl` | 字符串 | 空 | 以 `//` 开头时补 `https:`（Mekke；上游不补） | `parsers.py:34` |
 | 地区 | `ex.area` | 字符串 | 空（上游 `"地区未知"`） | | `parsers.py:31` |
 | 卖家昵称 | `ex.userNickName` | 字符串 | 空（上游 `"匿名卖家"`） | 昵称不唯一，不能当卖家 ID 用 | `parsers.py:32` |
+| 卖家编号 | `args.seller_id` | 字符串或数字 | 未知 | 转成字符串，去首尾空白；不从未确认别名猜身份 | 第三轮真实观察 |
 | 网页链接 | `main.targetUrl` | 字符串，如 `fleamarket://item?id=123` | 空 | 见 9.7 节 | `parsers.py:33,58` |
 | 发布时间 | `args.publishTime` | 毫秒时间戳，字符串或数字 | 空 | 见 9.6 节 | `parsers.py:35,59` |
 | 想要人数 | `args.wantNum` | 整数，也可能是数字字符串 | 空（上游 `'NaN'`） | 打开详情后用详情的 `wantCnt` 覆盖 | `parsers.py:38` |
@@ -542,7 +543,9 @@ Kakatta 采用本次人工会话的页面变化和已确认的用户昵称节点
 | 浏览量 | `itemDO.browseCnt` | 整数 | 空（上游 `"-"`） | | `scraper.py:1112-1114` |
 | 卖家 ID | `sellerDO.sellerId` | 字符串或数字 | 空 | 转成字符串；打开卖家主页、屏蔽卖家都用它 | `scraper.py:1117` |
 | 注册天数 | `sellerDO.userRegDay` | 整数 | 0（上游默认 0） | 换算见 9.8 节 | `scraper.py:1075-1080` |
-| 芝麻信用 | `sellerDO.zhimaLevelInfo.levelName` | 字符串 | 空（上游 `"暂无"`） | | `scraper.py:1084-1087` |
+| 芝麻信用 | `sellerDO.zhimaLevelInfo.levelName` | 字符串 | 未知 | 展示优先芝麻文字，再取已确认来源的闲鱼信用文字，最后未知；详情信用标签的文字或图标映射尚未确认，不用等级号补文案 | `scraper.py:1084-1087` |
+| 详情卖家指标 | `sellerDO.itemCount`、`hasSoldNumInteger`、`avgReply30dLong`、`newGoodRatioRate`、`lastVisitTime` | 前两项 number，回复指标 number 或 null，后两项 string | 未知 | 保留原值，前两项非负整数；不猜单位、计数范围、比例或时间戳，不覆盖主页统计 | 第三轮真实观察 |
+| 详情信用原始字段 | `sellerDO.idleFishCreditTag.trackParams.sellerLevel`、`sellerDO.zhimaAuth` | string、boolean | 未知 | 等级映射及认证含义未确认，不能用于加分 | 第三轮真实观察 |
 | 商品描述 | 依次试 `itemDO.desc`、`itemDO.description`、`itemDO.richTextDesc`，取第一个是字符串的 | 字符串 | 空 | 2026-11-11 本轮观察到 `itemDO.desc`；其余两条兼容路径尚无真实确认 | Mekke 及真实实验 |
 
 ### 9.4 卖家
@@ -683,9 +686,17 @@ Kakatta 采用本次人工会话的页面变化和已确认的用户昵称节点
 | Cookie 与重开 | 本轮扫码后重开仍登录；`cookie2`、`_tb_token_`、`XSRF-TOKEN` 为观察到的会话 Cookie，第 130 条启动路径予以保留。`unb` 是观察到的持久登录相关 Cookie，旧值存在仍可能未登录，不作为会话有效证据 |
 | 搜索框与中文 | 自动策略找到页面顶部最宽的可见 `input`；推荐词表现为有 placeholder、无预填 value。`Input.insertText` 输入中文后，搜索 `q` 与输入一致，未被联想词替换；没有记录 placeholder 原文，尚不能定固定属性选择器 |
 | 搜索跳转与筛选 | 本轮在同一标签页到 `/search`；「新发布」及「最新」各自父元素的 `div` 类名前缀分别为 `search-select-title-container`、`search-select-items-container`，不代表整栏范围已验证 |
-| 搜索卖家编号 | 30 条的 `data.resultList[].data.item.main` 子树中未找到 `sellerId` 或 `userId`；只说明这批样本和扫描范围，详情仍按已知字段取卖家编号 |
+| 搜索卖家编号 | 当时的扫描只认 `sellerId`、`userId`，漏掉 `seller_id`；第三轮已确认正确路径，见下节，第 134 条取代此前未知结论 |
 | 详情描述和状态 | 观察到 `data.itemDO.desc`、`data.itemDO.itemStatus`，本轮状态值为 0；已售和下架的取值仍未验证 |
 | 地区文字 | 本轮 30 条是中文省或直辖市文字，不是手写样例中的 `Shanghai`；不能据此认定所有地区都只有省一级 |
+
+### 第三轮真实观察的回填
+
+作者用构建 `41c45a8`、llvmpipe 在 18:35 重开时无需扫码；17:32 的登录在本次仍有效，30 条搜索和 3 个详情成功，无风控信号或诊断。依据为当天事件 387–524 及 `summary-20261111-183650-317834532/summary.json`；off 和 llvmpipe 均有成功样本，不代表永久续期。
+
+三条空昵称样本确认 `exContent.userNickName` 缺失、`clickParam.args.HideUserInfo` 是非空字符串，开关值没有落盘，暂不能写「卖家隐藏了昵称」。三个详情都缺 `zhimaLevelInfo.levelName`；前两条记录到 `idleFishCreditTag.trackParams.sellerLevel`，第三条记录到 `zhimaAuth` 布尔。附近结构都触及 40 项上限，未记录不等于源字段不存在，尤其不能猜 `idleFishCreditTag.text`。
+
+第 134 条将已确认的详情指标接进资料和模型的独立原始字段。下一次自然运行仍只采三类缺失、每类最多三份：信用标签单独保留完整字段形状，不受外围 40 项截断；只对白名单公开指标记录原值，`newGoodRatioRate`、`lastVisitTime` 最多 64 字，`sellerLevel` 与 `iconUrl` 用来核对标签映射；落盘地址仍按原规则脱敏，用图标路径和等级核对，不另开放查询参数。其他对象仍只存结构，不记录自己账号的身份信息和凭据，不增加访问。自己的主页计数本轮未执行，不能把详情 `itemCount` 当作已验证的替代路径。
 
 ### 仍待自然运行补足的证据
 
@@ -694,9 +705,9 @@ Kakatta 采用本次人工会话的页面变化和已确认的用户昵称节点
 | 首页搜索框的固定属性选择器 | 自动策略本轮有效；继续在原定访问中核对稳定的 placeholder、name 或 aria 属性，不猜原文 |
 | 筛选整栏的范围 | 已知两个入口父元素的前缀，仍需在原定操作中核对包住全部筛选入口的容器，不能把局部父元素直接用作整栏范围 |
 | 地区弹层里点省、市时会不会发请求 | 「网络」面板过滤 `mtop`，逐个点省、市，看有没有新请求（影响 5.8 节的计数） |
-| 搜索昵称缺失 | 本轮 30 条中 5 条解析为空，成功响应未落盘，不能判定源字段确实缺失还是路径变化。下次原定搜索命中空昵称时，记录附近字段路径、类型及是否非空，最多 3 条样本；不记值、不额外访问，解析器保持原路径 |
+| 搜索昵称缺失 | 第三轮已确认空样本源昵称缺失且有 `HideUserInfo` 字符串；下次仅在同类缺失中记录该开关原值，确认含义前保持现有缺昵称提示，不增加访问 |
 | 详情里商品是否已卖出、已下架 | 打开详情时在详情接口的预览里找表示商品状态的字段；遇到已卖出或已下架的商品时再看一次它的值（`DOMAIN.md` 2.7 `sale_status`，不为它专门找这种商品） |
-| 详情芝麻信用缺失 | 本轮第三个详情 `1097292779966` 的 `data.sellerDO.zhimaLevelInfo.levelName` 解析为空，前两个有文字。它与卖家头部 `ylzTags` 的交易信用不是同一字段。无成功响应原文，原因仍未知；下次同类空值只观察附近字段结构，每次运行最多 3 条样本 |
+| 详情芝麻信用缺失 | 第三轮三个样本均缺芝麻路径；下一自然运行记录完整 `idleFishCreditTag` 形状及指定公开图标、等级、认证和指标原值。文字路径及映射未确认，不猜别名，不把等级号当信用文案；每次运行最多 3 条样本 |
 | 卖家商品数 `tabs.item.number` 的路径和含义 | 本轮自己的主页中路径不可得。下次原定自己的主页读取中商品数不可得时，观察 `data.module` 附近字段结构，每次运行最多 3 条样本；没有确认前保持未知，不能当零或用于职业卖家判定 |
 | 卖家信用等级 `attributes.level` 和「极好」等文字的对应 | 在卖家头部接口的预览里看 `ylzTags` 里 `role` 为 `seller` 那一项的 `level` 和 `text`；遇到不同信用的卖家时顺便记下 |
 | 商品地区的其他格式 | 本轮只看到中文省或直辖市；市区组合等其他格式在原定访问中继续核对 |

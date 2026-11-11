@@ -20,6 +20,7 @@ import (
 	"github.com/Seaony/Kakatta/internal/config"
 	"github.com/Seaony/Kakatta/internal/locales"
 	"github.com/Seaony/Kakatta/internal/settings"
+	"github.com/Seaony/Kakatta/internal/store"
 	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/emulation"
 	"github.com/chromedp/cdproto/log"
@@ -144,6 +145,12 @@ func TestWebSmoke(t *testing.T) {
 						return node?.parentElement.querySelector('li')?.textContent.includes(status) &&
 							node.parentElement.querySelector('li').textContent.includes('日常办公用轻薄本');
 					}`, smokeTranslation(t, lang, "tasks.profile.musts"), smokeTranslation(t, lang, "web.detail.requirement.met"))
+					waitWebSmoke(t, browser, &events, `(heading, note, falseLabel) => {
+						const node = [...document.querySelectorAll('main h3')].find(node => node.textContent === heading);
+						const section = node?.parentElement;
+						return section?.textContent.includes(note) && [...section.querySelectorAll('dd')].some(x => x.textContent === '0') &&
+							[...section.querySelectorAll('dd')].some(x => x.textContent === falseLabel) && section.textContent.includes('98%（样例原文）');
+					}`, smokeTranslation(t, lang, "web.detail.seller_detail.title"), smokeTranslation(t, lang, "web.detail.seller_detail.note"), smokeTranslation(t, lang, "web.detail.seller_detail.auth_false"))
 				}
 				if takeScreenshot {
 					writeWebSmokeScreenshot(t, browser, &events, filepath.Join(shots, page.name+".png"))
@@ -155,6 +162,10 @@ func TestWebSmoke(t *testing.T) {
 					}
 					runWebSmoke(t, browser, &events, chromedp.Evaluate[chromedp.Void](`(heading => [...document.querySelectorAll('main h2,main h3')].find(node => node.textContent === heading)?.scrollIntoView())(`+strconv.Quote(smokeTranslation(t, lang, heading))+`)`))
 					writeWebSmokeScreenshot(t, browser, &events, filepath.Join(shots, page.name+"-evidence-"+string(lang)+".png"))
+				}
+				if page.name == "result-detail" {
+					runWebSmoke(t, browser, &events, chromedp.Evaluate[chromedp.Void](`(heading => [...document.querySelectorAll('main h3')].find(node => node.textContent === heading)?.scrollIntoView())(`+strconv.Quote(smokeTranslation(t, lang, "web.detail.seller_detail.title"))+`)`))
+					writeWebSmokeScreenshot(t, browser, &events, filepath.Join(shots, "seller-metrics-"+string(lang)+".png"))
 				}
 				if page.name == "settings-system" {
 					checkWebSmokeDiagnostics(t, browser, &events, diagnosticFiles, lang, shots)
@@ -215,6 +226,7 @@ func startWebSmokeServer(t *testing.T) (string, string, webSmokeDiagnosticFiles)
 	if output, err := seed.CombinedOutput(); err != nil {
 		t.Fatalf("样例数据库生成失败：%v %s", err, output)
 	}
+	seedWebSmokeSellerMetrics(t, data)
 	diagnosticFiles := seedWebSmokeDiagnostics(t, data)
 	environment := settings.Environment{TZ: webSmokeTimezone}
 	prepareOfflineRuntime(t, data, environment)
@@ -253,6 +265,19 @@ func startWebSmokeServer(t *testing.T) (string, string, webSmokeDiagnosticFiles)
 		t.Fatal("缺少测试初始化令牌")
 	}
 	return "http://" + address, token, diagnosticFiles
+}
+
+func seedWebSmokeSellerMetrics(t *testing.T, data string) {
+	t.Helper()
+	db, err := store.Open(t.Context(), filepath.Join(data, "kakatta.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	_, err = db.DB().ExecContext(t.Context(), `UPDATE listings SET seller_detail_json=? WHERE item_id=(SELECT item_id FROM findings WHERE id=4)`, `{"item_count":0,"has_sold_num_integer":8,"avg_reply_30d_long":1.25,"new_good_ratio_rate":"98%（样例原文）","last_visit_time":"刚刚来过（样例原文）","idle_fish_credit_level":"L4（未确认）","zhima_auth":false}`)
+	if err != nil {
+		t.Fatal(err)
+	}
 }
 
 type webSmokeEvents struct {

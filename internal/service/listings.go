@@ -6,24 +6,30 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"math"
+	"strings"
+	"unicode/utf8"
 
+	"github.com/Seaony/Kakatta/internal/limits"
 	"github.com/Seaony/Kakatta/internal/locales"
+	"github.com/Seaony/Kakatta/internal/xianyu"
 )
 
 func loadListingTx(ctx context.Context, tx *sql.Tx, itemID string) (Listing, error) {
 	var item Listing
-	var images, tags sql.NullString
+	var images, tags, sellerDetail sql.NullString
 	err := tx.QueryRowContext(ctx, `SELECT item_id,title,desktop_url,first_seen_at,last_seen_at,
 		price,price_text,original_price_text,thumbnail_url,area,seller_id,seller_nick,description,
 		zhima_level,sale_status,image_urls_json,tags_json,published_at,want_count,browse_count,
 		seller_registration_days,detail_fetched_at,is_favorite,is_dismissed,favorited_at,
-		last_drop_amount,last_drop_at FROM listings WHERE item_id=?`, itemID).Scan(
+		last_drop_amount,last_drop_at,seller_detail_json FROM listings WHERE item_id=?`, itemID).Scan(
 		&item.ItemID, &item.Title, &item.DesktopURL, &item.FirstSeenAt, &item.LastSeenAt,
 		&item.Price, &item.PriceText, &item.OriginalPriceText, &item.ThumbnailURL, &item.Area,
 		&item.SellerID, &item.SellerNick, &item.Description, &item.ZhimaLevel, &item.SaleStatus,
 		&images, &tags, &item.PublishedAt, &item.WantCount, &item.BrowseCount,
 		&item.SellerRegistrationDays, &item.DetailFetchedAt, &item.IsFavorite, &item.IsDismissed,
-		&item.FavoritedAt, &item.LastDropAmount, &item.LastDropAt)
+		&item.FavoritedAt, &item.LastDropAmount, &item.LastDropAt, &sellerDetail)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Listing{}, listingNotFound()
 	}
@@ -41,6 +47,12 @@ func loadListingTx(ctx context.Context, tx *sql.Tx, itemID string) (Listing, err
 			return Listing{}, fmt.Errorf("商品标签缓存损坏：%w", err)
 		}
 	}
+	if sellerDetail.Valid {
+		item.SellerDetail, err = decodeSellerDetailMetrics(sellerDetail.String)
+		if err != nil {
+			return Listing{}, err
+		}
+	}
 	if item.ImageURLs == nil {
 		item.ImageURLs = []string{}
 	}
@@ -48,6 +60,41 @@ func loadListingTx(ctx context.Context, tx *sql.Tx, itemID string) (Listing, err
 		item.Tags = []string{}
 	}
 	return item, nil
+}
+
+func decodeSellerDetailMetrics(raw string) (*xianyu.SellerDetailMetrics, error) {
+	bad := errors.New("详情卖家指标格式无效")
+	if !utf8.ValidString(raw) || !strings.HasPrefix(strings.TrimSpace(raw), "{") {
+		return nil, bad
+	}
+	decoder := json.NewDecoder(strings.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	var metrics xianyu.SellerDetailMetrics
+	if decoder.Decode(&metrics) != nil || decoder.Decode(new(any)) != io.EOF {
+		return nil, bad
+	}
+	if err := validateSellerDetailMetrics(&metrics); err != nil {
+		return nil, err
+	}
+	return &metrics, nil
+}
+
+func validateSellerDetailMetrics(metrics *xianyu.SellerDetailMetrics) error {
+	bad := errors.New("详情卖家指标格式无效")
+	for _, count := range []*int64{metrics.ItemCount, metrics.HasSoldNumInteger} {
+		if count != nil && (*count < 0 || *count > limits.MaxSafeInteger) {
+			return bad
+		}
+	}
+	if n := metrics.AvgReply30dLong; n != nil && (math.IsNaN(*n) || math.IsInf(*n, 0) || *n < 0) {
+		return bad
+	}
+	for _, value := range []*string{metrics.NewGoodRatioRate, metrics.LastVisitTime, metrics.IdleFishCreditLevel} {
+		if value != nil && (!utf8.ValidString(*value) || strings.TrimSpace(*value) == "") {
+			return bad
+		}
+	}
+	return nil
 }
 
 func listingNotFound() error {

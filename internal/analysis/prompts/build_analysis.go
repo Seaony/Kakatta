@@ -128,6 +128,9 @@ func analysisSeller(source SellerSource) (map[string]any, []string, error) {
 	analysisPut(seller, "on_sale_count", source.OnSaleCount)
 	analysisPut(seller, "sold_count", source.SoldCount)
 	analysisPut(seller, "rate_count", source.RateCount)
+	if source.DetailMetrics != nil {
+		seller["detail_metrics"] = *source.DetailMetrics
+	}
 	if source.RegistrationDays != nil {
 		if years, months, ok := xianyu.RegDuration(*source.RegistrationDays); ok {
 			seller["registration"] = fmt.Sprintf("来闲鱼 %d 年 %d 个月", years, months)

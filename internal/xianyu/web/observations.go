@@ -90,14 +90,21 @@ func (r *Runner) observeSearch(body []byte) {
 	data := objectAt(root, "data")
 	list, _ := data["resultList"].([]any)
 	sellerPaths := []string{}
+	sellerFields := []missingFieldShape{}
+	seenSellerFields := map[missingFieldShape]bool{}
 	areas := map[string]int{}
 	for _, entry := range list {
 		main := objectAt(asObject(entry), "data", "item", "main")
 		r.observeMissingSearchNick(main)
 		walkFields(main, "data.resultList[].data.item.main", func(path, key string, value any) {
 			low := strings.ToLower(key)
-			if low == "sellerid" || low == "userid" {
-				sellerPaths = appendUnique(sellerPaths, path)
+			if low == "sellerid" || low == "seller_id" || low == "userid" {
+				field := describeMissingField(path, value, true)
+				if !seenSellerFields[field] && len(sellerFields) < 40 {
+					seenSellerFields[field] = true
+					sellerPaths = appendUnique(sellerPaths, path)
+					sellerFields = append(sellerFields, field)
+				}
 			}
 			if low == "area" {
 				if text, ok := value.(string); ok {
@@ -106,7 +113,7 @@ func (r *Runner) observeSearch(body []byte) {
 			}
 		})
 	}
-	r.observation("search_seller_id", map[string]any{"found": len(sellerPaths) > 0, "paths": sellerPaths, "sample_count": len(list)})
+	r.observation("search_seller_id", map[string]any{"found": len(sellerPaths) > 0, "paths": sellerPaths, "fields": sellerFields, "sample_count": len(list)})
 	r.observation("search_area_format", map[string]any{"samples": areas, "sample_count": len(list)})
 }
 
@@ -148,6 +155,9 @@ func appendUnique(items []string, value string) []string {
 }
 func walkFields(root map[string]any, path string, visit func(string, string, any)) {
 	for key, value := range root {
+		if !missingFieldKey(key) {
+			continue
+		}
 		next := path + "." + key
 		visit(next, key, value)
 		switch child := value.(type) {

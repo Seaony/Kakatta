@@ -76,6 +76,7 @@
       "image": ["picUrl"],
       "area": ["area"],
       "seller_nick": ["userNickName"],
+      "seller_id": ["seller_id"],
       "url": ["targetUrl"],
       "published": ["publishTime"],
       "want": ["wantNum"],
@@ -94,6 +95,15 @@
       "seller_id": ["sellerId"],
       "reg_days": ["userRegDay"],
       "zhima": ["zhimaLevelInfo", "levelName"],
+      "seller_metrics": {
+        "item_count": ["itemCount"],
+        "has_sold_num_integer": ["hasSoldNumInteger"],
+        "avg_reply_30d_long": ["avgReply30dLong"],
+        "new_good_ratio_rate": ["newGoodRatioRate"],
+        "last_visit_time": ["lastVisitTime"],
+        "idle_fish_credit_level": ["idleFishCreditTag", "trackParams", "sellerLevel"],
+        "zhima_auth": ["zhimaAuth"]
+      },
       "descriptions": [["desc"], ["description"], ["richTextDesc"]]
     },
     "seller": {
