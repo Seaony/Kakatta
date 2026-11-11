@@ -56,7 +56,12 @@ func formalRunOnce(t *testing.T, browser context.Context, events *webSmokeEvents
 func formalSearchWithNewItem(t *testing.T, id, title string) {
 	t.Helper()
 	first, second := coreComparisonPages()
-	first = append([]fake.SearchItem{{ID: id, Title: title, Price: "8000", SellerID: "seller" + id}}, first...)
+	price := "8000"
+	if id == "110" {
+		// 样本累积会拉低合理价，升级正例留足折价。
+		price = "6000"
+	}
+	first = append([]fake.SearchItem{{ID: id, Title: title, Price: price, SellerID: "seller" + id}}, first...)
 	formalControl(t, "search", map[string]any{"pages": [][]fake.SearchItem{first, second}})
 }
 
