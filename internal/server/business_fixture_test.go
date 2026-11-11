@@ -41,6 +41,9 @@ func (f *businessFixture) registerTransferContracts(t *testing.T) {
 	if err := f.server.RegisterTransfers(f.service); err != nil {
 		t.Fatal(err)
 	}
+	if err := f.server.RegisterDiagnostics(f.dataDir); err != nil {
+		t.Fatal(err)
+	}
 	backups, err := backup.New(backup.Dependencies{
 		DataDir: f.dataDir, AppVersion: "v1.0.0", SchemaVersion: store.SchemaVersion(), Now: now,
 		Runtime: &backupHTTPRuntime{source: backup.SnapshotSource{

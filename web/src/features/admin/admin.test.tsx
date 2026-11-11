@@ -13,6 +13,7 @@ import { AboutPage, documentOperations } from './about';
 import { BackupPage } from './backup';
 import { SecurityPage } from './security';
 import { SystemPage } from './system';
+import { DiagnosticsExport } from './diagnostics';
 
 const at = 1_795_000_000_000;
 const me: components['schemas']['Me'] = { username: '本地用户', auth_kind: 'web_session', token_id: 1, language: 'zh-CN', appearance: 'system', totp_enabled: false };
@@ -615,3 +616,108 @@ test('过期的发布缓存保留已知版本和发布说明，不提示已经�
   expect(screen.queryByText('image: ghcr.io/seaony/kakatta:1.2.3')).toBeNull();
   expect(fixture.calls.every((call) => call.method === 'GET')).toBe(true);
 });
+
+test('诊断导出先列出文件和大小，确认后只下载一次有效ZIP', async () => {
+  let downloaded: string | undefined;
+  const click = spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) { downloaded = this.download; });
+  const path = 'diagnostics/accounts/1/bundles/bundle-20261112-080000-local/page.html';
+  const fixture = await page(DiagnosticsExport, (call) => {
+    if (call.path === '/api/v1/system/diagnostics') return Response.json({ files: [{ path, bytes: 4096 }], excluded: [], total_bytes: 4096 });
+    if (call.path === '/api/v1/system/diagnostics/download') return new Response('local-zip-content', { headers: { 'Content-Type': 'application/zip', 'Content-Disposition': 'attachment; filename=kakatta-diagnostics.zip' } });
+    return undefined;
+  });
+  try {
+    expect(fixture.calls).toHaveLength(0);
+    await fixture.user.click(screen.getByRole('button', { name: '导出诊断资料' }));
+    const dialog = await screen.findByRole('dialog', { name: '确认诊断文件' });
+    expect(await within(dialog).findByText(path)).toBeTruthy();
+    expect(within(dialog).getByText('共 1 个文件，4,096 B。')).toBeTruthy();
+    expect(within(dialog).queryByRole('link')).toBeNull();
+    expect(fixture.calls.map((call) => call.path)).toEqual(['/api/v1/system/diagnostics']);
+    await fixture.user.click(within(dialog).getByRole('button', { name: '下载 ZIP' }));
+    await waitFor(() => expect(downloaded).toBe('kakatta-diagnostics.zip'));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(fixture.calls.filter((call) => call.path.endsWith('/download'))).toHaveLength(1);
+    expect(fixture.calls.every((call) => call.method === 'GET')).toBe(true);
+  } finally { click.mockRestore(); }
+});
+
+test('诊断预览失败只手动重试，空清单不能下载，英文不漏文案', async () => {
+  let failed = true;
+  const fixture = await page(DiagnosticsExport, (call) => call.path === '/api/v1/system/diagnostics'
+    ? failed ? failure(503, 'diagnostics.unavailable') : Response.json({ files: [], excluded: [], total_bytes: 0 })
+    : undefined, 'en');
+  await fixture.user.click(screen.getByRole('button', { name: 'Export diagnostics' }));
+  const dialog = await screen.findByRole('dialog', { name: 'Review diagnostic files' });
+  await within(dialog).findByText('Unable to read diagnostics. Check the diagnostic log directory on the host, available disk space, and permissions.');
+  expect(fixture.calls).toHaveLength(1);
+  failed = false;
+  await fixture.user.click(within(dialog).getByRole('button', { name: 'Try again' }));
+  await within(dialog).findByText('No diagnostic files yet. Complete a run before exporting.');
+  expect(within(dialog).getByRole<HTMLButtonElement>('button', { name: 'Download ZIP' }).disabled).toBe(true);
+  expect(fixture.calls).toHaveLength(2);
+});
+
+test('诊断下载错误保留文件清单且不把JSON当ZIP保存', async () => {
+  const click = spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+  const fixture = await page(DiagnosticsExport, (call) => {
+    if (call.path === '/api/v1/system/diagnostics') return Response.json({ files: [{ path: 'diagnostics/service/xvfb.log', bytes: 1 }], excluded: [], total_bytes: 1 });
+    if (call.path === '/api/v1/system/diagnostics/download') return Response.json({ unexpected: true });
+    return undefined;
+  });
+  try {
+    await fixture.user.click(screen.getByRole('button', { name: '导出诊断资料' }));
+    const dialog = await screen.findByRole('dialog');
+    await within(dialog).findByText('diagnostics/service/xvfb.log');
+    await fixture.user.click(within(dialog).getByRole('button', { name: '下载 ZIP' }));
+    await within(dialog).findByText('服务端返回了无法读取的响应。');
+    expect(within(dialog).getByText('diagnostics/service/xvfb.log')).toBeTruthy();
+    expect(click).not.toHaveBeenCalled();
+  } finally { click.mockRestore(); }
+});
+
+test('诊断导出身份失效后清除清单且不会下载', async () => {
+  const click = spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+  const fixture = await page(DiagnosticsExport, (call) => {
+    if (call.path === '/api/v1/system/diagnostics') return Response.json({ files: [{ path: 'diagnostics/service/xvfb.log', bytes: 1 }], excluded: [], total_bytes: 1 });
+    if (call.path === '/api/v1/system/diagnostics/download') return failure(401, 'auth.unauthenticated');
+    return undefined;
+  });
+  try {
+    await fixture.user.click(screen.getByRole('button', { name: '导出诊断资料' }));
+    const dialog = await screen.findByRole('dialog');
+    await within(dialog).findByText('diagnostics/service/xvfb.log');
+    await fixture.user.click(within(dialog).getByRole('button', { name: '下载 ZIP' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.queryByText('diagnostics/service/xvfb.log')).toBeNull();
+    expect(click).not.toHaveBeenCalled();
+  } finally { click.mockRestore(); }
+});
+
+for (const locale of ['zh-CN', 'en'] as const) {
+  test(`${locale} 诊断预览列出登录截图排除原因`, async () => {
+    const path = 'diagnostics/accounts/1/bundles/bundle-20261112-080000-local/screenshot.jpg';
+    const fixture = await page(DiagnosticsExport, (call) => call.path === '/api/v1/system/diagnostics'
+      ? Response.json({ files: [{ path: path.replace('screenshot.jpg', 'page.html'), bytes: 10 }], excluded: [{ path, reason: { code: 'diagnostics.login_screenshot_excluded', args: {} } }], total_bytes: 10 })
+      : undefined, locale);
+    await fixture.user.click(screen.getByRole('button', { name: locale === 'zh-CN' ? '导出诊断资料' : 'Export diagnostics' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(await within(dialog).findByText(locale === 'zh-CN' ? '已排除登录页截图（可能含扫码凭据）' : 'Sign-in screenshot excluded (may contain scan credentials).')).toBeTruthy();
+    expect(within(dialog).getByText(path)).toBeTruthy();
+    expect(fixture.calls).toHaveLength(1);
+  });
+}
+
+for (const locale of ['zh-CN', 'en'] as const) {
+  test(`${locale} 系统页显示实验保护的原因和到期时间`, async () => {
+    const data: components['schemas']['SystemStatus'] = { as_of: at, scheduler: { running: true, accepting: false, blocked: { reason: { code: 'run.experiment_denied', args: {} }, next_allowed_at: at + 60_000 }, running_count: 0, queued_count: 0, next_wake_at: null }, browsers: { active: 0, limit: 1, sessions: [] }, configuration: [], quotas: [], resources: { disk_total_bytes: null, disk_free_bytes: null, memory_total_bytes: null, memory_used_bytes: null } };
+    await page(SystemPage, (call) => {
+      if (call.path === '/healthz') return Response.json({ status: 'ok' });
+      if (call.path === '/api/v1/system/status') return Response.json(data);
+      if (call.path === '/api/v1/system/events') return Response.json({ items: [], next_cursor: null, total: 0 });
+      return undefined;
+    }, locale);
+    expect(await screen.findByText(locale === 'zh-CN' ? '实验账号处于拒绝暂停，所有账号暂停访问' : 'An experiment account is paused after an access denial. Access is paused for all accounts.')).toBeTruthy();
+    expect(screen.getByText(locale === 'zh-CN' ? /^预计恢复时间：/ : /^Expected to resume:/)).toBeTruthy();
+  });
+}

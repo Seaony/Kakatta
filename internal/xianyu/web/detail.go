@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -49,7 +50,12 @@ func (r *Runner) OpenDetailWithStart(ctx context.Context, webURL string, started
 	}
 	d, err = xianyu.ParseDetail(resp.Body)
 	if err != nil {
-		return d, fmt.Errorf("解析详情：%w", err)
+		return d, r.ReportFailure(ctx, "解析详情", fmt.Errorf("解析详情：%w", err), resp)
+	}
+	if !r.observeDetail(resp.Body) {
+		if failure := r.ReportFailure(ctx, "详情字段缺失", fmt.Errorf("详情缺少 itemDO 或描述字符串字段"), resp); errors.Is(failure, ErrDiagnostics) {
+			return d, failure
+		}
 	}
 	r.Log("打开了详情页", map[string]any{"耗时毫秒": time.Since(start).Milliseconds(), "图片数": len(d.Images), "有描述": d.Description != ""})
 	if err := r.wait(ctx, "详情页停留", r.Pace.Detail); err != nil {

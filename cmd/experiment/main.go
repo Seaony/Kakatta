@@ -10,6 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -20,13 +21,14 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Seaony/Kakatta/internal/diagnostics"
 	"github.com/Seaony/Kakatta/internal/remote"
 	"github.com/Seaony/Kakatta/internal/xianyu"
 )
 
 func main() {
 	if err := runCommand(os.Args[1:], os.Stdout, os.Stderr); err != nil {
-		fmt.Fprintln(os.Stderr, "实验工具：", err)
+		fmt.Fprintln(os.Stderr, "实验工具：", diagnostics.RedactText(err.Error()))
 		os.Exit(1)
 	}
 }
@@ -41,6 +43,7 @@ func parseOptions(args []string, errOut io.Writer) (options, string, error) {
 	flags.IntVar(&o.Details, "details", 3, "单次打开两到三个详情")
 	flags.BoolVar(&o.Fixture, "fixture", false, "仅使用本机假页面，不访问闲鱼")
 	flags.BoolVar(&o.Once, "once", false, "仅限假页面：跑一次并退出")
+	flags.BoolVar(&o.Check, "check", false, "仅做本地环境自检，不访问闲鱼")
 	flags.StringVar(&o.WebGL, "webgl", "off", "实验渲染方式：off或llvmpipe")
 	flags.BoolVar(&o.Filters.PersonalOnly, "personal-only", true, "只看个人闲置")
 	flags.BoolVar(&o.Filters.FreeShipping, "free-shipping", false, "只看包邮")
@@ -117,7 +120,7 @@ func parseOptions(args []string, errOut io.Writer) (options, string, error) {
 	}
 	return o, settingsPath, nil
 }
-func runCommand(args []string, out, errOut io.Writer) error {
+func runCommand(args []string, out, errOut io.Writer) (result error) {
 	o, settingsPath, err := parseOptions(args, errOut)
 	if errors.Is(err, flag.ErrHelp) {
 		return nil
@@ -130,14 +133,26 @@ func runCommand(args []string, out, errOut io.Writer) error {
 	}
 	s, err := loadSettings(settingsPath)
 	if err != nil {
-		return err
+		timezone := defaultSettings().Timezone
+		if _, failure := time.LoadLocation(timezone); failure != nil {
+			timezone = "UTC"
+		}
+		return recordStartupFailure(o, timezone, err)
+	}
+	if o.Check {
+		return runSelfCheck(o, s, out)
 	}
 	c, err := newController(o, s)
 	if err != nil {
-		return err
+		return recordStartupFailure(o, s.Timezone, err)
 	}
 	defer c.Close()
-	c.sink = out
+	c.sink, c.stderr = out, errOut
+	defer func() {
+		if result != nil {
+			c.log("工具停止", map[string]any{"分类": experimentErrorClass(result), "原因": diagnosticReason(result)})
+		}
+	}()
 	if o.Once {
 		return c.run(context.Background())
 	}
@@ -145,14 +160,19 @@ func runCommand(args []string, out, errOut io.Writer) error {
 	if err != nil {
 		return err
 	}
+	listener, err := net.Listen("tcp", o.Listen)
+	if err != nil {
+		return fmt.Errorf("无法监听 %s，端口可能已被占用；请换成 --listen :8180：%w", o.Listen, err)
+	}
+	defer listener.Close()
 	fmt.Fprintln(out, "实验页面初始化令牌（30分钟有效，只显示一次）：", auth.token)
 	handler := experimentHandler(c, auth)
 	server := &http.Server{Addr: o.Listen, Handler: handler, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	done := make(chan error, 1)
-	go func() { done <- server.ListenAndServe() }()
-	fmt.Fprintln(out, "请由你打开实验页面，先扫码登录；登录会话结束并等账号间隔后，再点单次运行。监听地址：", o.Listen)
+	go func() { done <- server.Serve(listener) }()
+	c.log("实验页面已启动，请先扫码登录，结束并等账号间隔后再单次运行", map[string]any{"监听地址": listener.Addr().String(), "日志目录": experimentLogDir(o)})
 	select {
 	case err = <-done:
 		if !errors.Is(err, http.ErrServerClosed) {
@@ -231,6 +251,11 @@ func experimentHandler(c *controller, a *access) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		if err := c.recorder.Err(); err != nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			fmt.Fprintln(w, "diagnostics unavailable")
+			return
+		}
 		fmt.Fprintln(w, "ok")
 	})
 	mux.HandleFunc("POST /auth", a.login)
@@ -258,7 +283,8 @@ func experimentHandler(c *controller, a *access) http.Handler {
 		return protect(func(w http.ResponseWriter, r *http.Request) {
 			if mode == "verify" {
 				if err := c.verify(r.Context()); err != nil {
-					http.Error(w, err.Error(), 409)
+					c.log("操作停止", map[string]any{"步骤": "打开验证画面", "分类": experimentErrorClass(err), "原因": diagnosticReason(err)})
+					http.Error(w, diagnosticReason(err), 409)
 					return
 				}
 				w.WriteHeader(http.StatusAccepted)
@@ -266,7 +292,8 @@ func experimentHandler(c *controller, a *access) http.Handler {
 			}
 			job, err := c.reserve(context.Background(), mode)
 			if err != nil {
-				http.Error(w, err.Error(), http.StatusConflict)
+				c.log("操作停止", map[string]any{"步骤": mode, "分类": experimentErrorClass(err), "原因": diagnosticReason(err)})
+				http.Error(w, diagnosticReason(err), http.StatusConflict)
 				return
 			}
 			go func() {
@@ -288,7 +315,8 @@ func experimentHandler(c *controller, a *access) http.Handler {
 	mux.HandleFunc("POST /verify", start("verify"))
 	mux.HandleFunc("POST /confirm", protect(func(w http.ResponseWriter, r *http.Request) {
 		if err := c.confirm(r.Context()); err != nil {
-			http.Error(w, err.Error(), 409)
+			c.log("操作停止", map[string]any{"步骤": "确认验证完成", "分类": experimentErrorClass(err), "原因": diagnosticReason(err)})
+			http.Error(w, diagnosticReason(err), 409)
 			return
 		}
 		w.WriteHeader(204)

@@ -282,7 +282,7 @@ Go 全量测试、构建、静态检查，网页 399 项测试、类型和字典
 
 推荐正文并列当前必须满足和严格检查项的结论与已核对原文，详情补齐必须满足、加分项的结论及来源；旧版本、无版本事实及手动覆盖不借旧证据。过长推荐按五级顺序精简、明确省略数量和查看方式，不改原始事实，不拆投递；`deliveries.format_level` 随实际成功或失败回执保存。第 5 版迁移、旧第 4 版升级及升级快照、失败回滚、备份校验重开和非法级别拒绝均通过。0–5 各级真实本地投递、失败重试和同库新服务不重发的十二格回归通过；四类已定渠道上限按实际编码核对，没有给其他渠道编造硬上限。
 
-提示词和详情新增中英文组件回归，保留原文转义与正文保存隔离。网页全量 418 项、类型、字典、生成一致性和构建已通过；断网桌面与手机冒烟通过，八张本轮重点截图逐一查看，没有横向溢出或证据被折叠隐藏，现共 58 张截图。Go 全部常规测试、构建与静态检查通过，完整服务层竞态检查通过。最终从暂存版本独立导出源码，在严格 seccomp 的断网容器中运行全部 37 个包，整链与浏览器用例均通过，结束没有进程残留。较早检查中的旧模板快照断言已同步为「本轮模板加固定系统段」；新增冒烟断言的泛型编译问题已修正。最后一轮发现 HTTP 停机夹具把后台初始化写入计入了请求，先等待夹具调度器退出后，全包重新通过；生产规则未改。
+提示词和详情新增中英文组件回归，保留原文转义与正文保存隔离。网页全量 418 项、类型、字典、生成一致性和构建已通过；断网桌面与手机冒烟通过，八张本轮重点截图逐一查看，没有横向溢出或证据被折叠隐藏，当时共 58 张截图。Go 全部常规测试、构建与静态检查通过，完整服务层竞态检查通过。最终从暂存版本独立导出源码，在严格 seccomp 的断网容器中运行全部 37 个包，整链与浏览器用例均通过，结束没有进程残留。较早检查中的旧模板快照断言已同步为「本轮模板加固定系统段」；新增冒烟断言的泛型编译问题已修正。最后一轮发现 HTTP 停机夹具把后台初始化写入计入了请求，先等待夹具调度器退出后，全包重新通过；生产规则未改。
 
 证据目录：`build/_seller-injection-before/`、`build/_seller-injection-mutations/`、`build/_seller-injection-ui/`、`build/_image-evidence/`、`build/_notify-size/`、`build/_notification-format-record/`；独立审查在 `build/_evidence_delivery_final_review/`。最终暂存源码门禁使用 `build/seller-index-` 前缀，服务竞态在 `build/seller-complete-service-race.log`，最初失败与对照保留于 `build/seller-complete-container.log` 和 `build/seller-container-failure-compare.log`；网页检查在 `build/seller-final-web-check.log`，冒烟在 `build/seller-verified-web-smoke.log`。
 
@@ -290,13 +290,33 @@ Go 全量测试、构建、静态检查，网页 399 项测试、类型和字典
 
 ## 真实扫码准备（进行中）
 
-当前只推进作者真实扫码需要的排错与保护：有界落盘日志、只读现场、环境自检、实验与正式浏览器隔离、旧格式兼容和宿主挂载生命周期。诊断基础及独立自检包已实现：分块暂存源码的 Go 全量测试、构建和静态检查通过；三个诊断及浏览器包的完整竞态通过。严格断网容器实跑九项自检，Chrome 本地空白页、实际版本、Xvfb、x11vnc 和清理全部通过；没有访问外部页面。证据在 `build/readiness-foundation-*.log`、`build/_readiness-diagnostics-full.log`、`build/_readiness-process-final.log`。实验、正式服务和网页导出仍在接线，不把库级测试当作整条流程已经通过。
+当前只推进作者真实扫码需要的排错与保护：有界落盘日志、只读现场、环境自检、实验与正式浏览器隔离、旧格式兼容和宿主挂载生命周期。诊断基础及独立自检包已实现：分块暂存源码的 Go 全量测试、构建和静态检查通过；三个诊断及浏览器包的完整竞态通过。严格断网容器实跑九项自检，Chrome 本地空白页、实际版本、Xvfb、x11vnc 和清理全部通过；没有访问外部页面。证据在 `build/readiness-foundation-*.log`、`build/_readiness-diagnostics-full.log`、`build/_readiness-process-final.log`。实验、正式服务、网页诊断清单与下载已接线，并通过统一门禁；Mac 宿主挂载生命周期仍须从已提交版本验收。
+
+### 实验故障定位
+
+十一类故障用真实 Chrome、本地假页面、真实 SIGKILL、内核 ENOSPC 和本地拒绝连接执行，自动核对只读现场、错误及摘要落盘和敏感字段；磁盘写满时明确记录到 stderr 并停止新增访问。专用产物是 `build/_experiment-readiness/artifacts/`；该轮完整实验包的 53 项通过，只有未启动的人工预览跳过。后续统一门禁使用最终暂存源码。下表路径指专用故障回归复制到宿主的现场，摘要内的原容器路径可按同名目录对应。
+
+| 故障 | 实际执行测试 | 事件文件 | 诊断证据 |
+|---|---|---|---|
+| 搜索框缺失 | `TestControllerDiagnosticFaultFiles/搜索框缺失` | `build/_experiment-readiness/artifacts/TestControllerDiagnosticFaultFiles-搜索框缺失/logs/events-*.jsonl` | 摘要 `build/_experiment-readiness/artifacts/TestControllerDiagnosticFaultFiles-搜索框缺失/logs/summaries/summary-20261111-062144-424554803/summary.json`；包目录 `build/_experiment-readiness/artifacts/TestControllerDiagnosticFaultFiles-搜索框缺失/logs/bundles/`。CDP JPG、HTML、网址标题和最近事件；没有保存正常接口正文。 |
+| 筛选无响应 | `TestControllerDiagnosticFaultFiles/筛选无响应` | `build/_experiment-readiness/artifacts/TestControllerDiagnosticFaultFiles-筛选无响应/logs/events-*.jsonl` | 摘要 `build/_experiment-readiness/artifacts/TestControllerDiagnosticFaultFiles-筛选无响应/logs/summaries/summary-20261111-062208-2089517096/summary.json`；包目录 `build/_experiment-readiness/artifacts/TestControllerDiagnosticFaultFiles-筛选无响应/logs/bundles/`。CDP JPG、HTML、网址标题和最近事件；没有保存正常接口正文。 |
+| 空结果 | `TestControllerDiagnosticFaultFiles/空结果` | `build/_experiment-readiness/artifacts/TestControllerDiagnosticFaultFiles-空结果/logs/events-*.jsonl` | 摘要 `build/_experiment-readiness/artifacts/TestControllerDiagnosticFaultFiles-空结果/logs/summaries/summary-20261111-062212-4006017850/summary.json`；包目录 `build/_experiment-readiness/artifacts/TestControllerDiagnosticFaultFiles-空结果/logs/bundles/`。CDP JPG、HTML、网址标题和最近事件；没有保存正常接口正文。 |
+| 详情字段缺失 | `TestControllerDiagnosticFaultFiles/详情字段缺失` | `build/_experiment-readiness/artifacts/TestControllerDiagnosticFaultFiles-详情字段缺失/logs/events-*.jsonl` | 摘要 `build/_experiment-readiness/artifacts/TestControllerDiagnosticFaultFiles-详情字段缺失/logs/summaries/summary-20261111-062216-3249821923/summary.json`；包目录 `build/_experiment-readiness/artifacts/TestControllerDiagnosticFaultFiles-详情字段缺失/logs/bundles/`。精确失败响应 `response.json`，以及 CDP JPG、HTML、网址标题、最近事件。 |
+| 接口字段改名 | `TestControllerDiagnosticFaultFiles/接口字段改名` | `build/_experiment-readiness/artifacts/TestControllerDiagnosticFaultFiles-接口字段改名/logs/events-*.jsonl` | 摘要 `build/_experiment-readiness/artifacts/TestControllerDiagnosticFaultFiles-接口字段改名/logs/summaries/summary-20261111-062219-4013725498/summary.json`；包目录 `build/_experiment-readiness/artifacts/TestControllerDiagnosticFaultFiles-接口字段改名/logs/bundles/`。精确失败响应 `response.json`，以及 CDP JPG、HTML、网址标题、最近事件。 |
+| 半截JSON | `TestControllerDiagnosticFaultFiles/半截JSON` | `build/_experiment-readiness/artifacts/TestControllerDiagnosticFaultFiles-半截JSON/logs/events-*.jsonl` | 摘要 `build/_experiment-readiness/artifacts/TestControllerDiagnosticFaultFiles-半截JSON/logs/summaries/summary-20261111-062221-61203284/summary.json`；包目录 `build/_experiment-readiness/artifacts/TestControllerDiagnosticFaultFiles-半截JSON/logs/bundles/`。精确失败响应 `response.json`，以及 CDP JPG、HTML、网址标题、最近事件。 |
+| 验证码 | `TestControllerDiagnosticFaultFiles/验证码` | `build/_experiment-readiness/artifacts/TestControllerDiagnosticFaultFiles-验证码/logs/events-*.jsonl` | 摘要 `build/_experiment-readiness/artifacts/TestControllerDiagnosticFaultFiles-验证码/logs/summaries/summary-20261111-062222-3849508020/summary.json`；包目录 `build/_experiment-readiness/artifacts/TestControllerDiagnosticFaultFiles-验证码/logs/bundles/`。CDP JPG、HTML、网址标题和最近事件；没有保存正常接口正文。 |
+| 直接拒绝 | `TestControllerDiagnosticFaultFiles/直接拒绝` | `build/_experiment-readiness/artifacts/TestControllerDiagnosticFaultFiles-直接拒绝/logs/events-*.jsonl` | 摘要 `build/_experiment-readiness/artifacts/TestControllerDiagnosticFaultFiles-直接拒绝/logs/summaries/summary-20261111-062223-4160814138/summary.json`；包目录 `build/_experiment-readiness/artifacts/TestControllerDiagnosticFaultFiles-直接拒绝/logs/bundles/`。CDP JPG、HTML、网址标题和最近事件；没有保存正常接口正文。 |
+| Chrome崩溃 | `TestControllerCrashAndFullDiskKeepCause/Chrome崩溃` | `build/_experiment-readiness/artifacts/TestControllerCrashAndFullDiskKeepCause-Chrome崩溃/logs/events-*.jsonl` | 摘要 `build/_experiment-readiness/artifacts/TestControllerCrashAndFullDiskKeepCause-Chrome崩溃/logs/summaries/summary-20261111-062225-1121847774/summary.json`；包目录 `build/_experiment-readiness/artifacts/TestControllerCrashAndFullDiskKeepCause-Chrome崩溃/logs/bundles/`。CDP JPG、HTML、网址标题和最近事件；Chrome 被强杀后仅能取得明确的采集失败原因，之前 stderr 和异常退出事件仍在。 |
+| 磁盘满 | `TestControllerCrashAndFullDiskKeepCause/磁盘满` | `build/_experiment-readiness/artifacts/TestControllerCrashAndFullDiskKeepCause-磁盘满/logs/events-*.jsonl` | 真实 `/dev/full` ENOSPC；保留之前日志，无法再落盘时明确错误在 `build/_experiment-readiness/artifacts/TestControllerCrashAndFullDiskKeepCause-磁盘满/stderr.txt`，闲鱼请求计数不再增加。 |
+| 代理不可达 | `TestExperimentCheckRecordsUnreachableProxy` | `build/_experiment-readiness/artifacts/TestExperimentCheckRecordsUnreachableProxy/logs/events-*.jsonl` | 本机关闭的端口，实际连接被拒绝；同次预检的 Chrome 空白页、Xvfb、x11vnc 和清理均通过。摘要 `build/_experiment-readiness/artifacts/TestExperimentCheckRecordsUnreachableProxy/logs/summaries/summary-20261111-062228-2255970144/summary.json`。 |
+
+网页全量 426 项、类型、字典、生成与构建通过。新导出弹窗在桌面及手机、中英文下通过真实接口冒烟，检查安全文件清单、登录截图排除说明和长路径没有横向溢出；四张新图已逐一查看，人工 Dia 及 Safari 16 仍未执行。最终暂存源码的 Go 全量测试、构建与静态检查通过；服务、资源、HTTP 和正式入口四包完整竞态通过（分别为 316.199、2.036、194.998、197.066 秒）。严格 seccomp、断网的整仓容器中 40 个包全部通过，真实浏览器、十一类实验故障及正式主流程门禁启用，退出无 Chrome、crashpad、Xvfb、x11vnc 残留。源码散列在门禁期间没有变化。证据为 `build/readiness-final-{go-test,go-build,go-vet,race,container,web-smoke}.log`；网页全量在 `build/readiness-web-check.log`。Mac bind mount 脚本已写好并通过静态检查，必须在本块提交后从归档版本实跑，当前不算已通过。
 
 ## 必须由作者完成的真实环境验证
 
 ### M7 网页验收
 
-断网容器的 Chrome 冒烟测试使用 `cmd/seed` 创建临时库，启动正式服务并在退出时回收。桌面 1280×900 和手机 393×852 都检查了 18 条路由及 5 个附加视图的关键内容和中英文，验证无控制台错误、缺失文案或非预期 HTTP 错误。未登录时的身份探测应返回 401。正常页面 46 张、存储故障双语 4 张和固定系统说明及详情证据双语 8 张截图保存在 `build/m7-screens/desktop/` 和 `build/m7-screens/mobile/`；故障视图还验证写入被拒绝时能重新加载并读出原因，新增视图核对只读系统段和必须满足的结论及原文。先构建 `web/dist`，再用 `deploy/test-web-smoke.sh` 运行。脚本可接收已构建的本地镜像名。
+断网容器的 Chrome 冒烟测试使用 `cmd/seed` 创建临时库，启动正式服务并在退出时回收。桌面 1280×900 和手机 393×852 都检查了 18 条路由及 5 个附加视图的关键内容和中英文，验证无控制台错误、缺失文案或非预期 HTTP 错误。未登录时的身份探测应返回 401。正常页面 46 张、存储故障双语 4 张、固定系统说明及详情证据双语 8 张、诊断清单双语 4 张，共 62 张截图保存在 `build/m7-screens/desktop/` 和 `build/m7-screens/mobile/`；故障视图还验证写入被拒绝时能重新加载并读出原因，新增视图核对只读系统段和必须满足的结论及原文。先构建 `web/dist`，再用 `deploy/test-web-smoke.sh` 运行。脚本可接收已构建的本地镜像名。
 
 冒烟样例和服务使用 `Asia/Shanghai`，浏览器模拟 UTC。测试核对结果卡的发现时间使用服务设置的时区，并检查中文导航和设置页分别显示「提示词」「提示词模板」。
 
@@ -343,5 +363,8 @@ env -u KAKATTA_SECRET_KEY -u KAKATTA_SECRET_KEY_FILE -u KAKATTA_TRUSTED_PROXIES 
 [真实账号可行性实验](EXPERIMENT.md)和 [闲鱼网页第十一节](XIANYU.md#十一待用真实页面确认的事项)的待确认事项保留原状态。假页面通过只证明实现符合样例，真实选择器、登录续期、滑块和闲鱼风控仍由作者验证。
 
 ## 延后事项
+
+- 诊断弹窗的中文关闭按钮会换行；不影响关闭和下载，实机界面验收时统一调整。
+- 新运行阶段的嵌套消息在 CSV 导出中尚未翻译；网页与本机 JSONL 可以定位，不挡扫码，真实日志导出验收时处理。
 
 - 待真实测试后再处理大数据量、在途请求和少见停机时序、通知过长降级细节、其他文字变体及额外对抗审读；现有隔离准备保留在 `build/_gate-audit-account.md`、`build/_gate-audit-delivery.md`，未集成到生产代码。

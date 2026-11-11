@@ -24,6 +24,7 @@ func (w waitRange) pace(unit time.Duration) pacer.Range {
 }
 
 type experimentSettings struct {
+	Version             int       `json:"version"`
 	Timezone            string    `json:"timezone"`
 	HourlyVisits        int       `json:"hourly_visits"`
 	DailySearchVisits   int       `json:"daily_search_visits"`
@@ -53,10 +54,13 @@ func defaultSettings() experimentSettings {
 	if tz == "" {
 		tz = "Asia/Shanghai"
 	}
-	return experimentSettings{Timezone: tz, HourlyVisits: 30, DailySearchVisits: 200, DailyDetailVisits: 100, AccountGapSeconds: 180, GapJitterSeconds: 60, HomeSeconds: waitRange{2, 5}, ActionSeconds: waitRange{1, 3}, PageSeconds: waitRange{10, 15}, PreDetailSeconds: waitRange{3, 6}, DetailSeconds: waitRange{10, 20}, TypingMS: waitRange{50, 130}, RunTimeoutMinutes: 15, VerifyHoldMinutes: 30, CooldownBaseMinutes: 120, CooldownMaxMinutes: 1440, CooldownResetHours: 24, DenyHours: 24, BrowserCacheMB: 256, QuietEnabled: true, QuietStart: "01:00", QuietEnd: "07:30"}
+	return experimentSettings{Version: 1, Timezone: tz, HourlyVisits: 30, DailySearchVisits: 200, DailyDetailVisits: 100, AccountGapSeconds: 180, GapJitterSeconds: 60, HomeSeconds: waitRange{2, 5}, ActionSeconds: waitRange{1, 3}, PageSeconds: waitRange{10, 15}, PreDetailSeconds: waitRange{3, 6}, DetailSeconds: waitRange{10, 20}, TypingMS: waitRange{50, 130}, RunTimeoutMinutes: 15, VerifyHoldMinutes: 30, CooldownBaseMinutes: 120, CooldownMaxMinutes: 1440, CooldownResetHours: 24, DenyHours: 24, BrowserCacheMB: 256, QuietEnabled: true, QuietStart: "01:00", QuietEnd: "07:30"}
 }
 
 func (s experimentSettings) validate() error {
+	if s.Version != 1 {
+		return fmt.Errorf("实验设置版本不兼容，请使用更新的程序读取，原文件已保留")
+	}
 	if s.Timezone == "" {
 		return fmt.Errorf("时区不能为空")
 	}

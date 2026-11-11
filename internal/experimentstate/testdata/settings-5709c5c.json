@@ -1,0 +1,42 @@
+{
+  "timezone": "UTC",
+  "hourly_visits": 30,
+  "daily_search_visits": 200,
+  "daily_detail_visits": 100,
+  "account_gap_seconds": 180,
+  "gap_jitter_seconds": 0,
+  "home_seconds": {
+    "min": 2,
+    "max": 5
+  },
+  "action_seconds": {
+    "min": 1,
+    "max": 3
+  },
+  "page_seconds": {
+    "min": 10,
+    "max": 15
+  },
+  "pre_detail_seconds": {
+    "min": 3,
+    "max": 6
+  },
+  "detail_seconds": {
+    "min": 10,
+    "max": 20
+  },
+  "typing_ms": {
+    "min": 50,
+    "max": 130
+  },
+  "run_timeout_minutes": 15,
+  "verify_hold_minutes": 30,
+  "cooldown_base_minutes": 120,
+  "cooldown_max_minutes": 1440,
+  "cooldown_reset_hours": 24,
+  "deny_hours": 24,
+  "browser_cache_mb": 256,
+  "quiet_enabled": false,
+  "quiet_start": "01:00",
+  "quiet_end": "07:30"
+}

@@ -11,11 +11,13 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
 	"github.com/Seaony/Kakatta/internal/backup"
 	"github.com/Seaony/Kakatta/internal/config"
+	"github.com/Seaony/Kakatta/internal/diagnostics"
 )
 
 func main() {
@@ -30,10 +32,12 @@ func main() {
 func run(ctx context.Context, args []string, input io.Reader, output io.Writer, lookup config.Lookup) error {
 	if len(args) > 0 {
 		switch args[0] {
+		case "check":
+			return checkEnvironment(ctx, args[1:], output, lookup)
 		case "reset-password", "disable-totp":
 			return maintenance(ctx, args[0], args[1:], input, output)
 		case "help", "--help", "-h":
-			_, err := fmt.Fprintln(output, "用法：kakatta [--data ./data] [--listen :8080]\n恢复密码：kakatta reset-password [--data ./data] [--disable-totp]\n关闭两步验证：kakatta disable-totp [--data ./data]")
+			_, err := fmt.Fprintln(output, "用法：kakatta [--data ./data] [--listen :8080]\n扫码前自检：kakatta check [--data ./data]\n恢复密码：kakatta reset-password [--data ./data] [--disable-totp]\n关闭两步验证：kakatta disable-totp [--data ./data]")
 			return err
 		}
 	}
@@ -59,6 +63,28 @@ func serve(ctx context.Context, cfg config.Config, lookup config.Lookup, logger 
 		return err
 	}
 	defer serverLock.Close()
+	if lookup == nil {
+		lookup = os.LookupEnv
+	}
+	zone := cfg.Environment.TZ
+	if _, err := time.LoadLocation(zone); zone == "" || err != nil {
+		zone = "Asia/Shanghai"
+	}
+	diagnostic, err := diagnostics.Open(filepath.Join(cfg.DataDir, "diagnostics", "service"), zone)
+	if err != nil {
+		return fmt.Errorf("无法保存启动诊断，请检查日志目录权限和剩余空间：%w", err)
+	}
+	startedAt := time.Now()
+	defer func() {
+		fields := map[string]any{"duration_ms": time.Since(startedAt).Milliseconds(), "success": result == nil}
+		if result != nil {
+			fields["error"] = result.Error()
+		}
+		result = errors.Join(result, diagnostic.Event("service_stopped", fields), diagnostic.Summary(fields), diagnostic.Close())
+	}()
+	if err := diagnostic.Event("environment", serviceEnvironment(cfg, lookup)); err != nil {
+		return err
+	}
 	restoreLock, err := config.AcquireRestoreLock(cfg.DataDir, true)
 	if err != nil {
 		return err
@@ -91,13 +117,22 @@ func serve(ctx context.Context, cfg config.Config, lookup config.Lookup, logger 
 	defer clear(key[:])
 	listener, err := net.Listen("tcp", cfg.Listen)
 	if err != nil {
-		return err
+		return fmt.Errorf("无法监听 %s，请检查端口是否已被占用；可用 --listen 127.0.0.1:18080 换端口：%w", cfg.Listen, err)
 	}
 	defer listener.Close()
 	runtime, err := newRuntimeManager(ctx, cfg, paths, key, source, keyFile, logger)
 	clear(key[:])
 	if err != nil {
 		return err
+	}
+	if snapshot, err := runtime.graph.preferences.Get(ctx); err != nil {
+		cleanup, stop := context.WithTimeout(context.Background(), 30*time.Second)
+		defer stop()
+		return errors.Join(err, runtime.Close(cleanup))
+	} else if err := diagnostic.Event("effective_settings", safeStartupSettings(snapshot)); err != nil {
+		cleanup, stop := context.WithTimeout(context.Background(), 30*time.Second)
+		defer stop()
+		return errors.Join(err, runtime.Close(cleanup))
 	}
 	if err := restoreLock.Close(); err != nil {
 		cleanup, stop := context.WithTimeout(context.Background(), 30*time.Second)
@@ -113,6 +148,11 @@ func serve(ctx context.Context, cfg config.Config, lookup config.Lookup, logger 
 		logger.Info("首次初始化令牌，只显示这一次", "token", bootstrap.Token, "expires_at", bootstrap.ExpiresAt)
 	}
 	logger.Info("服务已启动", "listen", listener.Addr().String())
+	if err := diagnostic.Event("service_started", map[string]any{"listen": listener.Addr().String()}); err != nil {
+		cleanup, stop := context.WithTimeout(context.Background(), 30*time.Second)
+		defer stop()
+		return errors.Join(err, runtime.Close(cleanup))
+	}
 	finished := make(chan error, 1)
 	go func() { finished <- httpServer.Serve(listener) }()
 	ended := false

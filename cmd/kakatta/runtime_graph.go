@@ -98,6 +98,7 @@ func newRuntimeGraphWithSite(life context.Context, cfg config.Config, paths conf
 	}
 	g.core, err = service.NewStopped(ctx, service.Dependencies{
 		DB: g.database.DB(), Settings: g.preferences, Cipher: cipher, DataDir: paths.DataDir,
+		Diagnostics:  runtimeDiagnostics(cfg, generation),
 		ReadSnapshot: g.database.ReadSnapshot,
 		Resources:    factory, Models: g.models, Notifier: g.notifications, ImageCache: cache,
 		Publish: g.publish,
@@ -130,6 +131,9 @@ func newRuntimeGraphWithSite(life context.Context, cfg config.Config, paths conf
 	}
 	if err == nil {
 		err = g.handler.RegisterModels(g.models)
+	}
+	if err == nil {
+		err = g.handler.RegisterDiagnostics(paths.DataDir)
 	}
 	if err != nil {
 		return nil, err

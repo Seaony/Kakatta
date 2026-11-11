@@ -8626,6 +8626,140 @@
           }
         }
       }
+    },
+    "/api/v1/system/diagnostics": {
+      "get": {
+        "operationId": "getDiagnosticManifest",
+        "summary": "预览诊断包包含的文件",
+        "description": "仅包含程序生成的日志、环境、摘要、截图、页面和解析失败响应，不包含数据库、密钥或浏览器登录配置。文件总量最多256MiB、2000个，单文件最多16MiB；超过上限返回明确错误，不省略文件。存储停机时仍要求有效登录，以只读校验凭据，不续期。 登录页截图（可能含扫码凭据）不导出；只有page.json明确login_page=false才包含截图，缺失或损坏的元数据按不确定排除。清单同时列出被排除的文件及原因。",
+        "tags": [
+          "系统"
+        ],
+        "security": [
+          {
+            "CookieSession": []
+          },
+          {
+            "SecureCookieSession": []
+          },
+          {
+            "BearerToken": []
+          }
+        ],
+        "x-authentication": "session_or_api_token",
+        "responses": {
+          "200": {
+            "description": "操作完成。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiagnosticManifest"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationFailed"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/system/diagnostics/download": {
+      "get": {
+        "operationId": "downloadDiagnostics",
+        "summary": "下载本机诊断日志与故障现场",
+        "description": "仅包含程序生成的日志、环境、摘要、截图、页面和解析失败响应，不包含数据库、密钥或浏览器登录配置。文件总量最多256MiB、2000个，单文件最多16MiB；超过上限返回明确错误，不省略文件。存储停机时仍要求有效登录，以只读校验凭据，不续期。 登录页截图（可能含扫码凭据）不导出；只有page.json明确login_page=false才包含截图，缺失或损坏的元数据按不确定排除。清单同时列出被排除的文件及原因。",
+        "tags": [
+          "系统"
+        ],
+        "security": [
+          {
+            "CookieSession": []
+          },
+          {
+            "SecureCookieSession": []
+          },
+          {
+            "BearerToken": []
+          }
+        ],
+        "x-authentication": "session_or_api_token",
+        "responses": {
+          "200": {
+            "description": "操作完成。",
+            "content": {
+              "application/zip": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            },
+            "headers": {
+              "Content-Disposition": {
+                "description": "attachment，带服务端生成的安全文件名。",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Content-Length": {
+                "description": "实际传输字节数。",
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationFailed"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -11619,7 +11753,11 @@
         "additionalProperties": false,
         "properties": {
           "state": {
-            "enum": ["retrying", "cancelled", "abandoned"],
+            "enum": [
+              "retrying",
+              "cancelled",
+              "abandoned"
+            ],
             "type": "string"
           },
           "reason": {
@@ -11633,7 +11771,10 @@
             ]
           }
         },
-        "required": ["state", "reason"],
+        "required": [
+          "state",
+          "reason"
+        ],
         "type": "object",
         "x-go-type": "service.FindingNotificationStatus"
       },
@@ -14576,6 +14717,17 @@
             "type": "integer",
             "minimum": -9007199254740991,
             "maximum": 9007199254740991
+          },
+          "blocked": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RuntimeBlocked"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "实验账号的保护对所有正式账号生效；没有全局暂停时省略。"
           }
         },
         "required": [
@@ -21335,6 +21487,74 @@
           "restored"
         ],
         "description": "恢复成功，所有旧会话和令牌失效，需要用备份中的认证资料重新登录。"
+      },
+      "DiagnosticFile": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "诊断文件相对于数据目录的安全路径，不包含本机绝对路径。"
+          },
+          "bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "path",
+          "bytes"
+        ],
+        "x-go-type": "server.DiagnosticFile"
+      },
+      "DiagnosticManifest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DiagnosticFile"
+            }
+          },
+          "total_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "excluded": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DiagnosticExclusion"
+            }
+          }
+        },
+        "required": [
+          "files",
+          "excluded",
+          "total_bytes"
+        ],
+        "x-go-type": "server.DiagnosticManifest"
+      },
+      "DiagnosticExclusion": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/LocalizedMessage"
+          }
+        },
+        "required": [
+          "path",
+          "reason"
+        ],
+        "x-go-type": "server.DiagnosticExclusion"
       }
     },
     "responses": {

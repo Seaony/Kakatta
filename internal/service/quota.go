@@ -191,7 +191,10 @@ func (b *visitBudget) Acquire(kind quota.Kind, _ string) error {
 		return storageFailure(err)
 	}
 	var denied error
-	if !b.allowOverQuota {
+	if blocked := b.service.experimentBlock(now); blocked != nil {
+		denied = blockedRunError(blocked)
+	}
+	if denied == nil && !b.allowOverQuota {
 		reason, next, err := quotaReadyAt(visits, state, 1, kind, limits)
 		if err != nil {
 			return storageFailure(err)

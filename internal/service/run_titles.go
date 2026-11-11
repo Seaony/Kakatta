@@ -84,6 +84,7 @@ func (s *Service) runTitles(ctx context.Context, run *runExecution) (err error) 
 			return err
 		}
 		if callErr != nil {
+			logRunFailure(run, "标题整理", callErr)
 			if errors.Is(callErr, client.ErrNoProvider) || errors.Is(callErr, client.ErrDailyLimit) {
 				cause := "no_provider"
 				if errors.Is(callErr, client.ErrDailyLimit) {

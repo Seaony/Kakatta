@@ -34,14 +34,19 @@ func (e *RiskError) Error() string {
 
 func (e *RiskError) Unwrap() error { return e.Kind }
 
-// IsStop 判断错误是不是必须立即结束整次运行的那一类：人机验证、拒绝、环境异常、登录失效。
+// IsStop 判断是否必须停止当前流程，含风控和诊断落盘失败。
 func IsStop(err error) bool {
 	return errors.Is(err, ErrNeedVerify) || errors.Is(err, ErrDenied) ||
-		errors.Is(err, ErrEnvBlocked) || errors.Is(err, ErrLoginExpired)
+		errors.Is(err, ErrEnvBlocked) || errors.Is(err, ErrLoginExpired) || errors.Is(err, ErrDiagnostics)
 }
 
 // checkPage 检查当前页面：网址是不是登录页、有没有可见的验证遮罩、有没有「非法访问」文字。
-func (r *Runner) checkPage(ctx context.Context, where string) error {
+func (r *Runner) checkPage(ctx context.Context, where string) (failure error) {
+	defer func() {
+		if IsStop(failure) && !errors.Is(failure, ErrDiagnostics) {
+			failure = r.ReportFailure(ctx, where, failure, nil)
+		}
+	}()
 	if err := contextError(ctx); err != nil {
 		return err
 	}
@@ -57,6 +62,7 @@ func (r *Runner) checkPage(ctx context.Context, where string) error {
 	if errors.Is(urlRisk, ErrDenied) {
 		return urlRisk
 	}
+	r.observeIframes(ctx, current, false)
 	// 人工会话会留在登录页等待用户，但页面上的环境拒绝仍要立即结束。
 	for _, text := range rules.Selectors.BlockedTexts {
 		nodes, err := r.H.SearchText(ctx, text)
@@ -93,6 +99,9 @@ func (r *Runner) checkPage(ctx context.Context, where string) error {
 			}
 		}
 	}
+	if verification != nil {
+		r.observeIframes(ctx, current, true)
+	}
 	return verification
 }
 
@@ -126,6 +135,7 @@ func (r *Runner) checkResponses(where string) error {
 	var pending error
 	for _, resp := range r.S.Capture.HeadersAfter(r.since, browser.Match{}) {
 		if (resp.MainDocument || r.isMtopResponse(resp)) && resp.Headers["bxpunish"] == "1" && (resp.HeaderOrder == 0 || resp.HeaderOrder > r.handledRisks[resp.Seq].header) {
+			r.signal(map[string]any{"步骤": where, "来源": "响应头", "信号": "bxpunish=1", "响应序号": resp.Seq, "网址": diagnosticURL(resp.URL)})
 			pending = &RiskError{Kind: ErrNeedVerify, Where: where, Signal: "响应头 bxpunish"}
 		}
 	}
@@ -136,9 +146,12 @@ func (r *Runner) checkResponses(where string) error {
 		if resp.Err != nil || len(resp.Body) == 0 {
 			continue
 		}
-		kind, _, err := xianyu.CheckEnvelope(resp.Body)
+		kind, ret, err := xianyu.CheckEnvelope(resp.Body)
 		if err != nil {
 			continue
+		}
+		if kind == xianyu.RetNeedVerify || kind == xianyu.RetDenied || kind == xianyu.RetSessionExpired {
+			r.signal(responseRiskFields(where, resp, kind, ret))
 		}
 		switch kind {
 		case xianyu.RetNeedVerify:
@@ -146,14 +159,14 @@ func (r *Runner) checkResponses(where string) error {
 				pending = &RiskError{Kind: ErrNeedVerify, Where: where, Signal: kind.String()}
 			}
 		case xianyu.RetDenied:
-			return &RiskError{Kind: ErrDenied, Where: where, Signal: kind.String()}
+			return r.ReportFailure(r.S.Context(), where, &RiskError{Kind: ErrDenied, Where: where, Signal: kind.String()}, nil)
 		case xianyu.RetSessionExpired:
 			if resp.BodyOrder == 0 || resp.BodyOrder > r.handledRisks[resp.Seq].body {
 				pending = &RiskError{Kind: ErrLoginExpired, Where: where, Signal: kind.String()}
 			}
 		}
 	}
-	return pending
+	return r.ReportFailure(r.S.Context(), where, pending, nil)
 }
 
 // check 做一次完整的风控检查：先查接口，再查页面。
@@ -169,6 +182,9 @@ func (r *Runner) check(ctx context.Context, where string) error {
 }
 
 func combinedRisk(responseErr, pageErr error) error {
+	if errors.Is(responseErr, ErrDiagnostics) || errors.Is(pageErr, ErrDiagnostics) {
+		return errors.Join(responseErr, pageErr)
+	}
 	if errors.Is(responseErr, ErrDenied) || errors.Is(responseErr, ErrEnvBlocked) {
 		return responseErr
 	}
@@ -220,7 +236,7 @@ func (r *Runner) waitAPIResponse(ctx context.Context, mark uint64, m browser.Mat
 		}
 		kind, _, err := xianyu.CheckEnvelope(resp.Body)
 		if err != nil {
-			return nil, fmt.Errorf("%s：响应不是有效的接口数据：%w", where, err)
+			return nil, r.ReportFailure(ctx, where, fmt.Errorf("%s：响应不是有效的接口数据：%w", where, err), resp)
 		}
 		r.Log("接口返回", map[string]any{"步骤": where, "结果": kind.String(), "耗时毫秒": time.Since(start).Milliseconds()})
 		switch kind {

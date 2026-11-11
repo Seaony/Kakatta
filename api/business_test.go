@@ -185,6 +185,7 @@ func TestSharedDTOsMatchOwningTypes(t *testing.T) {
 		{"modelservice", "../internal/analysis/service/types.go"}, {"client", "../internal/analysis/client/types.go"},
 		{"notification", "../internal/notification/types.go"}, {"notify", "../internal/notify/types.go"},
 		{"backup", "../internal/backup/types.go"}, {"update", "../internal/update/types.go"},
+		{"server", "../internal/server/diagnostics.go"},
 	} {
 		file, err := parser.ParseFile(token.NewFileSet(), source.path, nil, 0)
 		if err != nil {

@@ -90,7 +90,11 @@ func (s *Service) manualPreflight(ctx context.Context, accountID int64, kind Ses
 	if err != nil {
 		return account, snapshot, now, nil, storageFailure(err)
 	}
-	blocked, gateErr := manualAccountBlockTx(ctx, tx, account, kind, snapshot, now)
+	blocked := s.experimentBlock(now)
+	var gateErr error
+	if blocked == nil {
+		blocked, gateErr = manualAccountBlockTx(ctx, tx, account, kind, snapshot, now)
+	}
 	err = appsettings.SaveClock(ctx, tx, clock)
 	if err == nil {
 		err = tx.Commit()
@@ -166,7 +170,10 @@ func (s *Service) tryStartSession(ctx context.Context, request startRequest) (bo
 		account, err = loadAccountTx(ctx, tx, request.AccountID)
 	}
 	if err == nil {
-		blocked, err = manualAccountBlockTx(ctx, tx, account, request.Kind, snapshot, now)
+		blocked = s.experimentBlock(now)
+		if blocked == nil {
+			blocked, err = manualAccountBlockTx(ctx, tx, account, request.Kind, snapshot, now)
+		}
 	}
 	var spec ResourceSpec
 	if err == nil && blocked == nil {
@@ -214,6 +221,20 @@ func (s *Service) runManualSession(session *sessionWork, account Account, spec R
 		return
 	}
 	runner := resource.Runner()
+	closeSession := func() {
+		err = reportBrowserFailure(session.Context, runner, "人工会话", err)
+		fields := map[string]any{"session_id": session.View.ID, "kind": session.View.Kind, "success": err == nil}
+		if err != nil {
+			fields["原因"] = err.Error()
+			if runner.Log != nil {
+				runner.Log("步骤失败", map[string]any{"步骤": "人工会话", "分类": "manual", "原因": err.Error()})
+			}
+		}
+		if runner.Log != nil {
+			runner.Log("运行摘要", fields)
+		}
+		_ = s.closeManualSession(session)
+	}
 	if session.View.Kind == SessionLogin {
 		err = runner.OpenLogin(session.Context)
 		if err == nil {
@@ -247,7 +268,7 @@ func (s *Service) runManualSession(session *sessionWork, account Account, spec R
 					return completeLoginTx(ctx, tx, account.ID, nick, avatar, nowMS)
 				})
 				if err != nil {
-					_ = s.closeManualSession(session)
+					closeSession()
 					return
 				}
 			}
@@ -276,7 +297,7 @@ func (s *Service) runManualSession(session *sessionWork, account Account, spec R
 			return
 		}
 	}
-	_ = s.closeManualSession(session)
+	closeSession()
 }
 
 func (s *Service) publishManualRemote(session *sessionWork, phase SessionPhase, refresh bool) error {

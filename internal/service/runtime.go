@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/Seaony/Kakatta/internal/analysis/prompts"
 	"github.com/Seaony/Kakatta/internal/appsettings"
+	"github.com/Seaony/Kakatta/internal/diagnostics"
 	"github.com/Seaony/Kakatta/internal/locales"
 	"github.com/Seaony/Kakatta/internal/pacer"
 	"github.com/Seaony/Kakatta/internal/remote"
@@ -420,6 +422,19 @@ func (s *Service) setRuntimeErrorLocked(err error) {
 				defer cancel()
 				_ = s.closeSessionWork(ctx, session)
 			}()
+		}
+		if s.diagnosticLog != nil {
+			detail := err
+			var wrapped *causedServiceError
+			if errors.As(err, &wrapped) && wrapped.cause != nil {
+				detail = wrapped.cause
+			}
+			if writeErr := s.diagnosticLog("存储故障停机", map[string]any{
+				"reason": runtimeFailureReason(err), "error": diagnostics.RedactText(err.Error()), "cause": diagnostics.RedactText(detail.Error()),
+			}); writeErr != nil {
+				slog.Error("写入本机诊断日志失败", "原因", diagnostics.RedactText(writeErr.Error()),
+					"存储分类", runtimeFailureReason(err), "存储首因", diagnostics.RedactText(detail.Error()))
+			}
 		}
 		closing.Wait()
 		close(done)
@@ -916,7 +931,17 @@ func (s *Service) dispatchSystemEvents(ctx context.Context, ids []int64) error {
 }
 
 func (s *Service) resourceSpec(ctx context.Context, tx *sql.Tx, account Account, snapshot settings.Snapshot, config settings.Values, budget web.Budget, log web.Logger) (ResourceSpec, error) {
-	spec := ResourceSpec{AccountID: account.ID, ProfileDir: filepath.Join(s.dataDir, "browser", strconv.FormatInt(account.ID, 10)), Pacer: s.pacer, Budget: budget, Log: log}
+	spec := ResourceSpec{AccountID: account.ID, ProfileDir: filepath.Join(s.dataDir, "browser", strconv.FormatInt(account.ID, 10)),
+		DiagnosticsDir:     filepath.Join(s.dataDir, "diagnostics", "accounts", strconv.FormatInt(account.ID, 10)),
+		DiagnosticSettings: map[string]any{}, Pacer: s.pacer, Budget: budget, Log: log}
+	for key, value := range snapshot.Values {
+		if strings.HasPrefix(key, "crawl.") || strings.HasPrefix(key, "cache.") {
+			spec.DiagnosticSettings[key] = append(json.RawMessage(nil), value...)
+		}
+	}
+	for key, value := range config {
+		spec.DiagnosticSettings[key] = append(json.RawMessage(nil), value...)
+	}
 	if err := json.Unmarshal(snapshot.Values["general.timezone"], &spec.Timezone); err != nil {
 		return spec, err
 	}

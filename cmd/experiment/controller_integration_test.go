@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/Seaony/Kakatta/internal/browser"
+	"github.com/Seaony/Kakatta/internal/experimentstate"
 	"github.com/Seaony/Kakatta/internal/xianyu/web"
 )
 
@@ -79,7 +80,7 @@ func TestControllerLoginThenFreshSingleRun(t *testing.T) {
 			}
 			fields++
 		case "单次实验流程完成":
-			if e.Fields["详情数"] != 2 || e.Fields["失败数"] != 0 {
+			if e.Fields["详情数"] != float64(2) || e.Fields["失败数"] != float64(0) {
 				t.Fatalf("单次流程没有完整结束：%+v", e)
 			}
 			completed++
@@ -429,7 +430,7 @@ func experimentProcesses(t *testing.T, c *controller) []int {
 		t.Fatal(err)
 	}
 	display := ":" + strconv.Itoa(100+c.opts.Account)
-	profile := "--user-data-dir=" + filepath.Join(c.opts.Data, "browser-fixture", strconv.Itoa(c.opts.Account))
+	profile := "--user-data-dir=" + experimentstate.ProfileDir(c.opts.Data, c.opts.Account, true)
 	var found []int
 	for _, entry := range entries {
 		pid, err := strconv.Atoi(entry.Name())

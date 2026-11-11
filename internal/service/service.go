@@ -22,18 +22,19 @@ import (
 )
 
 type Service struct {
-	db         *sql.DB
-	settings   *appsettings.Store
-	cipher     *security.Cipher
-	dataDir    string
-	resources  ResourceFactory
-	models     Models
-	notifier   Notifier
-	imageCache ImageCache
-	publish    func(string, *locales.Message, json.RawMessage) error
-	now        func() time.Time
-	pacer      *pacer.Pacer
-	events     eventstore.Store
+	db            *sql.DB
+	settings      *appsettings.Store
+	cipher        *security.Cipher
+	dataDir       string
+	resources     ResourceFactory
+	models        Models
+	notifier      Notifier
+	imageCache    ImageCache
+	publish       func(string, *locales.Message, json.RawMessage) error
+	diagnosticLog func(string, map[string]any) error
+	now           func() time.Time
+	pacer         *pacer.Pacer
+	events        eventstore.Store
 
 	readSnapshot func(context.Context, func(*sql.Tx) error) error
 
@@ -194,7 +195,7 @@ func NewStopped(ctx context.Context, deps Dependencies) (*Service, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	s := &Service{db: deps.DB, settings: deps.Settings, cipher: deps.Cipher, dataDir: deps.DataDir, resources: deps.Resources, models: deps.Models, notifier: deps.Notifier, imageCache: deps.ImageCache, publish: deps.Publish, now: deps.Now, pacer: deps.Pacer, readSnapshot: deps.ReadSnapshot}
+	s := &Service{db: deps.DB, settings: deps.Settings, cipher: deps.Cipher, dataDir: deps.DataDir, resources: deps.Resources, models: deps.Models, notifier: deps.Notifier, imageCache: deps.ImageCache, publish: deps.Publish, diagnosticLog: deps.Diagnostics, now: deps.Now, pacer: deps.Pacer, readSnapshot: deps.ReadSnapshot}
 	s.ctx, s.cancel = context.WithCancelCause(ctx)
 	s.initRuntime()
 	s.events = eventstore.Store{DB: s.db, Now: s.now}

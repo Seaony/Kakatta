@@ -28,8 +28,9 @@ type Dependencies struct {
 	Notifier     Notifier
 	ImageCache   ImageCache
 	Publish      func(kind string, reason *locales.Message, data json.RawMessage) error
-	Now          func() time.Time // 默认 time.Now；记账仍经持久 Clock 保护。
-	Pacer        *pacer.Pacer     // 默认真实等待；测试注入同一随机与等待来源。
+	Diagnostics  func(event string, fields map[string]any) error // 只写本机资料，不回调业务服务。
+	Now          func() time.Time                                // 默认 time.Now；记账仍经持久 Clock 保护。
+	Pacer        *pacer.Pacer                                    // 默认真实等待；测试注入同一随机与等待来源。
 }
 
 // Open 失败必须关闭部分资源并返回 nil；成功后全部资源所有权移交 Service。
@@ -37,16 +38,18 @@ type ResourceFactory interface {
 	Open(context.Context, ResourceSpec) (SessionResource, error)
 }
 type ResourceSpec struct {
-	AccountID  int64
-	ProfileDir string
-	Proxy      *url.URL // 已解密的固定代理，仅内存使用，不可记日志。
-	Timezone   string
-	CacheMB    int
-	Pacer      *pacer.Pacer
-	Typing     pacer.Range
-	Pace       web.Pace
-	Budget     web.Budget
-	Log        web.Logger
+	AccountID          int64
+	ProfileDir         string
+	DiagnosticsDir     string
+	DiagnosticSettings map[string]any
+	Proxy              *url.URL // 已解密的固定代理，仅内存使用，不可记日志。
+	Timezone           string
+	CacheMB            int
+	Pacer              *pacer.Pacer
+	Typing             pacer.Range
+	Pace               web.Pace
+	Budget             web.Budget
+	Log                web.Logger
 }
 
 // Runner 与 Chrome 必须属于同一页面；不另建 DOM 操作接口。

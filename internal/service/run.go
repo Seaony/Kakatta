@@ -10,6 +10,7 @@ import (
 
 	"github.com/Seaony/Kakatta/internal/analysis"
 	"github.com/Seaony/Kakatta/internal/appsettings"
+	"github.com/Seaony/Kakatta/internal/diagnostics"
 	"github.com/Seaony/Kakatta/internal/locales"
 	"github.com/Seaony/Kakatta/internal/quota"
 	"github.com/Seaony/Kakatta/internal/settings"
@@ -36,6 +37,10 @@ func (s *Service) preflightTx(ctx context.Context, tx *sql.Tx, task Task, trigge
 	}
 	if trigger != TriggerAuto && trigger != TriggerManual {
 		return result, storageFailure(errors.New("运行触发方式无效"))
+	}
+	if blocked := s.experimentBlock(now); blocked != nil {
+		result.block(blocked)
+		return result, nil
 	}
 	if trigger == TriggerAuto {
 		if !task.Enabled {
@@ -583,8 +588,15 @@ func (s *Service) executeRun(run *runExecution, session *sessionWork) {
 		s.completeResourceOpen(session, nil)
 	}
 	if cause == nil && run.Context.Err() == nil {
-		for _, phase := range []func(context.Context, *runExecution) error{s.runSearch, s.runTitles, s.runDetail} {
-			if cause = phase(run.Context, run); cause != nil || run.Context.Err() != nil {
+		for _, phase := range []struct {
+			name string
+			work func(context.Context, *runExecution) error
+		}{{"search", s.runSearch}, {"titles", s.runTitles}, {"details", s.runDetail}} {
+			started := time.Now()
+			s.logRunPhase(run, phase.name, "started", started, nil)
+			cause = phase.work(run.Context, run)
+			s.logRunPhase(run, phase.name, "completed", started, errors.Join(cause, context.Cause(run.Context)))
+			if cause != nil || run.Context.Err() != nil {
 				break
 			}
 		}
@@ -602,6 +614,7 @@ func (s *Service) executeRun(run *runExecution, session *sessionWork) {
 	cleanup, cancel := context.WithTimeout(context.WithoutCancel(run.Context), 30*time.Second)
 	defer cancel()
 	finishErr := s.finishRun(cleanup, run, cause)
+	s.logRunSummary(run, errors.Join(cause, finishErr))
 	settleErr := s.settleRunSession(cleanup, run, cause)
 	if finishErr != nil || settleErr != nil {
 		s.setRuntimeError(errors.Join(finishErr, settleErr))
@@ -652,8 +665,14 @@ func browserRunMessage(event string, fields map[string]any) (locales.Message, St
 		"进入搜索结果页": "search_entered", "关闭了广告": "advertisement_closed", "选了发布时间": "published_selected",
 		"等待": "wait", "查找页面元素": "element_lookup", "接口返回": "response", "打开了详情页": "detail_opened",
 		"找到地区筛选": "region_filter_found", "找到价格筛选": "price_filter_found", "找到筛选元素": "filter_found",
-		"登录框已出现": "login_box_seen", "本地登录预检警告": "login_cookie_warning",
+		"登录框已出现": "login_box_seen", "本地登录预检警告": "login_cookie_warning", "搜索结果已解析": "search_parsed",
 	}[event]
+	if event == "运行阶段" {
+		code = "phase"
+	}
+	if event == "步骤失败" {
+		code = "failed"
+	}
 	if code == "" && strings.HasSuffix(event, "没有反应，重做一次") {
 		code = "retry"
 	}
@@ -664,14 +683,39 @@ func browserRunMessage(event string, fields map[string]any) (locales.Message, St
 	if found, known := fields["找到"].(bool); code == "element_lookup" && known && !found {
 		status = StepWarn
 	}
+	if code == "failed" || code == "phase" && fields["状态"] == "failed" {
+		status = StepFail
+	}
 	if code == "" {
 		code, status = "operation", StepWarn
 	}
 	args := map[string]any{}
-	// 只保存明确的诊断值，不保存页面地址、输入文字、Cookie 或接口正文。
+	// 正文和凭据不进运行步骤，网址与错误也先去掉敏感内容。
 	for source, target := range map[string]string{"耗时毫秒": "duration_ms", "毫秒": "duration_ms", "图片数": "image_count", "有描述": "has_description", "找到": "found", "规则版本": "rule_version"} {
 		if value, exists := fields[source]; exists {
 			args[target] = value
+		}
+	}
+	if code == "phase" {
+		phase, _ := fields["阶段"].(string)
+		state, _ := fields["状态"].(string)
+		args["step"] = locales.Message{Code: "run.phase_" + phase, Args: map[string]any{}}
+		args["status"] = locales.Message{Code: "run.phase_" + state, Args: map[string]any{}}
+	}
+	if code == "search_parsed" {
+		args["page"], args["count"] = fields["页"], fields["商品数"]
+	}
+	if code == "failed" {
+		step, _ := fields["步骤"].(string)
+		reason, _ := fields["原因"].(string)
+		args["step"], args["reason"] = diagnostics.RedactText(step), diagnostics.RedactText(reason)
+		if raw, ok := fields["网址"].(string); ok {
+			args["url"] = diagnostics.SafeURL(raw)
+		}
+		for _, key := range []string{"分类", "信号", "命中位置"} {
+			if value, ok := fields[key].(string); ok {
+				args[key] = diagnostics.RedactText(value)
+			}
 		}
 	}
 	return locales.Message{Code: "run.browser_" + code, Args: args}, status

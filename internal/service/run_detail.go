@@ -85,6 +85,7 @@ func (s *Service) runDetailWith(ctx context.Context, run *runExecution, open fun
 			}
 			work := run.P[job.index]
 			err := s.finishDetailModel(ctx, run, work, job)
+			logRunFailure(run, "商品判断", err)
 			pending[0] = nil
 			pending = pending[1:]
 			if errors.Is(err, client.ErrNoProvider) || errors.Is(err, client.ErrDailyLimit) {
@@ -143,6 +144,9 @@ func (s *Service) runDetailWith(ctx context.Context, run *runExecution, open fun
 			// Runner 自己申请额度并等待，编排层只限制本次打开数量。
 			opened := false
 			result, openErr := open(ctx, input.Item.DesktopURL, func() { opened = true })
+			if run.Resource != nil {
+				openErr = reportBrowserFailure(ctx, run.Resource.Runner(), "打开商品详情", openErr)
+			}
 			if opened {
 				run.DetailCount++
 			}

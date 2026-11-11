@@ -30,7 +30,7 @@ func (s *Server) authenticated(next http.Handler) http.Handler {
 		readOnly := false
 		if (r.Method == http.MethodGet || r.Method == http.MethodHead) && s.runtimeFailure != nil && s.runtimeFailure() != nil {
 			switch r.URL.Path {
-			case "/api/v1/me", "/api/v1/settings", "/api/v1/settings/definitions", "/api/v1/system/status":
+			case "/api/v1/me", "/api/v1/settings", "/api/v1/settings/definitions", "/api/v1/system/status", "/api/v1/system/diagnostics", "/api/v1/system/diagnostics/download":
 				readOnly = true
 			}
 		}

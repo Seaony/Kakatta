@@ -1893,6 +1893,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/system/diagnostics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 预览诊断包包含的文件
+         * @description 仅包含程序生成的日志、环境、摘要、截图、页面和解析失败响应，不包含数据库、密钥或浏览器登录配置。文件总量最多256MiB、2000个，单文件最多16MiB；超过上限返回明确错误，不省略文件。存储停机时仍要求有效登录，以只读校验凭据，不续期。 登录页截图（可能含扫码凭据）不导出；只有page.json明确login_page=false才包含截图，缺失或损坏的元数据按不确定排除。清单同时列出被排除的文件及原因。
+         */
+        get: operations["getDiagnosticManifest"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/system/diagnostics/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 下载本机诊断日志与故障现场
+         * @description 仅包含程序生成的日志、环境、摘要、截图、页面和解析失败响应，不包含数据库、密钥或浏览器登录配置。文件总量最多256MiB、2000个，单文件最多16MiB；超过上限返回明确错误，不省略文件。存储停机时仍要求有效登录，以只读校验凭据，不续期。 登录页截图（可能含扫码凭据）不导出；只有page.json明确login_page=false才包含截图，缺失或损坏的元数据按不确定排除。清单同时列出被排除的文件及原因。
+         */
+        get: operations["downloadDiagnostics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3146,6 +3186,8 @@ export interface components {
             running: boolean;
             /** Format: int64 */
             running_count: number;
+            /** @description 实验账号的保护对所有正式账号生效；没有全局暂停时省略。 */
+            blocked?: components["schemas"]["RuntimeBlocked"] | null;
         };
         SellerProfile: {
             avatar_url: string | null;
@@ -4589,6 +4631,22 @@ export interface components {
         BackupRestored: {
             /** @constant */
             restored: true;
+        };
+        DiagnosticFile: {
+            /** @description 诊断文件相对于数据目录的安全路径，不包含本机绝对路径。 */
+            path: string;
+            /** Format: int64 */
+            bytes: number;
+        };
+        DiagnosticManifest: {
+            files: components["schemas"]["DiagnosticFile"][];
+            /** Format: int64 */
+            total_bytes: number;
+            excluded: components["schemas"]["DiagnosticExclusion"][];
+        };
+        DiagnosticExclusion: {
+            path: string;
+            reason: components["schemas"]["LocalizedMessage"];
         };
     };
     responses: {
@@ -8384,6 +8442,66 @@ export interface operations {
             409: components["responses"]["Conflict"];
             413: components["responses"]["PayloadTooLarge"];
             415: components["responses"]["UnsupportedMediaType"];
+            422: components["responses"]["ValidationFailed"];
+            503: components["responses"]["Unavailable"];
+            default: components["responses"]["InternalError"];
+        };
+    };
+    getDiagnosticManifest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 操作完成。 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiagnosticManifest"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
+            503: components["responses"]["Unavailable"];
+            default: components["responses"]["InternalError"];
+        };
+    };
+    downloadDiagnostics: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 操作完成。 */
+            200: {
+                headers: {
+                    /** @description attachment，带服务端生成的安全文件名。 */
+                    "Content-Disposition"?: string;
+                    /** @description 实际传输字节数。 */
+                    "Content-Length"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/zip": Blob;
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
             422: components["responses"]["ValidationFailed"];
             503: components["responses"]["Unavailable"];
             default: components["responses"]["InternalError"];

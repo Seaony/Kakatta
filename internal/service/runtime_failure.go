@@ -25,6 +25,10 @@ func (s *Service) RuntimeFailure() *locales.Message {
 	if err == nil {
 		return nil
 	}
+	return runtimeFailureReason(err)
+}
+
+func runtimeFailureReason(err error) *locales.Message {
 	code := "runtime.storage_unavailable"
 	var sqliteCode interface{ Code() int }
 	switch {

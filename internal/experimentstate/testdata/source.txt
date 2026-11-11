@@ -1,0 +1,7 @@
+settings-5709c5c.json 和 visits-5709c5c.json 由提交 5709c5c 的全部 cmd/experiment 源码实际运行生成。
+
+生成时使用该提交的 defaultSettings、loadSettings、openJournalAt、begin、Acquire、risk、verified 和 finish；只连接本机文件，不启动浏览器或访问外部地址。
+设置固定为 UTC、不启用不运行时段、间隔抖动为零；记录时间固定为 2035-11-10 12:00:00 UTC。
+记录包含两次搜索、一次详情、一次验证后的两小时冷却，以及 180 秒账号间隔。
+
+后续更改文件格式时应保留这些原始样例，并增加相应读取或迁移回归。

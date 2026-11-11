@@ -61,6 +61,7 @@ func (r *Runner) ApplyFilters(ctx context.Context, options FilterOptions) (*brow
 			return nil, err
 		}
 	}
+	r.observeSearch(response.Body)
 	return response, r.check(ctx, "筛选完成")
 }
 
@@ -89,12 +90,14 @@ func (r *Runner) selectRegion(ctx context.Context, options FilterOptions) (*brow
 			if err := r.acquire(ctx, quota.Search, "地区选项："+name); err != nil {
 				return nil, err
 			}
+			beforeRequests := r.S.Capture.Mark()
 			if err := r.clickFilterNode(ctx, node, "地区选项："+name); err != nil {
 				return nil, err
 			}
 			if err := r.wait(ctx, "选择地区后", r.Pace.Action); err != nil {
 				return nil, err
 			}
+			r.observation("region_requests", map[string]any{"level": level, "mtop_sent": r.S.Capture.SentAfter(beforeRequests, r.Site.mtop()), "request_sequence_delta": r.S.Capture.Mark() - beforeRequests})
 		}
 		scope, err := r.regionArea(ctx)
 		if err != nil {

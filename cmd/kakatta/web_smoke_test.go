@@ -76,7 +76,7 @@ func TestWebSmoke(t *testing.T) {
 		mobile        bool
 	}{{"desktop", 1280, 900, false}, {"mobile", 393, 852, true}} {
 		t.Run(viewport.name, func(t *testing.T) {
-			base, token := startWebSmokeServer(t)
+			base, token, diagnosticFiles := startWebSmokeServer(t)
 			options := append(chromedp.DefaultExecAllocatorOptions[:], chromedp.ExecPath(chrome))
 			allocator, stopAllocator := chromedp.NewExecAllocator(t.Context(), options...)
 			defer stopAllocator()
@@ -156,6 +156,9 @@ func TestWebSmoke(t *testing.T) {
 					runWebSmoke(t, browser, &events, chromedp.Evaluate[chromedp.Void](`(heading => [...document.querySelectorAll('main h2,main h3')].find(node => node.textContent === heading)?.scrollIntoView())(`+strconv.Quote(smokeTranslation(t, lang, heading))+`)`))
 					writeWebSmokeScreenshot(t, browser, &events, filepath.Join(shots, page.name+"-evidence-"+string(lang)+".png"))
 				}
+				if page.name == "settings-system" {
+					checkWebSmokeDiagnostics(t, browser, &events, diagnosticFiles, lang, shots)
+				}
 			}
 			const username, password = "smoke-local", "local-smoke-only-password"
 			setup := webSmokePage{"setup", "/setup", "web.setup.title", "main input[name=token]", ""}
@@ -204,7 +207,7 @@ func TestWebSmoke(t *testing.T) {
 	}
 }
 
-func startWebSmokeServer(t *testing.T) (string, string) {
+func startWebSmokeServer(t *testing.T) (string, string, webSmokeDiagnosticFiles) {
 	t.Helper()
 	data := t.TempDir()
 	seed := exec.CommandContext(t.Context(), "/tests/seed", "--data", data)
@@ -212,6 +215,7 @@ func startWebSmokeServer(t *testing.T) (string, string) {
 	if output, err := seed.CombinedOutput(); err != nil {
 		t.Fatalf("样例数据库生成失败：%v %s", err, output)
 	}
+	diagnosticFiles := seedWebSmokeDiagnostics(t, data)
 	environment := settings.Environment{TZ: webSmokeTimezone}
 	prepareOfflineRuntime(t, data, environment)
 	ctx, cancel := context.WithCancel(t.Context())
@@ -248,7 +252,7 @@ func startWebSmokeServer(t *testing.T) (string, string) {
 	if token == "" {
 		t.Fatal("缺少测试初始化令牌")
 	}
-	return "http://" + address, token
+	return "http://" + address, token, diagnosticFiles
 }
 
 type webSmokeEvents struct {

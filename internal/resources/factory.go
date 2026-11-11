@@ -4,12 +4,14 @@ package resources
 import (
 	"context"
 	"errors"
+	"io"
 	"net/url"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/Seaony/Kakatta/internal/browser"
+	"github.com/Seaony/Kakatta/internal/diagnostics"
 	"github.com/Seaony/Kakatta/internal/pacer"
 	"github.com/Seaony/Kakatta/internal/proxyforward"
 	"github.com/Seaony/Kakatta/internal/remote"
@@ -30,14 +32,16 @@ type forwarder interface {
 }
 
 type Factory struct {
-	site         web.Site
-	startDisplay func(context.Context, int) (screen, error)
-	startProxy   func(context.Context, *url.URL) (forwarder, error)
-	startChrome  func(context.Context, browser.Options) (*browser.Session, error)
-	closeChrome  func(*browser.Session)
-	newRunner    func(*browser.Session, *pacer.Pacer, pacer.Range, web.Site, web.Pace, web.Budget, web.Logger) *web.Runner
-	startRemote  func(context.Context, string, func(context.Context) ([]byte, error)) (*remote.Session, error)
-	closeRemote  func(*remote.Session) error
+	site          web.Site
+	startDisplay  func(context.Context, int, io.Writer) (screen, error)
+	startProxy    func(context.Context, *url.URL) (forwarder, error)
+	startChrome   func(context.Context, browser.Options) (*browser.Session, error)
+	closeChrome   func(*browser.Session)
+	newRunner     func(*browser.Session, *pacer.Pacer, pacer.Range, web.Site, web.Pace, web.Budget, web.Logger) *web.Runner
+	startRemote   func(context.Context, string, func(context.Context) ([]byte, error), io.Writer) (*remote.Session, error)
+	closeRemote   func(*remote.Session) error
+	readPage      func(context.Context, *browser.Session) (browser.DiagnosticPage, error)
+	chromeVersion func(context.Context, *browser.Session) (string, error)
 }
 
 // New 的站点由入口装配，测试传本地假页，不增加用户设置。
@@ -48,8 +52,8 @@ func New(site web.Site) (*Factory, error) {
 	}
 	return &Factory{
 		site: site,
-		startDisplay: func(ctx context.Context, id int) (screen, error) {
-			return browser.StartDisplay(ctx, id)
+		startDisplay: func(ctx context.Context, id int, output io.Writer) (screen, error) {
+			return browser.StartDisplayWithLog(ctx, id, output)
 		},
 		startProxy: func(ctx context.Context, upstream *url.URL) (forwarder, error) {
 			return proxyforward.Start(ctx, upstream)
@@ -57,8 +61,12 @@ func New(site web.Site) (*Factory, error) {
 		startChrome: browser.Start,
 		closeChrome: func(chrome *browser.Session) { chrome.Close() },
 		newRunner:   web.NewRunner,
-		startRemote: remote.StartWithFallback,
+		startRemote: remote.StartWithFallbackLog,
 		closeRemote: func(view *remote.Session) error { return view.Close() },
+		readPage: func(ctx context.Context, chrome *browser.Session) (browser.DiagnosticPage, error) {
+			return chrome.DiagnosticPage(ctx)
+		},
+		chromeVersion: func(ctx context.Context, chrome *browser.Session) (string, error) { return chrome.Version(ctx) },
 	}, nil
 }
 
@@ -76,15 +84,31 @@ func (f *Factory) Open(ctx context.Context, spec service.ResourceSpec) (_ servic
 		spec.Pacer = pacer.New(nil)
 	}
 	life, cancel := context.WithCancel(context.WithoutCancel(ctx))
-	r := &resource{factory: f, ctx: life, cancel: cancel}
+	r := &resource{factory: f, ctx: life, cancel: cancel, started: time.Now(), outputs: map[string]io.WriteCloser{}}
 	stopStartup := context.AfterFunc(ctx, cancel)
 	defer stopStartup()
 	defer func() {
 		if err != nil {
+			r.log("资源启动失败", map[string]any{"原因": err.Error()})
 			err = errors.Join(err, r.Close())
 		}
 	}()
-	r.display, err = f.startDisplay(life, int(spec.AccountID))
+	if spec.DiagnosticsDir != "" {
+		r.logs, err = diagnostics.Open(spec.DiagnosticsDir, spec.Timezone)
+		if err != nil {
+			return nil, err
+		}
+		for _, name := range []string{"chrome", "xvfb", "x11vnc"} {
+			r.outputs[name], err = r.logs.ProcessLog(name)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if err = r.logs.Event("环境", resourceEnvironment(spec)); err != nil {
+			return nil, err
+		}
+	}
+	r.display, err = f.startDisplay(life, int(spec.AccountID), r.outputs["xvfb"])
 	if err != nil {
 		return nil, err
 	}
@@ -100,6 +124,7 @@ func (f *Factory) Open(ctx context.Context, spec service.ResourceSpec) (_ servic
 	r.chrome, err = f.startChrome(life, browser.Options{
 		AccountID: int(spec.AccountID), ProfileDir: spec.ProfileDir, Proxy: proxyAddress,
 		Env: []string{"DISPLAY=" + r.display.Name()}, TimeZone: spec.Timezone, CacheMB: spec.CacheMB,
+		Output: r.outputs["chrome"],
 	})
 	if err != nil {
 		return nil, err
@@ -107,7 +132,25 @@ func (f *Factory) Open(ctx context.Context, spec service.ResourceSpec) (_ servic
 	if r.chrome == nil || r.chrome.Capture == nil {
 		return nil, errors.New("浏览器没有完成初始化")
 	}
-	r.runner = f.newRunner(r.chrome, spec.Pacer, spec.Typing, f.site, spec.Pace, spec.Budget, spec.Log)
+	if r.logs != nil {
+		version, versionErr := f.chromeVersion(ctx, r.chrome)
+		fields := map[string]any{"chrome_version": version}
+		if versionErr != nil {
+			fields["error"] = versionErr.Error()
+		}
+		if err = r.logs.Event("浏览器版本", fields); err != nil {
+			return nil, err
+		}
+	}
+	r.logSink = spec.Log
+	budget := spec.Budget
+	if r.logs != nil {
+		budget = diagnosticBudget{r: r, next: budget}
+	}
+	r.runner = f.newRunner(r.chrome, spec.Pacer, spec.Typing, f.site, spec.Pace, budget, r.log)
+	if r.logs != nil {
+		r.runner.Diagnose = r.diagnose
+	}
 	stopStartup()
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -122,13 +165,21 @@ func (f *Factory) Open(ctx context.Context, spec service.ResourceSpec) (_ servic
 }
 
 type resource struct {
-	factory *Factory
-	ctx     context.Context
-	cancel  context.CancelFunc
-	display screen
-	proxy   forwarder
-	chrome  *browser.Session
-	runner  *web.Runner
+	factory   *Factory
+	ctx       context.Context
+	cancel    context.CancelFunc
+	display   screen
+	proxy     forwarder
+	chrome    *browser.Session
+	runner    *web.Runner
+	logs      *diagnostics.Recorder
+	outputs   map[string]io.WriteCloser
+	logSink   web.Logger
+	started   time.Time
+	phases    []map[string]any
+	bundles   []string
+	summary   map[string]any
+	lastError string
 
 	mu            sync.Mutex
 	openMu        sync.Mutex
@@ -170,7 +221,7 @@ func (r *resource) OpenRemote(ctx context.Context) (*remote.Session, error) {
 	r.openingCancel = cancel
 	r.mu.Unlock()
 	stop := context.AfterFunc(ctx, cancel)
-	view, err := r.factory.startRemote(life, r.display.Name(), r.chrome.ScreenshotJPEG)
+	view, err := r.factory.startRemote(life, r.display.Name(), r.chrome.ScreenshotJPEG, r.outputs["x11vnc"])
 	stop()
 	if err == nil {
 		err = ctx.Err()
@@ -190,6 +241,7 @@ func (r *resource) OpenRemote(ctx context.Context) (*remote.Session, error) {
 	}
 	r.mu.Unlock()
 	cancel()
+	r.log("远程画面启动失败", map[string]any{"原因": err.Error()})
 	if view != nil {
 		closeErr := r.factory.closeRemote(view)
 		r.mu.Lock()
@@ -233,6 +285,9 @@ func (r *resource) Close() error {
 		}
 		if r.display != nil {
 			r.closeErr = errors.Join(r.closeErr, r.display.Close())
+		}
+		if r.logs != nil {
+			r.closeErr = errors.Join(r.closeErr, r.closeDiagnostics())
 		}
 		r.cancel()
 	})

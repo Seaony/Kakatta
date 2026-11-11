@@ -929,11 +929,12 @@ type SystemStatus struct {
 }
 
 type SchedulerStatus struct {
-	Running      bool   `json:"running"`
-	Accepting    bool   `json:"accepting"`
-	NextWakeAt   *int64 `json:"next_wake_at"`
-	QueuedCount  int64  `json:"queued_count"`
-	RunningCount int64  `json:"running_count"`
+	Running      bool            `json:"running"`
+	Accepting    bool            `json:"accepting"`
+	NextWakeAt   *int64          `json:"next_wake_at"`
+	QueuedCount  int64           `json:"queued_count"`
+	RunningCount int64           `json:"running_count"`
+	Blocked      *RuntimeBlocked `json:"blocked,omitempty"`
 }
 
 type BrowserStatus struct {

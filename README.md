@@ -14,7 +14,7 @@ Kakatta is in development. The instructions below describe how to build from sou
 
 Use a Linux `amd64` or `arm64` Docker host, including Docker Desktop running Linux containers. Allow at least 1 GB of memory for the container and leave browser concurrency at its default of one page on small hosts.
 
-For a source build, run `docker compose up -d --build` from a checkout with the repository's [compose.yaml](compose.yaml).
+For a source build, run `KAKATTA_BUILD_COMMIT=$(git rev-parse HEAD) docker compose up -d --build` from a checkout with the repository's [compose.yaml](compose.yaml).
 
 For a published image, save the following as `compose.yaml` in its own directory. In a `.env` file beside it, set `KAKATTA_IMAGE=ghcr.io/seaony/kakatta:VERSION` and replace `VERSION` with the exact version from [GitHub Releases](https://github.com/Seaony/Kakatta/releases), without the leading `v`. You can also use the Docker Hub repository announced for the release. The workflow targets both registries with exact version, major version, and `latest` tags. Pin the exact version for predictable upgrades.
 
@@ -45,7 +45,7 @@ docker compose logs kakatta
 
 On first start, open `http://127.0.0.1:8080` on the Docker host, or use an SSH tunnel or HTTPS proxy for a remote host. Enter the one-time setup token from the logs and create your administrator username and password. If the token expires after 30 minutes, restart `kakatta` and read the new token from the logs. Keep these logs private. The setup guide then takes you through scanning a Xianyu login QR code, configuring optional AI and notification channels, and creating a first task.
 
-Set `PUID` and `PGID` to the numeric owner and group you want for the data directory. The entrypoint adjusts ownership under `/data` before running Kakatta and Chrome as a non-root user. `TZ` sets the container time zone and the initial application default. Change the application's time zone in Settings after setup.
+Set `PUID` and `PGID` to the numeric owner and group you want for the data directory. The entrypoint adjusts ownership under `/data` before running Kakatta and Chrome as a non-root user. `TZ` sets the container time zone and the initial application default. Change the application's time zone in Settings after setup. On macOS, use `PUID=$(id -u) PGID=$(id -g) docker compose up -d` so your account can read the private diagnostics on the host without sudo. Before scanning, follow the local checks and troubleshooting steps in [CONTAINER.md](docs/CONTAINER.md).
 
 `seccomp=unconfined` relaxes Docker's syscall filter so Chrome can start with its own sandbox intact. For a narrower filter, save [chrome-seccomp.json](deploy/chrome-seccomp.json) beside your Compose file and change the entry to `seccomp=./chrome-seccomp.json`. Keep Chrome's sandbox enabled and publish only the application port.
 

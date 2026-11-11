@@ -8,6 +8,7 @@ import { Button, FormSection, InlineMessage, PageHeader, StatePanel, StatusBadge
 import { useTranslation } from '../../i18n';
 import { formatInteger } from '../../i18n/format';
 import { ErrorNotice, useAdminTime } from './shared';
+import { DiagnosticsExport } from './diagnostics';
 
 type Session = components['schemas']['SessionView'];
 
@@ -44,7 +45,7 @@ export function SystemPage() {
   const bytes = (value: number | null) => value === null ? t('admin.unknown') : new Intl.NumberFormat(locale, { style: 'unit', unit: 'megabyte', maximumFractionDigits: 1 }).format(value / (1024 * 1024));
   const refresh = () => { void status.refetch(); void health.refetch(); void events.refetch(); };
   return <div className="min-w-0 space-y-xxl">
-    <PageHeader title={t('admin.system.title')} description={t('admin.system.description')} actions={<Button onClick={refresh} busy={status.isFetching || health.isFetching || events.isFetching}>{t('admin.refresh')}</Button>} />
+    <PageHeader title={t('admin.system.title')} description={t('admin.system.description')} actions={<><DiagnosticsExport /><Button onClick={refresh} busy={status.isFetching || health.isFetching || events.isFetching}>{t('admin.refresh')}</Button></>} />
     <FormSection title={t('admin.system.health')}>
       {health.isPending ? <StatePanel kind="pending" label={t('common.loading')} /> : health.isError ? <ErrorNotice error={health.error} /> : <StatusBadge tone={health.data ? 'positive' : 'danger'}>{t(health.data ? 'admin.system.health_ok' : 'admin.system.health_unavailable')}</StatusBadge>}
     </FormSection>
@@ -55,6 +56,7 @@ export function SystemPage() {
       <div className="grid min-w-0 gap-xxl lg:grid-cols-2">
         <FormSection title={t('admin.system.scheduler')}>
           <div className="flex flex-wrap gap-sm"><StatusBadge tone={status.data.scheduler.running ? 'positive' : 'warning'}>{t(status.data.scheduler.running ? 'admin.system.running' : 'admin.system.stopped')}</StatusBadge><StatusBadge tone={status.data.scheduler.accepting ? 'neutral' : 'warning'}>{t(status.data.scheduler.accepting ? 'admin.system.accepting' : 'admin.system.not_accepting')}</StatusBadge></div>
+          {status.data.scheduler.blocked && <InlineMessage tone="warning"><p>{message(status.data.scheduler.blocked.reason)}</p>{status.data.scheduler.blocked.next_allowed_at !== null && <p>{t('admin.system.blocked_until', { time: time(status.data.scheduler.blocked.next_allowed_at) })}</p>}</InlineMessage>}
           <dl className="space-y-md text-body"><div className="flex flex-wrap justify-between gap-md"><dt>{t('admin.system.queued')}</dt><dd className="tabular-nums">{formatInteger(status.data.scheduler.queued_count, locale)}</dd></div><div className="flex flex-wrap justify-between gap-md"><dt>{t('admin.system.running_count')}</dt><dd className="tabular-nums">{formatInteger(status.data.scheduler.running_count, locale)}</dd></div><div><dt className="text-text-secondary">{t('admin.system.next_wake')}</dt><dd className="break-words tabular-nums">{time(status.data.scheduler.next_wake_at)}</dd></div></dl>
         </FormSection>
         <FormSection title={t('admin.system.browsers')}>

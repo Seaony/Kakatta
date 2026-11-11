@@ -48,10 +48,10 @@ func (s *Service) runSearch(ctx context.Context, run *runExecution) (err error) 
 
 	runner := run.Resource.Runner()
 	if err = runner.OpenHome(ctx); err != nil {
-		return err
+		return reportBrowserFailure(ctx, runner, "打开首页", err)
 	}
 	if _, err = runner.Search(ctx, run.Task.Keyword); err != nil {
-		return err
+		return reportBrowserFailure(ctx, runner, "搜索商品", err)
 	}
 	filters := web.FilterOptions{
 		PersonalOnly: run.Task.PersonalOnly, FreeShipping: run.Task.FreeShippingOnly,
@@ -68,7 +68,7 @@ func (s *Service) runSearch(ctx context.Context, run *runExecution) (err error) 
 	}
 	response, err := runner.ApplyFilters(ctx, filters)
 	if err != nil {
-		return err
+		return reportBrowserFailure(ctx, runner, "选择搜索筛选", err)
 	}
 	var items []xianyu.SearchItem
 	defer func() {
@@ -82,8 +82,13 @@ func (s *Service) runSearch(ctx context.Context, run *runExecution) (err error) 
 			run.Record.ScannedCount = &count
 		}
 	}()
-	err = collectSearchPages(ctx, response, run.Task.MaxPages, runner.NextPage,
+	err = collectSearchPages(ctx, response, run.Task.MaxPages,
+		func(ctx context.Context) (*browser.Response, bool, error) {
+			response, more, err := runner.NextPage(ctx)
+			return response, more, reportBrowserFailure(ctx, runner, "搜索翻页", err)
+		},
 		func(page int64, found []xianyu.SearchItem) {
+			runner.Log("搜索结果已解析", map[string]any{"页": page, "商品数": int64(len(found))})
 			run.PageCount = page
 			if page == 1 {
 				run.FirstPageCount = int64(len(found))
@@ -94,7 +99,7 @@ func (s *Service) runSearch(ctx context.Context, run *runExecution) (err error) 
 			run.LayoutError = run.LayoutError || searchLayoutError(failure)
 			run.Warnings = append(run.Warnings, locales.Message{Code: "service.search_page_failed",
 				Args: map[string]any{"page": page, "cause": failure.Error()}})
-		})
+		}, runner.ReportFailure)
 	if err != nil {
 		return err
 	}
@@ -172,6 +177,7 @@ func searchObservations(items []xianyu.SearchItem, observedAt int64) []SearchObs
 func collectSearchPages(ctx context.Context, first *browser.Response, maxPages int64,
 	next func(context.Context) (*browser.Response, bool, error),
 	accept func(int64, []xianyu.SearchItem), warn func(int64, error),
+	report ...func(context.Context, string, error, *browser.Response) error,
 ) error {
 	if maxPages < 1 {
 		return errors.New("搜索页数必须为正数")
@@ -190,6 +196,12 @@ func collectSearchPages(ctx context.Context, first *browser.Response, maxPages i
 		}
 		if err != nil {
 			err = fmt.Errorf("解析第%d页搜索结果：%w", page, err)
+			if len(report) != 0 {
+				err = report[0](ctx, fmt.Sprintf("解析第%d页搜索结果", page), err, response)
+				if errors.Is(err, web.ErrDiagnostics) {
+					return err
+				}
+			}
 			if page == 1 {
 				return err
 			}

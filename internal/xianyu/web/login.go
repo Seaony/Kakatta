@@ -25,19 +25,25 @@ func (r *Runner) OpenLogin(ctx context.Context) error {
 	if err := r.CheckVerification(ctx); err != nil {
 		return err
 	}
+	present, err := r.HasLoginCookieContext(ctx)
+	if err != nil {
+		return err
+	}
+	r.observation("login_cookie", map[string]any{"before_login_present": present})
 	if r.Budget != nil {
 		if err := r.Budget.Acquire(quota.Search, "登录首页"); err != nil {
 			return err
 		}
 	}
 	start := time.Now()
-	err := r.watchChecked(ctx, r.CheckVerification, func(navCtx context.Context) error {
+	err = r.watchChecked(ctx, r.CheckVerification, func(navCtx context.Context) error {
 		_, err := r.S.NavigateContext(navCtx, r.Site.Home, rules.timeout("home"))
 		return err
 	})
 	if err != nil {
 		return fmt.Errorf("打开登录首页：%w", err)
 	}
+	r.observeLoginEntry(ctx)
 	r.Log("登录首页已打开", map[string]any{"耗时毫秒": time.Since(start).Milliseconds()})
 	return nil
 }
@@ -130,7 +136,7 @@ func (r *Runner) VerificationPageNeedsRefresh(ctx context.Context) (bool, error)
 		return false, responseErr
 	}
 	pageErr := r.checkPage(ctx, "检查人工验证窗口")
-	if pageErr != nil && !errors.Is(pageErr, ErrNeedVerify) && !errors.Is(pageErr, ErrLoginExpired) {
+	if errors.Is(pageErr, ErrDiagnostics) || pageErr != nil && !errors.Is(pageErr, ErrNeedVerify) && !errors.Is(pageErr, ErrLoginExpired) {
 		return false, pageErr
 	}
 	return pageErr == nil && responseErr == nil, responseErr
@@ -163,12 +169,19 @@ func (r *Runner) loginState(ctx context.Context) (bool, bool, error) {
 		visibleBox = visibleBox || visible
 	}
 	if err := r.checkPage(ctx, "检查登录"); err != nil {
+		if errors.Is(err, ErrDiagnostics) {
+			return false, visibleBox, err
+		}
 		if errors.Is(err, ErrLoginExpired) {
 			return false, visibleBox, nil
 		}
 		return false, visibleBox, err
 	}
+	r.observation("login_selectors", map[string]any{"selector": rules.Selectors.LoginBox, "matched_count": len(boxes), "visible": visibleBox})
 	if visibleBox {
+		if current, err := r.S.URLContext(ctx); err == nil {
+			r.observeIframes(ctx, current, true)
+		}
 		return false, true, nil
 	}
 	present, err := r.S.LoginCookiePresentContext(ctx, []string{r.Site.Home}, loginCookie)
@@ -198,6 +211,7 @@ func (r *Runner) WaitForLoginWithViewport(ctx context.Context, timeout time.Dura
 	deadline := time.Now().Add(timeout)
 	var latestExpired, latestSuccess uint64
 	sawLoginBox := false
+	var boxNavMark, boxRequestMark uint64
 	for {
 		if err := contextError(ctx); err != nil {
 			return err
@@ -222,15 +236,24 @@ func (r *Runner) WaitForLoginWithViewport(ctx context.Context, timeout time.Dura
 		}
 		if visibleBox && !sawLoginBox {
 			sawLoginBox = true
+			boxNavMark, boxRequestMark = r.S.NavigationMark(), r.S.Capture.Mark()
 			r.Log("登录框已出现", nil)
 		}
 		recovered := latestExpired == 0 || latestSuccess > latestExpired || sawLoginBox && !visibleBox
 		if err == nil && ok && recovered {
 			r.handleSignals(signals)
+			present, cookieErr := r.HasLoginCookieContext(ctx)
+			if cookieErr != nil {
+				return cookieErr
+			}
+			r.observation("login_cookie", map[string]any{"after_login_present": present, "logout_checked": false})
+			if sawLoginBox {
+				r.observation("login_refresh", map[string]any{"after_login_box_seen": true, "main_frame_navigation": r.S.NavigationMark() > boxNavMark, "mtop_sent": r.S.Capture.SentAfter(boxRequestMark, r.Site.mtop()), "mtop_completed": len(r.S.Capture.DoneAfter(boxRequestMark, r.Site.mtop())), "login_box_disappeared": !visibleBox})
+			}
 			return nil
 		}
 		// 验证码留给用户在窗口里处理；环境异常和直接拒绝用户处理不了，立即结束。
-		if err != nil && !errors.Is(err, ErrNeedVerify) {
+		if err != nil && (errors.Is(err, ErrDiagnostics) || !errors.Is(err, ErrNeedVerify)) {
 			return err
 		}
 		if time.Now().After(deadline) {
@@ -255,6 +278,7 @@ func (r *Runner) RequireLoginCookieContext(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("读取浏览器登录状态：%w", err)
 	}
+	r.observation("login_cookie", map[string]any{"before_navigation_present": ok})
 	if !ok {
 		r.Log("本地登录预检警告", map[string]any{"原因": "没有 unb Cookie，是否已失效以首页跳转为准"})
 	}

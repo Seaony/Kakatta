@@ -87,6 +87,10 @@ func (s *Service) GetSystemStatus(ctx context.Context) (SystemStatus, error) {
 	}
 	// 外部资源读数不占着数据库连接，浏览器数量只取真正持有名额的运行快照。
 	scheduler, browsers := s.runtimeStatusSnapshot()
+	scheduler.Blocked = s.experimentBlock(now)
+	if scheduler.Blocked != nil {
+		scheduler.Accepting = false
+	}
 	browsers.Limit = pages
 	resources := readSystemResources(s.dataDir)
 	if err := ctx.Err(); err != nil {

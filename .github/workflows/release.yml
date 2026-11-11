@@ -220,13 +220,17 @@ jobs:
           context: .
           call: check
           platforms: linux/${{ matrix.arch }}
-          build-args: VERSION=${{ env.RELEASE_TAG }}
+          build-args: |
+            VERSION=${{ env.RELEASE_TAG }}
+            VCS_REF=${{ env.RELEASE_SHA }}
       - name: 构建本机测试镜像
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: .
           platforms: linux/${{ matrix.arch }}
-          build-args: VERSION=${{ env.RELEASE_TAG }}
+          build-args: |
+            VERSION=${{ env.RELEASE_TAG }}
+            VCS_REF=${{ env.RELEASE_SHA }}
           load: true
           tags: kakatta:local
           cache-from: type=gha,scope=release-${{ matrix.arch }}
@@ -322,7 +326,9 @@ jobs:
         with:
           context: .
           platforms: linux/amd64,linux/arm64
-          build-args: VERSION=${{ env.RELEASE_TAG }}
+          build-args: |
+            VERSION=${{ env.RELEASE_TAG }}
+            VCS_REF=${{ env.RELEASE_SHA }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

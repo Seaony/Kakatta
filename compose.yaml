@@ -1,6 +1,9 @@
 services:
   kakatta:
-    build: .
+    build:
+      context: .
+      args:
+        VCS_REF: "${KAKATTA_BUILD_COMMIT:-unknown}"
     image: kakatta:local
     ports:
       - "127.0.0.1:8080:8080"

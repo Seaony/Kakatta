@@ -19,8 +19,9 @@ COPY --from=web-build /src/web/dist ./web/dist
 ARG TARGETOS
 ARG TARGETARCH
 ARG VERSION=dev
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -ldflags="-s -w -X github.com/Seaony/Kakatta/internal/buildinfo.Version=${VERSION}" -o /out/kakatta ./cmd/kakatta \
-    && CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -ldflags="-s -w -X github.com/Seaony/Kakatta/internal/buildinfo.Version=${VERSION}" -o /out/experiment ./cmd/experiment
+ARG VCS_REF=unknown
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -ldflags="-s -w -X github.com/Seaony/Kakatta/internal/buildinfo.Version=${VERSION} -X github.com/Seaony/Kakatta/internal/buildinfo.Commit=${VCS_REF}" -o /out/kakatta ./cmd/kakatta \
+    && CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -ldflags="-s -w -X github.com/Seaony/Kakatta/internal/buildinfo.Version=${VERSION} -X github.com/Seaony/Kakatta/internal/buildinfo.Commit=${VCS_REF}" -o /out/experiment ./cmd/experiment
 
 FROM debian:trixie-slim AS runtime
 ARG TARGETARCH

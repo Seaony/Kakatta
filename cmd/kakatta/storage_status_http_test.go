@@ -2,6 +2,8 @@ package main
 
 import (
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -25,6 +27,19 @@ func TestStorageFailureDiagnosticsStayReadableWithoutWrites(t *testing.T) {
 	graphWait(t, func() bool {
 		view, err := g.core.GetSystemStatus(t.Context())
 		return err != nil || !view.Scheduler.Running
+	})
+	var sequence int
+	var schema, databasePath string
+	if err := g.database.DB().QueryRow(`PRAGMA database_list`).Scan(&sequence, &schema, &databasePath); err != nil {
+		t.Fatal(err)
+	}
+	graphWait(t, func() bool {
+		files, err := filepath.Glob(filepath.Join(filepath.Dir(databasePath), "diagnostics", "storage", "events-*.jsonl"))
+		if err != nil || len(files) != 1 {
+			return false
+		}
+		logged, err := os.ReadFile(files[0])
+		return err == nil && strings.Contains(string(logged), "private-storage-sentinel") && strings.Contains(string(logged), "runtime.storage_unavailable")
 	})
 	if response := graphRequest(t, g, auth.Session{}, http.MethodGet, "/healthz", ""); response.Code != http.StatusServiceUnavailable {
 		t.Fatalf("存储保护停止后健康检查仍通过：%d，%s", response.Code, response.Body.String())

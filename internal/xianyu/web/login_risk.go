@@ -81,15 +81,18 @@ func (r *Runner) loginSignals() ([]loginSignal, uint64, error) {
 			}
 			continue
 		}
-		kind, _, err := xianyu.CheckEnvelope(response.Body)
+		kind, ret, err := xianyu.CheckEnvelope(response.Body)
 		if err != nil {
 			if firstError == nil {
-				firstError = fmt.Errorf("登录期间无法检查接口响应：%w", err)
+				firstError = r.ReportFailure(r.S.Context(), "登录期间检查接口", fmt.Errorf("登录期间无法检查接口响应：%w", err), response)
 			}
 			continue
 		}
+		if kind == xianyu.RetNeedVerify || kind == xianyu.RetDenied || kind == xianyu.RetSessionExpired {
+			r.signal(responseRiskFields("等待登录", response, kind, ret))
+		}
 		if kind == xianyu.RetDenied {
-			return signals, success, &RiskError{Kind: ErrDenied, Where: "等待登录", Signal: kind.String()}
+			return signals, success, r.ReportFailure(r.S.Context(), "等待登录", &RiskError{Kind: ErrDenied, Where: "等待登录", Signal: kind.String()}, nil)
 		}
 		switch kind {
 		case xianyu.RetNeedVerify, xianyu.RetSessionExpired:

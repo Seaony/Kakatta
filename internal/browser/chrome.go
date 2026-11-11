@@ -3,15 +3,30 @@
 package browser
 
 import (
+	"context"
 	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
+	"time"
 )
 
 // ErrNoChrome 表示这台电脑上找不到可用的 Chrome 或 Edge。
 var ErrNoChrome = errors.New("找不到 Google Chrome 或 Microsoft Edge")
+
+// ExecutableVersion 不打开页面，浏览器启动失败时也能留下实际安装版本。
+func ExecutableVersion(parent context.Context) (string, error) {
+	path, err := FindChrome()
+	if err != nil {
+		return "", err
+	}
+	ctx, cancel := context.WithTimeout(parent, 5*time.Second)
+	defer cancel()
+	output, err := exec.CommandContext(ctx, path, "--version").Output()
+	return strings.TrimSpace(string(output)), err
+}
 
 // FindChrome 返回本机已安装的 Google Chrome 路径；Windows 上没有 Chrome 时退而用 Edge。
 // 不用 Chromium：它缺少 H.264/AAC 解码器，和普通 Chrome 不一样。

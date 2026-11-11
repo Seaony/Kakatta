@@ -3,6 +3,7 @@ package resources
 import (
 	"context"
 	"errors"
+	"io"
 	"net/url"
 	"reflect"
 	"sync"
@@ -67,7 +68,7 @@ func testFactory(t *testing.T) (*Factory, *calls, service.ResourceSpec) {
 		t.Fatal(err)
 	}
 	c := &calls{}
-	f.startDisplay = func(context.Context, int) (screen, error) {
+	f.startDisplay = func(context.Context, int, io.Writer) (screen, error) {
 		c.add("open_display")
 		return &testScreen{calls: c}, nil
 	}
@@ -83,7 +84,7 @@ func testFactory(t *testing.T) (*Factory, *calls, service.ResourceSpec) {
 	f.newRunner = func(chrome *browser.Session, p *pacer.Pacer, _ pacer.Range, site web.Site, pace web.Pace, budget web.Budget, log web.Logger) *web.Runner {
 		return &web.Runner{S: chrome, P: p, Site: site, Pace: pace, Budget: budget, Log: log}
 	}
-	f.startRemote = func(context.Context, string, func(context.Context) ([]byte, error)) (*remote.Session, error) {
+	f.startRemote = func(context.Context, string, func(context.Context) ([]byte, error), io.Writer) (*remote.Session, error) {
 		c.add("open_remote")
 		return &remote.Session{}, nil
 	}
@@ -178,7 +179,7 @@ func TestOpenCleansPartialStarts(t *testing.T) {
 			want := []string{"open_display", "close_display"}
 			switch stage {
 			case "display":
-				f.startDisplay = func(context.Context, int) (screen, error) {
+				f.startDisplay = func(context.Context, int, io.Writer) (screen, error) {
 					c.add("open_display")
 					return &testScreen{calls: c}, failure
 				}
@@ -213,7 +214,7 @@ func TestOpenCleansPartialStarts(t *testing.T) {
 func TestRemoteOutlivesOpeningContext(t *testing.T) {
 	f, c, spec := testFactory(t)
 	var remoteContext context.Context
-	f.startRemote = func(ctx context.Context, display string, _ func(context.Context) ([]byte, error)) (*remote.Session, error) {
+	f.startRemote = func(ctx context.Context, display string, _ func(context.Context) ([]byte, error), _ io.Writer) (*remote.Session, error) {
 		remoteContext = ctx
 		if display != ":107" {
 			t.Fatal("远程画面接了别的账号显示")
@@ -245,7 +246,9 @@ func TestRemoteOutlivesOpeningContext(t *testing.T) {
 func TestCloseAttemptsAllResourcesAndIsIdempotent(t *testing.T) {
 	f, c, spec := testFactory(t)
 	displayErr, proxyErr, remoteErr := errors.New("屏幕关闭失败"), errors.New("代理关闭失败"), errors.New("远程关闭失败")
-	f.startDisplay = func(context.Context, int) (screen, error) { return &testScreen{calls: c, err: displayErr}, nil }
+	f.startDisplay = func(context.Context, int, io.Writer) (screen, error) {
+		return &testScreen{calls: c, err: displayErr}, nil
+	}
 	f.startProxy = func(context.Context, *url.URL) (forwarder, error) { return &testProxy{calls: c, err: proxyErr}, nil }
 	f.closeRemote = func(*remote.Session) error { c.add("close_remote"); return remoteErr }
 	r, err := f.Open(t.Context(), spec)
@@ -274,7 +277,7 @@ func TestCloseAttemptsAllResourcesAndIsIdempotent(t *testing.T) {
 func TestCloseCancelsAndJoinsRemoteStartup(t *testing.T) {
 	f, c, spec := testFactory(t)
 	entered := make(chan struct{})
-	f.startRemote = func(ctx context.Context, _ string, _ func(context.Context) ([]byte, error)) (*remote.Session, error) {
+	f.startRemote = func(ctx context.Context, _ string, _ func(context.Context) ([]byte, error), _ io.Writer) (*remote.Session, error) {
 		c.add("open_remote")
 		close(entered)
 		<-ctx.Done()
@@ -332,7 +335,7 @@ func TestRemoteFailureCleansPartialViewAndAllowsRetry(t *testing.T) {
 	f, c, spec := testFactory(t)
 	failure := errors.New("远程启动失败")
 	attempts := 0
-	f.startRemote = func(context.Context, string, func(context.Context) ([]byte, error)) (*remote.Session, error) {
+	f.startRemote = func(context.Context, string, func(context.Context) ([]byte, error), io.Writer) (*remote.Session, error) {
 		c.add("open_remote")
 		attempts++
 		if attempts == 1 {

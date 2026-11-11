@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,33 +10,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Seaony/Kakatta/internal/experimentstate"
 	"github.com/Seaony/Kakatta/internal/pacer"
 	"github.com/Seaony/Kakatta/internal/quota"
 	"github.com/Seaony/Kakatta/internal/xianyu/web"
 )
 
-type dayWindow struct {
-	Timezone string    `json:"timezone"`
-	Start    time.Time `json:"start"`
-	End      time.Time `json:"end"`
-}
-type visitState struct {
-	Version         int           `json:"version"`
-	Visits          []quota.Visit `json:"visits"`
-	HighestAt       time.Time     `json:"highest_at"`
-	Timezone        string        `json:"timezone"`
-	Windows         []dayWindow   `json:"windows"`
-	InProgress      bool          `json:"in_progress"`
-	EndedAt         time.Time     `json:"ended_at"`
-	GapSeconds      int           `json:"gap_seconds"`
-	VerifyPending   bool          `json:"verify_pending"`
-	VerifyURL       string        `json:"verify_url"`
-	VerifyLevel     int           `json:"verify_level"`
-	LastCooldownEnd time.Time     `json:"last_cooldown_end"`
-	CooldownUntil   time.Time     `json:"cooldown_until"`
-	ManualUsed      bool          `json:"manual_used"`
-	DeniedUntil     time.Time     `json:"denied_until"`
-}
+type dayWindow = experimentstate.DayWindow
+type visitState = experimentstate.State
 type journal struct {
 	mu       sync.Mutex
 	path     string
@@ -80,14 +60,29 @@ func openJournalAt(dir, profile string, s experimentSettings, clock func() time.
 	b, err := os.ReadFile(j.path)
 	if os.IsNotExist(err) {
 		_, profileErr := os.Stat(profile)
-		if dirErr == nil || !os.IsNotExist(profileErr) {
+		profiles := []string{profile}
+		branch := filepath.Base(filepath.Dir(dir))
+		if branch == "experiment" || branch == "experiment-fixture" {
+			legacy := "browser"
+			if branch == "experiment-fixture" {
+				legacy = "browser-fixture"
+			}
+			profiles = append(profiles, filepath.Join(filepath.Dir(filepath.Dir(dir)), legacy, filepath.Base(dir)))
+		}
+		if dirErr == nil && !experimentstate.InitialLogsOnly(dir, profiles...) || !os.IsNotExist(profileErr) {
 			return nil, j.broken()
 		}
-		j.state = visitState{Version: 1, Timezone: s.Timezone, HighestAt: clock().UTC()}
+		j.state = visitState{Version: experimentstate.Version, Timezone: s.Timezone, HighestAt: clock().UTC()}
 	} else if err != nil {
 		return nil, j.broken()
-	} else if !validState(b, &j.state) {
-		return nil, j.broken()
+	} else {
+		j.state, err = experimentstate.Decode(b)
+		if errors.Is(err, experimentstate.ErrVersion) {
+			return nil, errors.New("实验访问记录版本不兼容，请更新程序；原记录和浏览器配置已保留，不需要删除或重新扫码")
+		}
+		if err != nil {
+			return nil, j.broken()
+		}
 	}
 	now := j.effectiveNow()
 	if j.state.Timezone != s.Timezone {
@@ -119,48 +114,6 @@ func openJournalAt(dir, profile string, s experimentSettings, clock func() time.
 	}
 	good = true
 	return j, nil
-}
-
-func validState(b []byte, state *visitState) bool {
-	var fields map[string]json.RawMessage
-	if json.Unmarshal(b, &fields) != nil {
-		return false
-	}
-	for _, key := range []string{"version", "visits", "highest_at", "timezone", "windows", "in_progress", "ended_at", "gap_seconds", "verify_pending", "verify_url", "verify_level", "last_cooldown_end", "cooldown_until", "manual_used", "denied_until"} {
-		value, ok := fields[key]
-		if !ok || bytes.Equal(bytes.TrimSpace(value), []byte("null")) && key != "visits" && key != "windows" {
-			return false
-		}
-	}
-	dec := json.NewDecoder(bytes.NewReader(b))
-	dec.DisallowUnknownFields()
-	if dec.Decode(state) != nil || state.Version != 1 || state.Timezone == "" || state.HighestAt.IsZero() || state.VerifyLevel < 0 || state.GapSeconds < 0 || int64(state.GapSeconds) > math.MaxInt64/int64(time.Second) {
-		return false
-	}
-	if _, err := time.LoadLocation(state.Timezone); err != nil {
-		return false
-	}
-	if state.EndedAt.IsZero() != (state.GapSeconds == 0) || state.EndedAt.After(state.HighestAt) || state.LastCooldownEnd.After(state.HighestAt) {
-		return false
-	}
-	if (state.VerifyPending || !state.CooldownUntil.IsZero() || !state.LastCooldownEnd.IsZero()) && state.VerifyLevel < 1 {
-		return false
-	}
-	for _, visit := range state.Visits {
-		if visit.At.IsZero() || visit.At.After(state.HighestAt) || visit.Kind != quota.Search && visit.Kind != quota.Detail {
-			return false
-		}
-	}
-	for _, window := range state.Windows {
-		_, err := time.LoadLocation(window.Timezone)
-		if err != nil || window.Timezone == "" || window.Start.IsZero() || window.End.IsZero() {
-			return false
-		}
-		if !window.Start.Before(window.End) || window.Start.After(state.HighestAt) {
-			return false
-		}
-	}
-	return true
 }
 
 func dayBounds(now time.Time) (time.Time, time.Time) {

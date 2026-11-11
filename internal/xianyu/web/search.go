@@ -152,6 +152,7 @@ func (r *Runner) Search(ctx context.Context, keyword string) (*browser.Response,
 	if err != nil {
 		return nil, fmt.Errorf("找首页搜索框：%w", err)
 	}
+	r.observation("search_input", map[string]any{"found": true, "selector": how, "input_tag": strings.ToLower(input.NodeName)})
 	r.Log("找到搜索框", map[string]any{"方式": how, "placeholder": input.AttributeValue("placeholder")})
 	if err := r.H.Click(ctx, input); err != nil {
 		return nil, err
@@ -164,6 +165,7 @@ func (r *Runner) Search(ctx context.Context, keyword string) (*browser.Response,
 	if err != nil {
 		return nil, err
 	}
+	r.observation("search_prefill", map[string]any{"has_value": v != "", "has_placeholder": input.AttributeValue("placeholder") != ""})
 	if v != "" {
 		if err := r.H.Clear(ctx); err != nil {
 			return nil, err
@@ -206,8 +208,10 @@ func (r *Runner) Search(ctx context.Context, keyword string) (*browser.Response,
 		if cerr := r.check(ctx, "提交搜索"); cerr != nil {
 			return nil, cerr
 		}
+		r.observation("search_same_tab", false)
 		return nil, fmt.Errorf("回车后没有进入搜索结果页：%w", err)
 	}
+	r.observation("search_same_tab", true)
 	resp, err := r.waitAPI(ctx, mark, r.Site.searchAPI(), "搜索结果页", rules.timeout("search_response"))
 	if err != nil {
 		return nil, err
@@ -217,21 +221,28 @@ func (r *Runner) Search(ctx context.Context, keyword string) (*browser.Response,
 	if err != nil {
 		return nil, errors.New("搜索结果页网址无效")
 	}
-	if q := u.Query().Get("q"); normalizeKeyword(q) != normalizeKeyword(keyword) {
+	queryMatches := normalizeKeyword(u.Query().Get("q")) == normalizeKeyword(keyword)
+	r.observation("search_url", map[string]any{"path": u.Path, "keyword_matches": queryMatches})
+	r.observation("chinese_input", map[string]any{"keyword_matches": queryMatches, "method": "Input.insertText"})
+	r.observation("search_suggestion", map[string]any{"submitted_keyword_matches": queryMatches})
+	if !queryMatches {
 		return nil, errors.New("结果页的关键词与本次搜索不一致")
 	}
 	// 只保留诊断需要的路径和用户输入的关键词。
 	loggedURL := url.URL{Scheme: u.Scheme, Host: u.Host, Path: u.Path, RawQuery: url.Values{"q": {keyword}}.Encode()}
 	r.Log("进入搜索结果页", map[string]any{"网址": loggedURL.String()})
-	if _, err := r.H.FirstVisible(ctx, rules.Selectors.SearchReady, rules.timeout("search_ready")); err != nil {
+	if ready, err := r.H.FirstVisible(ctx, rules.Selectors.SearchReady, rules.timeout("search_ready")); err != nil {
 		if cerr := r.check(ctx, "等筛选栏"); cerr != nil {
 			return nil, cerr
 		}
 		return nil, fmt.Errorf("结果页上找不到「新发布」，页面结构可能变了：%w", err)
+	} else {
+		r.observation("filter_container", nodeContainer(ready))
 	}
 	if err := r.closeAd(ctx); err != nil {
 		return nil, err
 	}
+	r.observeSearch(resp.Body)
 	return resp, r.check(ctx, "搜索完成")
 }
 
@@ -335,9 +346,13 @@ func (r *Runner) searchStep(ctx context.Context, name string, repeatable bool, e
 func (r *Runner) clickText(ctx context.Context, text string) error {
 	sel := "//*[normalize-space(.)='" + text + "' and not(.//*[normalize-space(.)='" + text + "'])]"
 	n, err := r.H.FirstVisible(ctx, sel, rules.timeout("element"))
+	r.observation("rule_selectors", map[string]any{"text": text, "found": err == nil})
 	r.Log("查找页面元素", map[string]any{"文字": text, "找到": err == nil, "规则版本": rules.Version})
 	if err != nil {
-		return err
+		return r.ReportFailure(ctx, "查找页面元素："+text, err, nil)
+	}
+	if text == rules.Text.PublishLatest {
+		r.observation("publish_container", nodeContainer(n))
 	}
 	if err := r.check(ctx, "点「"+text+"」之前"); err != nil {
 		return err

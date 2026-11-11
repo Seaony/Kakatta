@@ -84,8 +84,12 @@ func (r *Runner) OpenSeller(ctx context.Context, sellerID string) (out SellerPag
 	} else {
 		head, err := xianyu.ParseSellerHead(headResponse.Body)
 		if err != nil {
+			if failure := r.ReportFailure(ctx, "解析卖家头部", err, headResponse); errors.Is(failure, ErrDiagnostics) {
+				return out, failure
+			}
 			out.warn("run.seller_head_failed")
 		} else {
+			r.observeSellerHead(headResponse.Body)
 			out.Head = &head
 		}
 	}
@@ -101,6 +105,12 @@ func (r *Runner) OpenSeller(ctx context.Context, sellerID string) (out SellerPag
 	} else {
 		items, err := xianyu.ParseSellerItems(itemsResponse.Body)
 		if err != nil || !items.ListKnown {
+			if err == nil {
+				err = fmt.Errorf("卖家商品缺少列表字段")
+			}
+			if failure := r.ReportFailure(ctx, "解析卖家商品", err, itemsResponse); errors.Is(failure, ErrDiagnostics) {
+				return out, failure
+			}
 			out.warn("run.seller_items_failed")
 		} else {
 			if items.Items == nil {
@@ -187,9 +197,16 @@ func (r *Runner) readSellerRatings(ctx context.Context, out *SellerPage) error {
 	}
 	ratings, err := xianyu.ParseSellerRatings(response.Body)
 	if err != nil || !ratings.ListKnown {
+		if err == nil {
+			err = fmt.Errorf("卖家评价缺少列表字段")
+		}
+		if failure := r.ReportFailure(ctx, "解析卖家评价", err, response); errors.Is(failure, ErrDiagnostics) {
+			return failure
+		}
 		out.warn("run.seller_ratings_failed")
 		return nil
 	}
+	r.observeRatings(response.Body)
 	if ratings.Recent == nil {
 		ratings.Recent = []xianyu.Rating{}
 	}

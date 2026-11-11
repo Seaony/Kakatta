@@ -12,9 +12,10 @@ import (
 )
 
 func (c *controller) stopManual(r *resources, err error) error {
-	if !errors.Is(err, web.ErrDenied) && !errors.Is(err, web.ErrEnvBlocked) && !errors.Is(err, web.ErrLoginExpired) {
+	if !errors.Is(err, web.ErrDenied) && !errors.Is(err, web.ErrEnvBlocked) && !errors.Is(err, web.ErrLoginExpired) && !errors.Is(err, web.ErrDiagnostics) {
 		return err
 	}
+	err = c.finalError(context.Background(), r, "人工验证", err)
 	current, _ := r.chrome.URL()
 	err = errors.Join(err, c.journal.risk(err, current), c.detach(r))
 	c.phase("failed", err)
@@ -73,11 +74,12 @@ func (c *controller) verify(ctx context.Context) error {
 		return err
 	}
 	defer c.release()
+	c.beginSummary("verify")
 	job, stop := context.WithTimeout(job, 10*time.Minute)
 	defer stop()
 	r, err := c.makeResources(job, true)
 	if err != nil {
-		err = errors.Join(err, c.journal.finish())
+		err = c.finalError(job, r, "打开验证画面", errors.Join(err, c.journal.finish()))
 		c.phase("failed", err)
 		return err
 	}
@@ -89,6 +91,7 @@ func (c *controller) verify(ctx context.Context) error {
 		err = r.chrome.Navigate(target, 30*time.Second)
 	}
 	if err != nil {
+		err = c.finalError(job, r, "打开验证网址", err)
 		c.detach(r)
 		c.phase("failed", err)
 		return err

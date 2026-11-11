@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Seaony/Kakatta/internal/browser"
@@ -64,21 +65,25 @@ type Budget interface {
 	Acquire(kind quota.Kind, what string) error
 }
 
-// Logger 记录每一步做了什么，给实验和运行日志用。不能记录接口正文和 Cookie。
+// Logger 记录每一步做了什么，给实验和运行日志用。平时不记录正文和 Cookie；解析失败仅交给本机诊断回调。
 type Logger func(event string, fields map[string]any)
 
 // Runner 在一个已经启动的浏览器里执行闲鱼上的操作。
 type Runner struct {
-	S      *browser.Session
-	H      *browser.Human
-	P      *pacer.Pacer
-	Site   Site
-	Pace   Pace
-	Budget Budget
-	Log    Logger
+	S        *browser.Session
+	H        *browser.Human
+	P        *pacer.Pacer
+	Site     Site
+	Pace     Pace
+	Budget   Budget
+	Log      Logger
+	Diagnose func(context.Context, Diagnostic) error
 
-	since        uint64 // 风控检查从这里开始查，见 checkResponses
-	handledRisks map[uint64]handledRisk
+	since            uint64 // 风控检查从这里开始查，见 checkResponses
+	handledRisks     map[uint64]handledRisk
+	observationMu    sync.Mutex
+	observed         map[string]string
+	observedFrameURL string
 
 	// SearchInput 是首页搜索框的选择器；为空时自动找（XIANYU.md 3.6 节：还没用真实页面确认）。
 	SearchInput string
