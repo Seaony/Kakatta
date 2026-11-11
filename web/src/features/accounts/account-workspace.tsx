@@ -35,6 +35,7 @@ export function AccountWorkspace({ accountId, onDeleted, onAccount }: {
   const [editing, setEditing] = useState(false);
   const [confirm, setConfirm] = useState<'delete' | 'logout' | null>(null);
   const [revealedSessionID, setRevealedSessionID] = useState<string | null>(null);
+  const [now, setNow] = useState(Date.now);
   const settings = useQuery({
     enabled: auth?.authenticated !== false,
     queryKey: apiKey('settings'),
@@ -43,6 +44,9 @@ export function AccountWorkspace({ accountId, onDeleted, onAccount }: {
   const settingZone = settings.data?.values['general.timezone'];
   const timeZone = typeof settingZone === 'string' ? settingZone : 'UTC';
   const account = accountQuery.data;
+  const gap = account?.last_run_ended_at != null && account.next_gap_seconds !== null
+    ? account.last_run_ended_at + account.next_gap_seconds * 1_000 : null;
+  const waitingForGap = gap !== null && Number.isSafeInteger(gap) && gap > now;
   const session = account?.session ?? null;
   const revealed = session !== null && session.id === revealedSessionID;
   const sessionGone = useCallback(() => {
@@ -56,6 +60,12 @@ export function AccountWorkspace({ accountId, onDeleted, onAccount }: {
   useEffect(() => {
     if (auth?.authenticated === false || session?.id !== revealedSessionID) setRevealedSessionID(null);
   }, [auth?.authenticated, session?.id, revealedSessionID]);
+  useEffect(() => {
+    setNow(Date.now());
+    if (!waitingForGap) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [gap, waitingForGap]);
 
   if (!account || (accountQuery.error instanceof ApiError && accountQuery.error.status === 404 && confirm === null)) {
     if (accountQuery.isPending) return <StatePanel kind="pending" label={t('common.loading')}><Skeleton className="h-[8rem]" /></StatePanel>;
@@ -66,8 +76,6 @@ export function AccountWorkspace({ accountId, onDeleted, onAccount }: {
   const proxyName = account.proxy_id === null ? t('accounts.proxy_none')
     : availableProxies.find((proxy) => proxy.id === account.proxy_id)?.name ?? `${t('accounts.proxy')} #${account.proxy_id}`;
   const time = (value: number) => `${formatDateTime(value, locale, timeZone)} (${timeZone})`;
-  const gap = account.last_run_ended_at !== null && account.next_gap_seconds !== null
-    ? account.last_run_ended_at + account.next_gap_seconds * 1_000 : null;
   const manualSession = session !== null && (session.kind !== 'run' || session.phase === 'verify_hold' || session.phase === 'verifying');
   const open = (kind: 'login' | 'verification') => {
     void operation.run(async () => kind === 'login'
@@ -101,7 +109,7 @@ export function AccountWorkspace({ accountId, onDeleted, onAccount }: {
     )}
     <dl className="space-y-md text-body"><div className="flex flex-wrap justify-between gap-md"><dt className="text-text-secondary">{t('accounts.proxy')}</dt><dd className="break-words">{proxyName}</dd></div></dl>
     <p className="max-w-prose text-body text-text-secondary">{t('accounts.proxy_fixed')}</p>
-    {gap !== null && Number.isSafeInteger(gap) && <p className="text-body text-text-secondary">{t('accounts.gap', { time: time(gap) })}</p>}
+    {waitingForGap && <p className="text-body text-text-secondary">{t('accounts.gap', { time: time(gap) })}</p>}
     {operation.errorText && <InlineMessage tone="danger">{operation.errorText}</InlineMessage>}
     {operation.nextAllowedAt !== null && <p className="text-body tabular-nums">{t('accounts.next_allowed', { time: time(operation.nextAllowedAt) })}</p>}
     <div className="flex flex-wrap gap-sm">

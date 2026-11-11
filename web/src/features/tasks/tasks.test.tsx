@@ -11,6 +11,7 @@ import { createAppQueryClient } from '../../app/query-client';
 import { AuthenticationContext } from '../../app/auth-state';
 import { UnsavedChangesProvider } from '../../app/unsaved-changes';
 import { createI18n, I18nProvider, type Locale } from '../../i18n';
+import { formatDateTime } from '../../i18n/format';
 import { TaskEditor, TaskSaveFeedback, TasksPage } from './index';
 
 const clients: QueryClient[] = [];
@@ -365,6 +366,18 @@ describe('真实需求生成', () => {
 });
 
 describe('任务运行与保存影响', () => {
+  test.each(['zh-CN', 'en', 'ja'] as const)('%s暂停任务不显示旧计划，启用任务继续显示计划', async (locale) => {
+    const at = Date.UTC(2026, 10, 11, 12, 37, 35), t = createI18n(locale).t;
+    const paused = view({ enabled: false, next_run_at: at }), active = view({ id: 18, name: '启用的相机', enabled: true, next_run_at: at });
+    await mount(<TasksPage />, (request) => new URL(request.url).pathname === '/api/v1/tasks' && request.method === 'GET'
+      ? json({ items: [paused, active], next_cursor: null, total: 2 }) : undefined, { locale });
+    const planned = t('tasks.runtime.next', { time: formatDateTime(at, locale, 'Asia/Shanghai') });
+    const row = await screen.findByRole('article', { name: paused.name });
+    expect(within(row).getByText(t('tasks.paused'))).toBeTruthy();
+    expect(within(row).queryByText(planned) === null).toBe(true);
+    expect(within(screen.getByRole('article', { name: active.name })).getByText(planned)).toBeTruthy();
+  });
+
   test('202仅表示接纳，暂停任务手动运行不发enabled更新', async () => {
     let accepted = false;
     const mounted = await mount(<TasksPage />, (request) => {

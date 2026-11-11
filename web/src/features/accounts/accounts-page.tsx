@@ -16,12 +16,16 @@ export function AccountsPage({ accountId, onAccountChange }: AccountsPageProps) 
   const auth = useAuthentication();
   const accounts = useAccounts();
   const [localID, setLocalID] = useState<number>();
+  const [browsing, setBrowsing] = useState(false);
   const [adding, setAdding] = useState(false);
   const dialogOpen = useRef(false);
   const showAdd = (value: boolean) => { dialogOpen.current = value; setAdding(value); };
-  const selected = onAccountChange ? accountId : accountId ?? localID;
-  const select = (id: number | undefined) => onAccountChange ? onAccountChange(id) : setLocalID(id);
   const items = uniqueByID(accounts.data?.pages.flatMap((page) => page.items) ?? []);
+  const selected = (onAccountChange ? accountId : accountId ?? localID) ?? (browsing ? undefined : items[0]?.id);
+  const select = (id: number | undefined) => {
+    setBrowsing(id === undefined);
+    if (onAccountChange) onAccountChange(id); else setLocalID(id);
+  };
 
   return <fieldset disabled={auth?.authenticated === false} className="min-w-0 space-y-xxl border-0 p-0">
     <PageHeader title={t('accounts.title')} description={t('accounts.description')} actions={<Button variant="primary" onClick={() => showAdd(true)}>{t('accounts.add')}</Button>} />

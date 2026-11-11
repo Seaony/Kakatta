@@ -9,7 +9,7 @@ import { ApiProvider } from '../../api/hooks';
 import type { Schema } from '../../api/types';
 import { createAppQueryClient } from '../../app/query-client';
 import { AuthenticationContext } from '../../app/auth-state';
-import { createI18n, I18nProvider } from '../../i18n';
+import { createI18n, I18nProvider, type Locale } from '../../i18n';
 import { AccountConnect, AccountsPage } from './index';
 import { ManualSession, remotePath } from './manual-session';
 
@@ -54,7 +54,7 @@ const proxy: Schema<'ProxyView'> = { id: 11, name: '固定住宅网络', configu
 const json = (data: unknown, status = 200) => Response.json(data, { status });
 const failure = (status: number, code: string, fields: Schema<'FieldIssue'>[] = []) => json({ error: { code, args: {} }, fields, request_id: 'local-request-7' }, status);
 
-function mount(children: ReactNode, handle: (request: Request) => Promise<Response> | Response) {
+function mount(children: ReactNode, handle: (request: Request) => Promise<Response> | Response, locale: Locale = 'zh-CN') {
   const queryClient = createAppQueryClient();
   const api = createApiClient({ fetch: async (request) => {
     const path = new URL(request.url).pathname;
@@ -62,11 +62,68 @@ function mount(children: ReactNode, handle: (request: Request) => Promise<Respon
     if (path === '/api/v1/proxies' && request.method === 'GET') return json({ items: [proxy], next_cursor: null, total: 1 });
     return handle(request);
   } });
-  const view = render(<I18nProvider instance={createI18n()}><QueryClientProvider client={queryClient}><ApiProvider api={api}>{children}</ApiProvider></QueryClientProvider></I18nProvider>);
+  const view = render(<I18nProvider instance={createI18n(locale)}><QueryClientProvider client={queryClient}><ApiProvider api={api}>{children}</ApiProvider></QueryClientProvider></I18nProvider>);
   return { ...view, queryClient };
 }
 
 describe('账号连接与人工会话', () => {
+  test.each(['zh-CN', 'en', 'ja'] as const)('%s默认展示首个账号，返回列表后仍可主动选择', async (locale) => {
+    const first = account(), second = account({ id: 8, name: '书房网络' });
+    const current = [first, second];
+    const t = createI18n(locale).t;
+    const page = mount(<AccountsPage />, (request) => {
+      const path = new URL(request.url).pathname;
+      if (path === '/api/v1/accounts') return json({ items: current, total: current.length, next_cursor: null });
+      const detail = current.find((item) => path === `/api/v1/accounts/${item.id}`);
+      return detail ? json(detail) : failure(404, 'http.not_found');
+    }, locale);
+    try {
+      await screen.findByRole('region', { name: first.name });
+      expect(screen.queryByText(t('accounts.choose')) === null).toBe(true);
+      await userEvent.click(screen.getByRole('button', { name: t('accounts.back') }));
+      expect(screen.queryByRole('region', { name: first.name }) === null).toBe(true);
+      await userEvent.click(screen.getByRole('button', { name: new RegExp(second.name) }));
+      await screen.findByRole('region', { name: second.name });
+    } finally { page.unmount(); page.queryClient.clear(); }
+  });
+
+  test('只有一个账号也默认展示，显式链接选择的其他账号不被首个覆盖', async () => {
+    const first = account(), second = account({ id: 8, name: '指定账号' });
+    const handler = (items: Schema<'AccountView'>[]) => (request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (path === '/api/v1/accounts') return json({ items, total: items.length, next_cursor: null });
+      return json(items.find((item) => path === `/api/v1/accounts/${item.id}`));
+    };
+    const single = mount(<AccountsPage />, handler([first]));
+    try { await screen.findByRole('region', { name: first.name }); }
+    finally { single.unmount(); single.queryClient.clear(); }
+    const linked = mount(<AccountsPage accountId={8} onAccountChange={() => {}} />, handler([first, second]));
+    try {
+      await screen.findByRole('region', { name: second.name });
+      expect(screen.queryByRole('region', { name: first.name }) === null).toBe(true);
+    } finally { linked.unmount(); linked.queryClient.clear(); }
+  });
+
+  test.each(['zh-CN', 'en', 'ja'] as const)('%s账号间隔仅在未到期时显示，到期自动消失且不增加请求', async (locale) => {
+    const at = Date.now();
+    const clock = spyOn(Date, 'now').mockReturnValue(at);
+    const current = account({ last_run_ended_at: at - 2_000, next_gap_seconds: 3 });
+    let detailReads = 0;
+    const t = createI18n(locale).t;
+    const prefix = t('accounts.gap', { time: '__TIME__' }).split('__TIME__')[0]!;
+    const gapText = (text: string) => text.startsWith(prefix);
+    const page = mount(<AccountsPage accountId={7} />, (request) => {
+      if (new URL(request.url).pathname === '/api/v1/accounts/7') { detailReads += 1; return json(current); }
+      return json({ items: [current], total: 1, next_cursor: null });
+    }, locale);
+    try {
+      await screen.findByText(gapText);
+      clock.mockReturnValue(at + 1_000);
+      await waitFor(() => expect(screen.queryByText(gapText) === null).toBe(true), { timeout: 1_500 });
+      expect(detailReads).toBe(1);
+    } finally { clock.mockRestore(); page.unmount(); page.queryClient.clear(); }
+  });
+
   test.each([
     ['退出后的拒绝暂停', 'denied', true, '暂停到 2026/11/11 10:30:00 (Asia/Shanghai)，之后需要重新扫码登录。', false],
     ['退出后的冷却', 'cooling', true, '暂停到 2026/11/11 10:30:00 (Asia/Shanghai)，之后需要重新扫码登录。', false],
@@ -121,10 +178,15 @@ describe('账号连接与人工会话', () => {
     view.unmount(); view.queryClient.clear();
 
     const states: Schema<'AccountState'>[] = ['signed_out', 'active', 'cooling', 'needs_verification', 'denied', 'expired'];
-    const list = mount(<AccountsPage />, (request) => request.method === 'GET'
-      ? json({ items: states.map((state, index) => account({ id: index + 1, state })), total: states.length, next_cursor: null })
-      : failure(404, 'http.not_found'));
-    for (const label of ['未登录', '可用', '冷却中', '需要验证', '被拒绝访问', '已失效']) await screen.findByText(label);
+    const stateAccounts = states.map((state, index) => account({ id: index + 1, state }));
+    const list = mount(<AccountsPage />, (request) => {
+      const path = new URL(request.url).pathname;
+      if (request.method === 'GET' && path === '/api/v1/accounts') return json({ items: stateAccounts, total: states.length, next_cursor: null });
+      const detail = stateAccounts.find((item) => path === `/api/v1/accounts/${item.id}`);
+      return detail ? json(detail) : failure(404, 'http.not_found');
+    });
+    const stateList = within(await screen.findByRole('region', { name: createI18n().t('accounts.title') }));
+    for (const label of ['未登录', '可用', '冷却中', '需要验证', '被拒绝访问', '已失效']) await stateList.findByText(label);
     list.unmount(); list.queryClient.clear();
   });
 
