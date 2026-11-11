@@ -15,6 +15,7 @@
     line-height: var(--line-body);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    scroll-padding-bottom: calc(8rem + env(safe-area-inset-bottom));
   }
 
   body {

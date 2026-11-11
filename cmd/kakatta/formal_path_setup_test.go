@@ -146,7 +146,7 @@ func formalSetup(t *testing.T, browser context.Context, events *webSmokeEvents, 
 	formalSnapshot(t, browser, events, "05-generated-profile")
 	formalSetupButton(t, browser, events, "//main", "tasks.save")
 	waitWebSmoke(t, browser, events, `(finish) => [...document.querySelectorAll('main button')].some(node => node.textContent.trim() === finish && node.getClientRects().length)`, smokeTranslation(t, locales.ZhCN, "web.onboarding.finish"))
-	if formalScalar(t, `SELECT count(*) FROM tasks WHERE name=? AND keyword='MacBook Pro' AND judge_mode='ai' AND enabled=1 AND interval_minutes=1 AND min_price=500000 AND max_price=1500000 AND max_pages=2 AND json_array_length(profile_json,'$.specs')>0`, "正式流程相机监控") != 1 {
+	if formalScalar(t, `SELECT count(*) FROM tasks WHERE name=? AND keyword='MacBook Pro' AND judge_mode='ai' AND enabled=1 AND interval_minutes=1 AND min_price=500000 AND max_price=1500000 AND max_pages=2 AND requirement=? AND crawl_overrides_json='{}' AND json_array_length(profile_json,'$.specs')>0`, "正式流程相机监控", "自用 MacBook Pro，型号一致、无拆修，价格合适时提醒我。") != 1 {
 		t.Fatal("网页保存的任务、价格筛选、频率或生成画像不完整")
 	}
 	formalSetupButton(t, browser, events, "//main", "web.onboarding.finish")
@@ -196,36 +196,66 @@ func formalFastSettings(t *testing.T, browser context.Context, events *webSmokeE
 			formalScalar(t, `SELECT count(*) FROM settings WHERE key='general.language' AND value_json='"zh-CN"'`) == 1
 	})
 	formalSetupVisit(t, browser, events, "/settings/limits", "web.settings.limits_title")
-	for _, field := range []struct{ key, value string }{
-		{"account_min_gap_seconds", "2"}, {"account_min_gap_jitter_seconds", "0"}, {"interval_jitter_percent", "0"},
-		{"account_hourly_visits", "200"}, {"account_daily_search_visits", "1000"}, {"account_daily_detail_visits", "1000"},
-		{"max_details_per_run", "10"},
-		{"verify_cooldown_base_minutes", "1"}, {"verify_cooldown_max_minutes", "1"},
-	} {
-		formalSetupInput(t, browser, events, "#setting-crawl-"+field.key+" input", field.value)
+	scalarFields := []struct {
+		key   string
+		value int64
+	}{
+		{"account_min_gap_seconds", 2}, {"account_min_gap_jitter_seconds", 0}, {"interval_jitter_percent", 0},
+		{"account_hourly_visits", 200}, {"account_daily_search_visits", 1000}, {"account_daily_detail_visits", 1000},
+		{"max_details_per_run", 10}, {"verify_cooldown_base_minutes", 1}, {"verify_cooldown_max_minutes", 1},
 	}
-	for _, key := range []string{"home_stay_seconds", "page_wait_seconds", "detail_pre_wait_seconds", "detail_stay_seconds", "action_wait_seconds", "typing_interval_ms"} {
-		value := "0.01"
-		if key == "typing_interval_ms" {
-			value = "1"
-		}
+	rangeFields := []struct {
+		key   string
+		value float64
+	}{
+		{"home_stay_seconds", 0.01}, {"page_wait_seconds", 0.01}, {"detail_pre_wait_seconds", 0.01},
+		{"detail_stay_seconds", 0.01}, {"action_wait_seconds", 0.01}, {"typing_interval_ms", 1},
+	}
+	expected := make(map[string]string)
+	for _, field := range scalarFields {
+		selector := "#setting-crawl-" + field.key + " input"
+		value := strconv.FormatInt(field.value, 10)
+		expected[selector] = value
+		formalSetupInput(t, browser, events, selector, value)
+	}
+	for _, field := range rangeFields {
+		value := strconv.FormatFloat(field.value, 'f', -1, 64)
 		for index := 1; index <= 2; index++ {
-			formalSetupInput(t, browser, events, fmt.Sprintf(`(//*[@id="setting-crawl-%s"]//input)[%d]`, key, index), value)
+			selector := fmt.Sprintf(`(//*[@id="setting-crawl-%s"]//input)[%d]`, field.key, index)
+			expected[selector] = value
+			formalSetupInput(t, browser, events, selector, value)
 		}
 	}
+	waitWebSmoke(t, browser, events, `(expected) => Object.entries(expected).every(([selector, value]) => {
+		const node = selector.startsWith('(') ? document.evaluate(selector, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue : document.querySelector(selector);
+		return node?.value === value;
+	})`, expected)
 	formalSetupButton(t, browser, events, "//main", "web.settings.save")
 	formalSettingsSaved(t, browser, events, "web.settings.saved", "web.settings.save")
 	formalWait(t, browser, "网页加速设置已保存", 10*time.Second, func() bool {
-		return formalScalar(t, "SELECT count(*) FROM settings WHERE key='crawl.account_min_gap_seconds' AND value_json='2'") == 1 &&
-			formalScalar(t, "SELECT count(*) FROM settings WHERE key='general.update_check' AND value_json='false'") == 1
+		for _, field := range scalarFields {
+			if formalScalar(t, "SELECT count(*) FROM settings WHERE key=? AND json_extract(value_json,'$')=?", "crawl."+field.key, field.value) != 1 {
+				return false
+			}
+		}
+		for _, field := range rangeFields {
+			if formalScalar(t, "SELECT count(*) FROM settings WHERE key=? AND json_extract(value_json,'$.min')=? AND json_extract(value_json,'$.max')=?", "crawl."+field.key, field.value, field.value) != 1 {
+				return false
+			}
+		}
+		return formalScalar(t, "SELECT count(*) FROM settings WHERE key='general.update_check' AND value_json='false'") == 1
 	})
 	formalSetupVisit(t, browser, events, "/settings/ai", "web.ai.title")
 	formalSetupFillLabel(t, browser, events, "settings.ai.request_timeout_seconds.label", "1")
 	formalSetupFillLabel(t, browser, events, "settings.ai.image_count.label", "1")
+	waitWebSmoke(t, browser, events, `(labels) => labels.every(label => {
+		const node = [...document.querySelectorAll('main label')].find(node => node.textContent.trim() === label);
+		return node && document.getElementById(node.htmlFor)?.value === '1';
+	})`, []string{smokeTranslation(t, locales.ZhCN, "settings.ai.request_timeout_seconds.label"), smokeTranslation(t, locales.ZhCN, "settings.ai.image_count.label")})
 	formalSetupButton(t, browser, events, "//main", "web.ai.save")
 	formalSettingsSaved(t, browser, events, "web.ai.saved", "web.ai.save")
 	formalWait(t, browser, "网页模型超时已保存", 10*time.Second, func() bool {
-		return formalScalar(t, "SELECT count(*) FROM settings WHERE key='ai.request_timeout_seconds' AND value_json='1'") == 1
+		return formalScalar(t, "SELECT count(*) FROM settings WHERE key IN ('ai.request_timeout_seconds','ai.image_count') AND value_json='1'") == 2
 	})
 	formalSetupVisit(t, browser, events, "/onboarding", "web.onboarding.title")
 }
@@ -272,7 +302,38 @@ func formalSetupButton(t *testing.T, browser context.Context, events *webSmokeEv
 
 func formalSetupInput(t *testing.T, browser context.Context, events *webSmokeEvents, selector, value string) {
 	t.Helper()
-	runWebSmoke(t, browser, events, chromedp.Click(chromedp.Search(selector)), chromedp.KeyEvent("a", chromedp.KeyModifiers(chromedp.ModifierCtrl)), chromedp.KeyEvent(kb.Backspace), chromedp.SendKeys(chromedp.Search(selector), value))
+	target := `(selector => selector.startsWith('//') || selector.startsWith('(') ? document.evaluate(selector, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue : document.querySelector(selector))(` + strconv.Quote(selector) + `)`
+	// 滚到中间，避免输入框被底部固定的保存栏挡住。
+	runWebSmoke(t, browser, events, chromedp.WaitVisible(chromedp.Search(selector)), chromedp.Evaluate[chromedp.Void](target+`.scrollIntoView({block:'center', inline:'nearest', behavior:'instant'})`))
+	waitWebSmoke(t, browser, events, `() => {
+		const node = `+target+`;
+		if (!node || node.disabled) return false;
+		const rect = node.getBoundingClientRect();
+		return !!rect.width && !!rect.height && node.contains(document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2));
+	}`)
+	runWebSmoke(t, browser, events, chromedp.Click(chromedp.Search(selector)))
+	oldLength := -1
+	check := func(expected, stage string, exact bool) {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(browser, time.Second)
+		defer cancel()
+		state, err := chromedp.Run(ctx, chromedp.Evaluate[struct {
+			Length  int  `json:"length"`
+			Focused bool `json:"focused"`
+			Matches bool `json:"matches"`
+		}](`(() => { const node = `+target+`; return {length: node?.value.length ?? -1, focused: node === document.activeElement, matches: node?.value === `+strconv.Quote(expected)+`}; })()`))
+		if oldLength < 0 {
+			oldLength = state.Length
+		}
+		if err != nil || !state.Focused || exact && !state.Matches {
+			t.Fatalf("输入框%s阶段失败：%s，旧值长度%d，当前长度%d，仍聚焦%t：%v", stage, selector, oldLength, state.Length, state.Focused, err)
+		}
+	}
+	check("", "聚焦", false)
+	runWebSmoke(t, browser, events, chromedp.KeyEvent("a", chromedp.KeyModifiers(chromedp.ModifierCtrl)), chromedp.KeyEvent(kb.Backspace))
+	check("", "清空", true)
+	runWebSmoke(t, browser, events, chromedp.SendKeys(chromedp.Search(selector), value))
+	check(value, "填写", true)
 }
 
 func formalSetupFillLabel(t *testing.T, browser context.Context, events *webSmokeEvents, code, value string) {
