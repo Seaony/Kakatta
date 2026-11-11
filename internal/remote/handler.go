@@ -112,12 +112,12 @@ func (s *Session) serveVNC(w http.ResponseWriter, r *http.Request, onAccepted fu
 		return
 	}
 	if !s.register(upstream) {
-		ws.CloseNow()
+		s.closeViewer(ws)
 		return
 	}
 	defer func() {
 		upstream.Close()
-		ws.CloseNow()
+		s.closeViewer(ws)
 		s.unregister(upstream)
 	}()
 	if onAccepted != nil {
@@ -125,7 +125,8 @@ func (s *Session) serveVNC(w http.ResponseWriter, r *http.Request, onAccepted fu
 			return
 		}
 	}
-	client := websocket.NetConn(ctx, ws, websocket.MessageBinary)
+	// 主循环先发送会话结束标记再关连接，不能让取消先掐断握手。
+	client := websocket.NetConn(context.WithoutCancel(ctx), ws, websocket.MessageBinary)
 	finished := make(chan struct{}, 2)
 	go func() { io.Copy(upstream, client); finished <- struct{}{} }()
 	go func() { io.Copy(client, upstream); finished <- struct{}{} }()
@@ -135,11 +136,22 @@ func (s *Session) serveVNC(w http.ResponseWriter, r *http.Request, onAccepted fu
 		completed++
 	case <-ctx.Done():
 	}
-	cancel()
 	upstream.Close()
-	ws.CloseNow()
+	s.closeViewer(ws)
+	cancel()
 	for completed < 2 {
 		<-finished
 		completed++
+	}
+}
+
+func (s *Session) closeViewer(ws *websocket.Conn) {
+	s.mu.Lock()
+	normal := s.normalEnd
+	s.mu.Unlock()
+	if normal {
+		ws.Close(websocket.StatusNormalClosure, "kakatta-session-ended")
+	} else {
+		ws.CloseNow()
 	}
 }

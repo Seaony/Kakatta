@@ -26,6 +26,7 @@ type Viewport struct {
 
 type Session struct {
 	ctx       context.Context
+	parent    context.Context
 	cancel    context.CancelFunc
 	address   string
 	cmd       *exec.Cmd
@@ -35,6 +36,7 @@ type Session struct {
 	closeErr  error
 	mu        sync.Mutex
 	closed    bool
+	normalEnd bool
 	viewport  *Viewport
 	conns     map[net.Conn]struct{}
 	readers   int
@@ -71,7 +73,7 @@ func StartWithLog(ctx context.Context, display string, output io.Writer) (*Sessi
 	cmd.Stderr = output
 	configureProcess(cmd)
 	sessionCtx, cancel := context.WithCancel(context.Background())
-	s := &Session{ctx: sessionCtx, cancel: cancel, address: address, cmd: cmd, done: make(chan struct{}), conns: map[net.Conn]struct{}{}}
+	s := &Session{ctx: sessionCtx, parent: ctx, cancel: cancel, address: address, cmd: cmd, done: make(chan struct{}), conns: map[net.Conn]struct{}{}}
 	if err := cmd.Start(); err != nil {
 		cancel()
 		return nil, &vncStartError{"reason_start", err}
@@ -79,12 +81,12 @@ func StartWithLog(ctx context.Context, display string, output io.Writer) (*Sessi
 	go func() {
 		cmd.Wait()
 		close(s.done)
-		s.Close()
+		s.close(false)
 	}()
 	go func() {
 		select {
 		case <-ctx.Done():
-			s.Close()
+			s.close(false)
 		case <-s.done:
 		}
 	}()
@@ -158,10 +160,25 @@ func (s *Session) SetViewport(view *Viewport) error {
 }
 
 func (s *Session) Close() error {
+	return s.close(true)
+}
+
+func (s *Session) close(normal bool) error {
 	s.closeOnce.Do(func() {
-		s.cancel()
+		if s.parent != nil && s.parent.Err() != nil {
+			normal = false
+		}
+		select {
+		case <-s.done:
+			normal = false
+		default:
+		}
 		s.mu.Lock()
 		s.closed = true
+		s.normalEnd = normal
+		s.mu.Unlock()
+		s.cancel()
+		s.mu.Lock()
 		for conn := range s.conns {
 			conn.Close()
 		}

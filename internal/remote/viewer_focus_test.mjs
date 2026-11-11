@@ -10,6 +10,8 @@ const transitionStart = rfbSource.indexOf('    _updateConnectionState(state) {')
 const transitionEnd = rfbSource.indexOf('\n    /* Print errors and disconnect', transitionStart);
 assert.ok(transitionStart >= 0 && transitionEnd > transitionStart);
 const transition = rfbSource.slice(transitionStart, transitionEnd).trim().replace('_updateConnectionState(state)', 'function(state)');
+const socketClose = rfbSource.slice(rfbSource.indexOf('    _socketClose(e) {'), rfbSource.indexOf('    _socketError(e) {')).trim().replace('_socketClose(e)', 'function(e)');
+const failure = rfbSource.slice(rfbSource.indexOf('    _fail(details) {'), rfbSource.indexOf('    _setCapability(cap, val) {')).trim().replace('_fail(details)', 'function(details)');
 const region = { x: 400, y: 300, width: 200, height: 200 };
 const dictionaries = Object.fromEntries(await Promise.all(['zh-CN', 'en', 'ja'].map(async language => {
     const dictionary = JSON.parse(await readFile(new URL(`../locales/${language}.json`, import.meta.url), 'utf8'));
@@ -30,24 +32,39 @@ class Element extends EventTarget {
 }
 const event = (node, name) => node.dispatchEvent(new Event(name));
 
-function viewer(language = 'zh-CN', hash = '') {
+function viewer(language = 'zh-CN', hash = '', options = {}) {
     let instances = 0, fetches = 0;
     const errors = [], trace = [];
-    const updateConnectionState = vm.runInNewContext(`(${transition})`, {
+    const stateContext = {
         Log: { Debug() {}, Error(message) { errors.push(message); } },
         setTimeout: () => 1, clearTimeout() {}, DISCONNECT_TIMEOUT: 3,
         CustomEvent: class { constructor(type, options) { this.type = type; this.detail = options.detail; } },
-    });
+    };
+    const updateConnectionState = vm.runInNewContext(`(${transition})`, stateContext);
+    const onSocketClose = vm.runInNewContext(`(${socketClose})`, stateContext);
+    const fail = vm.runInNewContext(`(${failure})`, stateContext);
     const rfb = {
         events: {}, keys: [], disconnects: 0,
         _rfbConnectionState: 'connecting', _disconnTimer: null, _rfbCleanDisconnect: true,
-        _sock: { off() {} }, _disconnect() {},
+        _sock: { off(type) { if (type === 'close') socket.onclose = null; } }, _disconnect() {},
+        _fail(details) { return fail.call(this, details); },
         _updateConnectionState(state) { trace.push(`${this._rfbConnectionState}->${state}`); updateConnectionState.call(this, state); },
         dispatchEvent(event) { this.lastEvent = this.events[event.type]?.(event); },
         addEventListener(type, handler) { this.events[type] = handler; },
         sendKey(keysym, code) { this.keys.push({ keysym, code }); },
         disconnect() { this.disconnects++; this._updateConnectionState('disconnecting'); },
     };
+    let socket;
+    function makeSocket(url) {
+        assert.equal(url, 'ws://localhost/remote/vnc');
+        socket = { handlers: [], closes: 0,
+            addEventListener(type, listener) { assert.equal(type, 'close'); this.handlers.push(listener); },
+            close() { this.closes++; },
+            emitClose(code, reason = '') { const event = { code, reason }; for (const listener of this.handlers) listener(event); this.onclose?.(event); },
+        };
+        options.socket?.(socket);
+        return socket;
+    }
     const scroll = { scrollLeft: 0, scrollTop: 0, clientWidth: 200, clientHeight: 100 };
     const canvas = new Element();
     const host = Object.assign(new Element(), { firstElementChild: scroll, querySelector: () => canvas });
@@ -64,7 +81,13 @@ function viewer(language = 'zh-CN', hash = '') {
     let receive;
     const response = new Promise(resolve => { receive = resolve; });
     vm.runInNewContext(source, {
-        RFB: function(_host, url) { instances++; assert.equal(url, `${origin.replace('http', 'ws')}/remote/vnc`); return rfb; }, document,
+        RFB: function(_host, channel) {
+            instances++;
+            if (options.error) throw options.error;
+            if (typeof channel === 'string') channel = makeSocket(channel);
+            channel.onclose = event => onSocketClose.call(rfb, event);
+            return rfb;
+        }, WebSocket: function(url) { return makeSocket(url); }, document,
         window, location, URL, URLSearchParams,
         matchMedia: () => ({ matches: true }), requestAnimationFrame: callback => frames.push(callback),
         attachTouch: () => () => {}, attachTextInput,
@@ -74,6 +97,7 @@ function viewer(language = 'zh-CN', hash = '') {
         connect() { rfb._updateConnectionState('connected'); return rfb.lastEvent; },
         serverDisconnect() { rfb._updateConnectionState('disconnecting'); rfb._updateConnectionState('disconnected'); },
         finishDisconnect() { rfb._updateConnectionState('disconnected'); },
+        socketClose(code, reason) { socket.emitClose(code, reason); },
         get instances() { return instances; }, get fetches() { return fetches; },
         language(value) { location.hash = `#lang=${value}`; window.events.hashchange(); },
         leave() { window.events.pagehide(); },
@@ -256,4 +280,34 @@ test('原始noVNC状态机能识别重复关闭终态，错误断言不会空过
     v.rfb.disconnect();
     assert.deepEqual(v.errors, ['Tried changing state of a disconnected RFB object']);
     assert.equal(v.rfb._rfbConnectionState, 'disconnected');
+});
+
+test('只有固定正常会话标记在库处理前关闭当前RFB，未标记关闭仍报错', () => {
+    for (const [code, reason, normal] of [
+        [1000, 'kakatta-session-ended', true], [1000, '', false], [1006, '', false], [1006, 'kakatta-session-ended', false],
+    ]) {
+        const v = viewer();
+        v.socketClose(code, reason);
+        assert.equal(v.rfb._rfbConnectionState, 'disconnected');
+        assert.equal(v.rfb.disconnects, normal ? 1 : 0);
+        if (normal) assert.deepEqual(v.errors, []);
+        else assert.deepEqual(v.errors, [`Failed when connecting: Connection closed (code: ${code}${reason ? ', reason: ' + reason : ''})`]);
+        v.leave();
+        assert.equal(v.rfb.disconnects, normal ? 1 : 0);
+    }
+});
+
+test('RFB构造失败时关掉本次WebSocket并保留原错误', () => {
+    const error = new Error('本地构造故障');
+    let socket;
+    assert.throws(() => viewer('en', '', { error, socket: value => { socket = value; } }), value => value === error);
+    assert.equal(socket.closes, 1);
+});
+
+test('库已移除关闭回调后，正常结束标记也不再关闭终态RFB', () => {
+    const v = viewer();
+    v.serverDisconnect();
+    v.socketClose(1000, 'kakatta-session-ended');
+    assert.equal(v.rfb.disconnects, 0);
+    assert.deepEqual(v.errors, []);
 });

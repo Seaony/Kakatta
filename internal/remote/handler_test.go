@@ -142,13 +142,13 @@ func TestBinaryStreamAndSessionClose(t *testing.T) {
 	}
 	closed := make(chan struct{})
 	go func() { s.Close(); s.Close(); close(closed) }()
+	if _, _, err := conn.Read(ctx); websocket.CloseStatus(err) != websocket.StatusNormalClosure {
+		t.Fatal("正常会话结束没有完成关闭握手", err)
+	}
 	select {
 	case <-closed:
 	case <-ctx.Done():
 		t.Fatal("关闭会话没有回收活动连接")
-	}
-	if _, _, err := conn.Read(ctx); err == nil {
-		t.Fatal("关闭会话后 WebSocket 仍保持连接")
 	}
 	if s.register(nil) {
 		t.Fatal("关闭会话后仍能注册连接")

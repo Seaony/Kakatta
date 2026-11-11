@@ -13,7 +13,21 @@ const browserLanguage = document.documentElement.lang;
 const mobile = () => matchMedia('(max-width: 767px), (pointer: coarse)').matches;
 const ws = new URL('vnc', location.href);
 ws.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-const rfb = new RFB(host, ws.href, { shared: true, touchGestures: false });
+let connection = 'connecting';
+const rfb = (() => {
+    const socket = new WebSocket(ws.href);
+    let client;
+    socket.addEventListener('close', event => {
+        if (event.code === 1000 && event.reason === 'kakatta-session-ended' && connection !== 'disconnected') client?.disconnect();
+    });
+    try {
+        client = new RFB(host, socket, { shared: true, touchGestures: false });
+        return client;
+    } catch (error) {
+        socket.close();
+        throw error;
+    }
+})();
 const textInput = attachTextInput({
     toggle: document.querySelector('#text-toggle'), panel: document.querySelector('#text-entry'),
     input: document.querySelector('#text-input'), send: document.querySelector('#text-send'),
@@ -27,7 +41,6 @@ let detachTouch = () => {};
 let panning = false;
 let pendingRegion;
 let connected = false;
-let connection = 'connecting';
 let helpState = 'initialHelp';
 let copy;
 
