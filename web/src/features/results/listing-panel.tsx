@@ -5,7 +5,7 @@ import { apiKey } from '../../api/keys';
 import type { Schema } from '../../api/types';
 import { Button, CopyButton, InlineMessage, StatePanel, StatusBadge } from '../../components/ui';
 import { useTranslation } from '../../i18n';
-import { formatMoney } from '../../i18n/format';
+import { formatMoney, formatSellerName } from '../../i18n/format';
 import { ItemImage } from './finding-card';
 import { resultTime, safeExternalURL, type SavedListing } from './model';
 
@@ -38,7 +38,7 @@ export function SavedListingCard({ listing, onOpen, onChanged }: { listing: Save
           {listing.sale_status === 'offline' && <StatusBadge>{t('results.card.offline')}</StatusBadge>}
           {listing.last_drop_amount !== null && listing.last_drop_amount > 0 && <StatusBadge tone="positive">{t('results.card.drop', { amount: formatMoney(listing.last_drop_amount, locale) })}</StatusBadge>}
         </div>
-        <p className="text-body text-text-secondary">{listing.seller_nick} {listing.area}</p>
+        <p className="text-body text-text-secondary">{formatSellerName(listing.seller?.nick, locale, listing.seller_nick)} {listing.area}</p>
         {listing.findings.length === 0 && <p className="text-body text-text-secondary">{t(listing.is_favorite ? 'results.card.saved_without_task' : 'results.listing.no_findings')}</p>}
         {mutation.error && <InlineMessage tone="danger">{errorText(mutation.error)}</InlineMessage>}
         <div className="flex flex-wrap gap-sm">
@@ -83,7 +83,7 @@ export function ListingPanel({ itemId }: { itemId: string }) {
         <div className="min-w-0 space-y-md">
           <h2 className="break-words text-section font-semibold">{listing.title || t('results.card.untitled')}</h2>
           <p className="text-section font-semibold tabular-nums">{listing.price === null ? t('results.price_unknown') : formatMoney(listing.price, locale)}</p>
-          <p className="break-words text-body text-text-label">{listing.seller_nick} {listing.area}</p>
+          <p className="break-words text-body text-text-label">{formatSellerName(listing.seller?.nick, locale, listing.seller_nick)} {listing.area}</p>
           <p className="text-body text-text-secondary">{t('results.card.published', { time: listing.published_at === null ? t('results.published_unknown') : resultTime(listing.published_at, locale, timeZone) })}</p>
           <div className="flex flex-wrap gap-sm">
             <Button busy={mutation.isPending} onClick={() => mutation.mutate({ is_favorite: !listing.is_favorite })}>{t(listing.is_favorite ? 'results.action.unfavorite' : 'results.action.favorite')}</Button>

@@ -3,7 +3,7 @@ import { useApiError } from '../../api/hooks';
 import type { Schema } from '../../api/types';
 import { Button, Dialog, StatePanel, StatusBadge, CopyButton, InlineMessage } from '../../components/ui';
 import { useTranslation, type TranslationKey } from '../../i18n';
-import { formatDateTime, formatMoney, formatSellerRegistration } from '../../i18n/format';
+import { formatDateTime, formatMoney, formatSellerName, formatSellerRegistration } from '../../i18n/format';
 import { formatStoredMessage, StoredMessage } from '../../i18n/stored-message';
 import { profileFields, safeExternalURL, usePriceHistory, type Finding } from './data';
 import { listingThumbnailURL } from '../results/model';
@@ -165,7 +165,7 @@ export function Seller({ finding, timeZone }: { finding: Finding; timeZone?: str
   const seller = finding.seller;
   const type = finding.seller_assessment?.type ?? finding.seller_type ?? 'unknown';
   return <div className="space-y-lg">
-    <p className="flex flex-wrap items-center gap-sm"><strong className="break-words">{seller?.nick ?? finding.listing.seller_nick ?? t('web.detail.unknown')}</strong><StatusBadge tone={type === 'dealer_suspect' ? 'warning' : 'neutral'}>{t(`web.detail.seller_type.${type}`)}</StatusBadge></p>
+    <p className="flex flex-wrap items-center gap-sm"><strong className="break-words">{formatSellerName(seller?.nick, locale, finding.listing.seller_nick)}</strong><StatusBadge tone={type === 'dealer_suspect' ? 'warning' : 'neutral'}>{t(`web.detail.seller_type.${type}`)}</StatusBadge></p>
     <p className="text-body">{formatSellerRegistration(finding.listing.seller_registration_days, locale)}</p>
     {finding.seller_assessment && <div className="space-y-sm"><h3 className="text-body font-medium">{t('web.detail.seller_assessment')}</h3><p className="text-caption text-text-secondary"><DateText value={finding.analyzed_at} {...(timeZone ? { timeZone } : {})} /></p><ul className="space-y-sm">{finding.seller_assessment.reasons.map((reason, index) => <li key={index} className="break-words text-body"><StoredMessage message={reason} /></li>)}</ul></div>}
     {seller ? <>

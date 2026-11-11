@@ -5,7 +5,7 @@ import { apiData, useApi, useApiError, useMessageText, useTimeZone } from '../..
 import { apiKey } from '../../api/keys';
 import { InlineMessage, StatePanel, StatusBadge } from '../../components/ui';
 import { useTranslation } from '../../i18n';
-import { formatSellerRegistration } from '../../i18n/format';
+import { formatSellerName, formatSellerRegistration } from '../../i18n/format';
 import { StoredMessage } from '../../i18n/stored-message';
 import { listingThumbnailURL } from '../results/model';
 import { profileFields, type ComparePageProps, type Finding } from './data';
@@ -72,7 +72,7 @@ export function ComparePage({ ids, timeZone: suppliedTimeZone }: ComparePageProp
             return <div className="space-y-md"><p className="text-caption text-text-secondary">{t(attitudeKeys[risk.attitude])}</p><p>{t('web.detail.current_conclusion')} · {t(checkKeys[check?.status ?? 'unknown'])}</p><Evidence source={check?.source ?? null} evidence={check?.evidence ?? null} /></div>;
           }} />)}
           <CompareRow ids={ids} findings={findings} label={t('web.detail.extra_title')} render={(finding) => <div className="space-y-lg">{finding.analysis?.extra_findings.length ? finding.analysis.extra_findings.map((extra, index) => <div key={index} className="space-y-sm"><h3 className="font-medium">{extra.name}</h3><Evidence source={extra.source} evidence={extra.evidence} /></div>) : <p className="text-text-secondary">{t('web.detail.extra_empty')}</p>}</div>} />
-          <CompareRow ids={ids} findings={findings} label={t('web.compare.seller')} render={(finding) => <div className="space-y-sm"><p>{finding.seller?.nick ?? finding.listing.seller_nick ?? t('web.detail.unknown')}</p><p>{t(`web.detail.seller_type.${finding.seller_assessment?.type ?? finding.seller_type ?? 'unknown'}`)}</p><p>{finding.seller?.seller_credit ?? t('web.detail.unknown')}</p><p>{formatSellerRegistration(finding.listing.seller_registration_days, locale)}</p><p className="text-caption text-text-secondary">{t('web.detail.seller_sampling')}</p>{finding.seller_assessment?.reasons.map((reason, index) => <p key={index} className="break-words"><StoredMessage message={reason} /></p>)}{finding.analysis?.seller_signals.map((signal, index) => <p key={index} className="break-words">{signal.evidence}</p>)}</div>} />
+          <CompareRow ids={ids} findings={findings} label={t('web.compare.seller')} render={(finding) => <div className="space-y-sm"><p>{formatSellerName(finding.seller?.nick, locale, finding.listing.seller_nick)}</p><p>{t(`web.detail.seller_type.${finding.seller_assessment?.type ?? finding.seller_type ?? 'unknown'}`)}</p><p>{finding.seller?.seller_credit ?? t('web.detail.unknown')}</p><p>{formatSellerRegistration(finding.listing.seller_registration_days, locale)}</p><p className="text-caption text-text-secondary">{t('web.detail.seller_sampling')}</p>{finding.seller_assessment?.reasons.map((reason, index) => <p key={index} className="break-words"><StoredMessage message={reason} /></p>)}{finding.analysis?.seller_signals.map((signal, index) => <p key={index} className="break-words">{signal.evidence}</p>)}</div>} />
           <CompareRow ids={ids} findings={findings} label={t('web.compare.score')} best={sameTask ? (finding) => finding.decision === 'scored' && bestNumber(finding.score, scores, 'higher') : undefined} render={(finding) => <ScoreLabel finding={finding} />} />
           <CompareRow ids={ids} findings={findings} label={t('web.compare.breakdown')} render={(finding) => <ScoreBreakdown finding={finding} />} />
         </tbody>

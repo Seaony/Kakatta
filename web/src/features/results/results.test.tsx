@@ -16,7 +16,7 @@ import { registrationAge } from '../../i18n/format';
 import { ResultsPage } from './page';
 import { ResultsFilters } from './filters';
 import { NotificationStatus } from './notification-status';
-import { ListingPanel } from './listing-panel';
+import { ListingPanel, SavedListingCard } from './listing-panel';
 import { FindingCard } from './finding-card';
 import { detailQuery, effectiveRisks, findingQuery, isOverBudget, latestDeliveries, listingQuery, resultTime, safeExternalURL, selectableIDs, type Finding } from './model';
 
@@ -124,6 +124,47 @@ function batchReanalysis(ids: number[]): Response {
 const csvPath = '/api/v1/tasks/7/findings/export';
 const csvHeader = '\uFEFF标题,价格,配置,合理价,分数,档位,结论,主要风险,理由,卖家,地区,发现时间,链接\r\n';
 const csvMedia = 'text/csv; charset=utf-8';
+
+describe('卖家昵称缺失的展示', () => {
+  for (const locale of ['zh-CN', 'en'] as const) {
+    test.each([null, '', ' \t', '真实卖家'])(`${locale} 收藏卡片和独立详情的昵称 %j 不依赖卖家编号`, async (nick) => {
+      const saved = { ...listing({ seller_nick: nick, seller_id: null, is_favorite: true }), findings: [], prices: [], seller: null } satisfies Schema<'ListingView'>;
+      const api = createApiClient({ fetch: async (request) => {
+        const common = base(request); if (common) return common;
+        return new URL(request.url).pathname.endsWith('/prices') ? json({ items: [], next_cursor: null, total: 0 }) : json(saved);
+      } });
+      const client = createAppQueryClient();
+      clients.push(client);
+      render(<QueryClientProvider client={client}><I18nProvider instance={createI18n(locale)}><ApiProvider api={api}>
+        <SavedListingCard listing={saved} onOpen={() => {}} /><ListingPanel itemId={saved.item_id} />
+      </ApiProvider></I18nProvider></QueryClientProvider>);
+      await screen.findByRole('heading', { name: saved.title });
+      const label = nick?.trim() ? nick : locale === 'zh-CN' ? '未取得卖家昵称' : 'Seller name unavailable';
+      expect(screen.getAllByText(label)).toHaveLength(2);
+      expect(saved.seller_nick).toBe(nick);
+    });
+  }
+
+  test.each([null, ''])('屏蔽确认回退昵称 %j 只用于展示，不提交成昵称', async (nick) => {
+    const item = finding({ listing: listing({ seller_id: 'seller-1', seller_nick: nick }) });
+    const bodies: unknown[] = [];
+    await page(async (request) => {
+      const common = base(request); if (common) return common;
+      if (new URL(request.url).pathname === '/api/v1/blocked-sellers/seller-1') {
+        bodies.push(await request.json());
+        return json({ seller_id: 'seller-1', nick, created_at: null });
+      }
+      return json({ items: [item], next_cursor: null, total: 1 });
+    });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: '更多操作' }));
+    await user.click(await screen.findByRole('menuitem', { name: '屏蔽卖家' }));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog.textContent).toContain('未取得卖家昵称');
+    await user.click(within(dialog).getByRole('button', { name: '确认' }));
+    await waitFor(() => expect(bodies).toEqual([{ nick }]));
+  });
+});
 
 describe('任务结果 CSV', () => {
   test.each([215, 0])('导出 %i 条结果使用当前任务和筛选排序，原 Blob 直接交浏览器', async (count) => {

@@ -1,5 +1,15 @@
 import { expect, test } from 'bun:test';
-import { formatDateTime, formatInteger, formatMoney } from './format';
+import { formatDateTime, formatInteger, formatMoney, formatSellerName } from './format';
+
+test.each(['zh-CN', 'en'] as const)('%s 缺失昵称显示已有提示，真实昵称原样保留且不依赖编号', (locale) => {
+  const missingLabel = locale === 'zh-CN' ? '未取得卖家昵称' : 'Seller name unavailable';
+  for (const name of [null, undefined, '', ' \t\n']) {
+    expect(formatSellerName(name, locale)).toBe(missingLabel);
+    expect(formatSellerName(name, locale, '列表中的真实名字')).toBe('列表中的真实名字');
+  }
+  expect(formatSellerName('  原始昵称  ', locale, '列表昵称')).toBe('  原始昵称  ');
+  expect(formatSellerName('', locale, '')).toBe(missingLabel);
+});
 
 test('金额从整数分显示人民币，数字不受语言转换影响原始值', () => {
   expect(formatMoney(123456, 'en')).toContain('1,234.56');

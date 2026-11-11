@@ -4,7 +4,7 @@ import { apiData, useApi, useApiError } from '../../api/hooks';
 import { apiKey } from '../../api/keys';
 import { ApiError, isCancellation } from '../../api/errors';
 import { useTranslation } from '../../i18n';
-import { formatDateTime } from '../../i18n/format';
+import { formatDateTime, formatSellerName } from '../../i18n/format';
 import { Button } from '../../components/ui/button';
 import { StatePanel } from '../../components/ui/state-panel';
 import { FormSection, InlineMessage, Pagination } from '../../components/ui';
@@ -63,8 +63,8 @@ export function BlockedSellers({ timeZone, disabled = false }: { timeZone?: stri
       {query.data.items.length === 0
         ? <StatePanel kind="empty" title={t(page === 1 ? 'web.settings.blocked_empty' : 'web.settings.blocked_page_empty')} description={t('web.settings.blocked_empty_description')} />
         : <ul className="divide-y divide-border">{query.data.items.map((seller) => <li key={seller.seller_id} className="flex min-w-0 flex-wrap items-center justify-between gap-lg py-lg">
-          <div className="min-w-0 space-y-xs"><p className="break-words text-body font-medium">{seller.nick ?? t('web.settings.unnamed_seller')}</p><p className="break-all text-body text-text-secondary">{seller.seller_id}</p><p className="text-caption tabular-nums text-text-secondary">{date(seller.created_at)}</p></div>
-          <Button busy={pendingSeller === seller.seller_id} disabled={disabled || !action.enabled || pendingSeller !== null || query.isPlaceholderData} onClick={() => { void unblock(seller.seller_id); }} aria-label={t('web.settings.unblock_named', { name: seller.nick ?? seller.seller_id })}>{t('web.settings.unblock')}</Button>
+          <div className="min-w-0 space-y-xs"><p className="break-words text-body font-medium">{formatSellerName(seller.nick, locale)}</p><p className="break-all text-body text-text-secondary">{seller.seller_id}</p><p className="text-caption tabular-nums text-text-secondary">{date(seller.created_at)}</p></div>
+          <Button busy={pendingSeller === seller.seller_id} disabled={disabled || !action.enabled || pendingSeller !== null || query.isPlaceholderData} onClick={() => { void unblock(seller.seller_id); }} aria-label={t('web.settings.unblock_named', { name: seller.nick?.trim() ? seller.nick : seller.seller_id })}>{t('web.settings.unblock')}</Button>
         </li>)}</ul>}
       {pendingSeller !== null && <Button onClick={action.cancel}>{t('web.settings.stop_waiting')}</Button>}
       <Pagination page={page} hasNextPage={query.data.next_cursor !== null} disabled={!action.enabled || query.isFetching || pendingSeller !== null} previousLabel={t('web.settings.previous_page')} nextLabel={t('web.settings.next_page')} pageLabel={t('web.settings.page_number', { page })} onPageChange={(next) => {

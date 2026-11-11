@@ -86,6 +86,22 @@ function mount(content: ReactNode, api = fakeAPI().api, locale: Locale = 'zh-CN'
 }
 
 describe('商品详情的接口与状态', () => {
+  for (const locale of ['zh-CN', 'en'] as const) {
+    test.each([null, '', ' \t'])(`${locale} 详情与对比的空昵称 %j 都明确标示未取得`, async (nick) => {
+      const first = fixture();
+      const second = fixture(2);
+      first.listing.seller_nick = nick;
+      first.listing.seller_id = null;
+      second.listing.seller_nick = '真实卖家';
+      const backend = fakeAPI(first, async (request) => new URL(request.url).pathname === '/api/v1/findings/2' ? json(second) : undefined);
+      mount(<><Seller finding={first} /><ComparePage ids={[1, 2]} timeZone="UTC" /></>, backend.api, locale);
+      const missing = locale === 'zh-CN' ? '未取得卖家昵称' : 'Seller name unavailable';
+      await screen.findByText('真实卖家');
+      expect(screen.getAllByText(missing)).toHaveLength(2);
+      expect(first.listing.seller_nick).toBe(nick);
+    });
+  }
+
   for (const factRevision of [0, 1]) {
     test(`旧清单初始版本匹配和无版本事实隔离：事实版本${factRevision}`, async () => {
       const initial = fixture();
@@ -528,6 +544,10 @@ describe('比较和局部阅读', () => {
     await userEvent.setup().click(screen.getByRole('button', { name: '刷新已存数据' }));
     await within(reviews).findByText('本地差评原文');
     expect(within(reviews).getByText('作为卖家 · 差评')).toBeTruthy();
+    backend.update({ ...finding, seller: { ...finding.seller, nick: '' } });
+    await userEvent.setup().click(screen.getByRole('button', { name: '刷新已存数据' }));
+    await screen.findByText('本地卖家');
+    expect(screen.queryByText('部分资料的卖家')).toBeNull();
   });
 
   test('当前有效结论直接用后台checks，旧覆盖不能把程序卖家风险显示成没问题', async () => {

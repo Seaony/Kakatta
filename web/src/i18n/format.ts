@@ -30,6 +30,11 @@ export function formatDateTime(utcMilliseconds: number, locale: Locale, timeZone
   }).format(utcMilliseconds);
 }
 
+export function formatSellerName(name: string | null | undefined, locale: Locale, alternateName?: string | null): string {
+  return [name, alternateName].find((value) => value?.trim())
+    ?? formatMessage({ code: 'web.settings.unnamed_seller', args: {} }, locale);
+}
+
 export function registrationAge(days: number) {
   let years = Math.floor(days / 365.25);
   const rawMonths = (days - years * 365.25) / (365.25 / 12);

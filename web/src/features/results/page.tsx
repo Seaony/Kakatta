@@ -8,6 +8,7 @@ import type { ResultsSearch } from '../../app/search';
 import type { Schema } from '../../api/types';
 import type { Message } from '../../i18n';
 import { useTranslation } from '../../i18n';
+import { formatSellerName } from '../../i18n/format';
 import { StoredMessage } from '../../i18n/stored-message';
 import { Button, ConfirmDialog, Dialog, InlineMessage, PageHeader, Pagination, Skeleton, StatePanel } from '../../components/ui';
 import { FindingDetail } from '../detail-compare';
@@ -23,7 +24,7 @@ type Confirmation =
   | { kind: 'delete'; ids: number[] }
   | { kind: 'delete-all'; taskId: number }
   | { kind: 'dismiss'; ids: number[] }
-  | { kind: 'block'; sellerId: string; name: string }
+  | { kind: 'block'; sellerId: string; name: string | null }
   | { kind: 'reanalyze'; ids: number[]; single: boolean; allFailed?: { total: number; preview: Schema<'ReanalysisPreview'> } };
 
 type Operation = Confirmation
@@ -241,7 +242,7 @@ export function ResultsPage({ search, onSearchChange }: ResultsPageProps) {
   function actOnFinding(finding: Finding, action: FindingAction) {
     if (action === 'favorite' || action === 'restore' || action === 'unread') perform({ kind: action, finding });
     else if (action === 'block') {
-      if (finding.listing.seller_id) ask({ kind: 'block', sellerId: finding.listing.seller_id, name: finding.listing.seller_nick ?? finding.listing.seller_id });
+      if (finding.listing.seller_id) ask({ kind: 'block', sellerId: finding.listing.seller_id, name: finding.seller?.nick?.trim() ? finding.seller.nick : finding.listing.seller_nick });
     } else if (action === 'reanalyze') ask({ kind: 'reanalyze', ids: [finding.id], single: true });
     else ask({ kind: action, ids: [finding.id] });
   }
@@ -298,7 +299,7 @@ export function ResultsPage({ search, onSearchChange }: ResultsPageProps) {
   const confirmationDescription = confirmation?.kind === 'delete-all' ? t('results.confirm.delete_all')
     : confirmation?.kind === 'delete' ? t('results.confirm.delete_selected', { count: confirmation.ids.length })
       : confirmation?.kind === 'dismiss' ? t('results.dismiss.global')
-        : confirmation?.kind === 'block' ? t('results.block.global', { seller: confirmation.name })
+        : confirmation?.kind === 'block' ? t('results.block.global', { seller: formatSellerName(confirmation.name, locale) })
           : allFailed
             ? `${mutation.isPending && allProgress ? message(allProgress) : failedDescription} ${message({ code: 'results.reanalyze.preview_only', args: {} })} ${t('results.reanalyze.cached')} ${t('results.reanalyze.no_new_notification')}`
             : `${t('results.reanalyze.cached')} ${preview.data ? t('results.reanalyze.quota', { count: preview.data.needs_detail_count }) : ''} ${message({ code: 'results.reanalyze.preview_only', args: {} })} ${t('results.reanalyze.no_new_notification')}`;

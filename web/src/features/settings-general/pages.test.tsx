@@ -177,7 +177,7 @@ describe('真实设置协议的本地页面回归', () => {
     expect(screen.getByText('删除了 5 条记录')).toBeTruthy();
   });
 
-  test('屏蔽卖家按游标翻页，解除失败保留列表和请求编号', async () => {
+  test.each([null, ''])('屏蔽卖家昵称 %j 按游标翻页，解除失败保留列表和请求编号', async (nick) => {
     const listRequests: URL[] = [];
     let attempts = 0;
     let removed = false;
@@ -185,7 +185,7 @@ describe('真实设置协议的本地页面回归', () => {
       const url = new URL(request.url);
       if (url.pathname === '/api/v1/blocked-sellers') {
         listRequests.push(url);
-        return json(url.searchParams.has('cursor') ? { items: removed ? [] : [{ seller_id: 'seller-last', nick: null, created_at: null }], next_cursor: null, total: removed ? 50 : 51 } : { items: Array.from({ length: 50 }, (_, index) => ({ seller_id: `seller-${index}`, nick: `本地卖家${index}`, created_at: null })), next_cursor: 'opaque-next', total: removed ? 50 : 51 });
+        return json(url.searchParams.has('cursor') ? { items: removed ? [] : [{ seller_id: 'seller-last', nick, created_at: null }], next_cursor: null, total: removed ? 50 : 51 } : { items: Array.from({ length: 50 }, (_, index) => ({ seller_id: `seller-${index}`, nick: `本地卖家${index}`, created_at: null })), next_cursor: 'opaque-next', total: removed ? 50 : 51 });
       }
       if (url.pathname === '/api/v1/blocked-sellers/seller-last' && request.method === 'DELETE') {
         attempts += 1;
