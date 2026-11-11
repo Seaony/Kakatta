@@ -57,7 +57,7 @@ function TaskForm({ fields, initialTask, initialKeyword, initialTemplate, onSave
   const [issues, setIssues] = useState<DraftIssue[]>([]);
   const [clearProfileOpen, setClearProfileOpen] = useState(false);
   const [discardOpen, setDiscardOpen] = useState(false);
-  const [keptRequirement, setKeptRequirement] = useState(fields.requirement);
+  const [keptRequirement, setKeptRequirement] = useState<string | null>(() => draft.profile.specs.length + draft.profile.musts.length + draft.profile.bonuses.length > 0 || draft.profile.risks.some((row) => row.value.source !== 'system') ? fields.requirement : null);
   const [saved, setSaved] = useState<Schema<'TaskSaveResult'> | null>(null);
   const [generating, setGenerating] = useState(false);
   const [generationIssues, setGenerationIssues] = useState<Schema<'FieldIssue'>[]>([]);
@@ -148,7 +148,7 @@ function TaskForm({ fields, initialTask, initialKeyword, initialTemplate, onSave
         </FormSection>
         <FormSection title={t('tasks.section.judgment')}>
           {draft.judge_mode === 'ai' ? <><TextAreaField label={t('tasks.field.requirement')} value={draft.requirement} disabled={generating} onChange={(event) => update('requirement', event.target.value)} {...fieldError('requirement')} />
-            {draft.requirement !== keptRequirement && <InlineMessage tone="info" action={<Button onClick={() => setKeptRequirement(draft.requirement)}>{t('tasks.profile.keep_current')}</Button>}>{t('tasks.profile.requirement_changed')}</InlineMessage>}
+            {keptRequirement !== null && draft.requirement !== keptRequirement && <InlineMessage tone="info" action={<Button onClick={() => setKeptRequirement(draft.requirement)}>{t('tasks.profile.keep_current')}</Button>}>{t('tasks.profile.requirement_changed')}</InlineMessage>}
             {dictionary.data ? <ProfileEditor value={draft.profile} onChange={(value) => update('profile', value)} dictionary={dictionary.data} disabled={save.isPending || generating} {...fieldError('profile')} generation={<ProfileGeneration {...(persistedTaskID !== null ? { taskID: persistedTaskID } : {})} keyword={draft.keyword} requirement={draft.requirement} profile={draft.profile} disabled={save.isPending} onBusyChange={(busy) => { setGenerating(busy); if (busy) { save.reset(); setIssues([]); } }} onFieldIssues={setGenerationIssues} onGenerated={(result, requirement) => { setDraft((current) => ({ ...current, profile: profileDraft(result.profile) })); setKeptRequirement(requirement); }} onApply={setDraft} />} /> : dictionary.isPending ? <StatePanel kind="pending" label={t('common.loading')}><Skeleton /><Skeleton /></StatePanel> : <StatePanel kind="error" title={t('web.error.title')} description={errorText(dictionary.error)} retry={{ label: t('common.retry'), run: () => { void dictionary.refetch(); } }} />}
             <details className="min-w-0 border-t border-border pt-lg"><summary className="min-h-control cursor-pointer text-body font-medium">{t('tasks.profile.allowed_kinds')}</summary><div className="grid min-w-0 gap-sm sm:grid-cols-2">{Object.entries(kindKeys).map(([kind, key]) => <Checkbox key={kind} label={t(key)} checked={draft.profile.allowed_kinds.some((allowed) => allowed === kind)} onCheckedChange={(checked) => {
               const selected = Object.keys(kindKeys).find((entry): entry is Schema<'AnalysisKind'> => entry === kind);

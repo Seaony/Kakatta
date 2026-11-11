@@ -112,3 +112,24 @@ describe('通知组件', () => {
     await mount(<NotificationsPage />, fetch); const user = userEvent.setup(); await user.click(await screen.findByRole('radio', { name: '网页版' })); const max = screen.getByRole('textbox', { name: '每次推送总数上限' }); await user.clear(max); await user.type(max, '1'); await user.click(screen.getByRole('button', { name: '保存通知规则' })); await screen.findByText('请求编号：rule-fixture'); expect((max as HTMLInputElement).value).toBe('1'); expect(patches[0]).toEqual({ values: { 'notify.link_target': 'desktop', 'notify.max_per_run': 1 } }); fail = false; await user.click(screen.getByRole('button', { name: '保存通知规则' })); await screen.findByText('通知规则已保存。'); expect(patches).toHaveLength(2); expect(screen.getByRole('radio', { name: '所有已启用渠道（默认）' }).getAttribute('data-state')).toBe('checked');
   });
 });
+
+describe('通知页操作层级和说明', () => {
+  test.each(['zh-CN', 'en', 'ja'] as const)('渠道删除弱化，任务通知条件只解释一次，确认删除仍醒目（%s）', async (locale) => {
+    const i18n = createI18n(locale);
+    const f = fixture([channel(1, '群甲'), channel(2, '群乙')]);
+    await mount(<NotificationsPage adapter={f.adapter} />, async (request) => new URL(request.url).pathname === '/api/v1/tasks' ? Response.json({ items: [], next_cursor: null, total: 0 }) : defaultFetch(request), locale);
+    await screen.findByRole('heading', { name: '群甲' });
+    expect(screen.getAllByText(i18n.t('web.notify.test_eligibility'))).toHaveLength(1);
+    const remove = screen.getAllByRole('button', { name: i18n.t('web.notify.delete') });
+    expect(remove).toHaveLength(2);
+    for (const button of remove) {
+      expect(button.classList.contains('bg-transparent')).toBe(true);
+      expect(button.classList.contains('bg-danger')).toBe(false);
+    }
+    await userEvent.setup().click(remove[0]!);
+    const dialog = await screen.findByRole('alertdialog', { name: i18n.t('web.notify.delete_named', { name: '群甲' }) });
+    const confirm = await within(dialog).findByRole('button', { name: i18n.t('web.notify.delete') });
+    await waitFor(() => expect((confirm as HTMLButtonElement).disabled).toBe(false));
+    expect(confirm.classList.contains('bg-danger')).toBe(true);
+  });
+});

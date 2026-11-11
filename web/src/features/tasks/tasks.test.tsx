@@ -909,3 +909,41 @@ describe('任务配置导入导出', () => {
     } finally { objectURL.mockRestore(); }
   });
 });
+
+describe('需求清单的需求基线', () => {
+  test.each(['zh-CN', 'en', 'ja'] as const)('新建任务套模板和改需求时不提示更新不存在的清单（%s）', async (locale) => {
+    const i18n = createI18n(locale);
+    await mount(<TaskEditor initialFields={fields({ judge_mode: 'ai', notify_policy: 'good', profile: { ...profile, musts: [], risks: profile.risks.filter((risk) => risk.source === 'system') } })} onSaved={() => {}} />, undefined, { locale });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'MacBook Pro' }));
+    const requirement = screen.getByRole('textbox', { name: i18n.t('tasks.field.requirement') });
+    expect((requirement as HTMLTextAreaElement).value).not.toBe('');
+    expect(screen.queryByText(i18n.t('tasks.profile.requirement_changed')) === null).toBe(true);
+    expect(screen.queryByRole('button', { name: i18n.t('tasks.profile.keep_current') }) === null).toBe(true);
+    await user.type(requirement, '，16GB');
+    expect(screen.queryByText(i18n.t('tasks.profile.requirement_changed')) === null).toBe(true);
+  });
+
+  test('首次生成成功后改需求才提示，选择保留后再次修改仍提示', async () => {
+    const generated: Schema<'GeneratedDraft'> = { profile, warnings: [], suggestions: { keyword: null, exclude_words: [], budget_min: null, budget_max: null } };
+    await mount(<TaskEditor initialFields={fields({ judge_mode: 'ai', notify_policy: 'good', keyword: '相机' })} onSaved={() => {}} />, (request) => new URL(request.url).pathname === '/api/v1/ai/profile' ? json(generated) : undefined, { providers: [provider] });
+    const user = userEvent.setup();
+    const requirement = await screen.findByRole('textbox', { name: '我的要求' });
+    await user.type(requirement, '国行');
+    expect(screen.queryByRole('button', { name: '保持现在的清单' }) === null).toBe(true);
+    await user.click(screen.getByRole('button', { name: '生成清单' }));
+    await screen.findByLabelText('必须满足 1');
+    expect(screen.queryByRole('button', { name: '保持现在的清单' }) === null).toBe(true);
+    await user.type(requirement, '，有发票');
+    await user.click(await screen.findByRole('button', { name: '保持现在的清单' }));
+    expect(screen.queryByRole('button', { name: '保持现在的清单' }) === null).toBe(true);
+    await user.type(requirement, '，低价');
+    expect(screen.getByRole('button', { name: '保持现在的清单' })).toBeDefined();
+  });
+
+  test('编辑已有清单仍会提示需求变化', async () => {
+    await mount(<TaskEditor initialTask={task({ judge_mode: 'ai', notify_policy: 'good', profile, requirement: '国行' })} onSaved={() => {}} />);
+    await userEvent.setup().type(await screen.findByRole('textbox', { name: '我的要求' }), '，有发票');
+    expect(screen.getByRole('button', { name: '保持现在的清单' })).toBeDefined();
+  });
+});
