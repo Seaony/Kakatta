@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -116,6 +117,14 @@ func Start() *Xianyu {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'")
 			out := strings.ReplaceAll(source, "MASKSTYLE", mask)
+			switch r.URL.Path {
+			case "/", "/search", "/item", "/personal":
+				nick := "login"
+				if fixtureLoginCompleted(r) {
+					nick = "valid"
+				}
+				out = pageWithLoginHeader(out, nick)
+			}
 			if strings.Contains(out, "FILTERMARKUP") {
 				f.filters.Lock()
 				behavior, _ := json.Marshal(f.filters.behavior)
@@ -142,7 +151,7 @@ func Start() *Xianyu {
 		}
 		if automaticLogin {
 			http.SetCookie(w, &http.Cookie{Name: "unb", Value: "1", Path: "/", Expires: time.Now().Add(30 * 24 * time.Hour)})
-			if _, err := r.Cookie("fixture_login_completed"); err != nil {
+			if !fixtureLoginCompleted(r) {
 				page(f.automaticLoginPage())(w, r)
 				return
 			}
@@ -265,11 +274,17 @@ func Start() *Xianyu {
 		case "denied":
 			data["url"] = f.srv.URL + "/punish?action=deny"
 		}
+		if r.URL.Query().Get("state") == "success" && r.URL.Query().Get("after_scan") == "1" {
+			if nick, ok := loginHeaderState(r); ok && nick == "valid" {
+				markFixtureLoginCompleted(w)
+			}
+		}
 		json.NewEncoder(w).Encode(map[string]any{"ret": []string{ret}, "data": data})
 	})
 	mux.HandleFunc("/login-box", func(w http.ResponseWriter, r *http.Request) {
 		http.SetCookie(w, &http.Cookie{Name: "unb", Value: "1", Path: "/", Expires: time.Now().Add(30 * 24 * time.Hour)})
-		page(`<!doctype html><meta charset="utf-8"><iframe id="alibaba-login-box" style="width:220px;height:120px;border:0"></iframe><button id="finish-login" style="width:120px;height:40px">完成扫码</button><script>document.getElementById('finish-login').addEventListener('click', () => { document.getElementById('alibaba-login-box').style.display = 'none'; fetch('/h5/mtop.fake.login/1.0/?state=success&after_scan=1'); });</script>`)(w, r)
+		source := `<!doctype html><meta charset="utf-8"><iframe id="alibaba-login-box" style="width:220px;height:120px;border:0"></iframe><button id="finish-login" style="width:120px;height:40px">完成扫码</button><script>document.getElementById('finish-login').addEventListener('click', () => { document.getElementById('alibaba-login-box').style.display = 'none'; fetch('/h5/mtop.fake.login/1.0/?state=success&after_scan=1').then(() => { document.getElementById('header').outerHTML = LOGIN_HEADER; }); });</script>`
+		page(pageWithLoginHeader(strings.ReplaceAll(source, "LOGIN_HEADER", strconv.Quote(loginHeader("valid"))), "login"))(w, r)
 	})
 	mux.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
 		// 带过期时间，浏览器重启后还在，和真实的登录状态一样。

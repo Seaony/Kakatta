@@ -46,10 +46,13 @@ func TestBundledRulesAreVersionedData(t *testing.T) {
 	if !reflect.DeepEqual(rules.WebRules, xianyu.WebProtocol()) {
 		t.Fatal("网页层未使用统一规则")
 	}
-	if rules.Version != 3 || rules.API.UserItems != "mtop.idle.web.xyh.item.list" ||
+	if rules.Version != 4 || rules.API.UserItems != "mtop.idle.web.xyh.item.list" ||
 		rules.API.UserRatings != "mtop.idle.web.trade.rate.list" ||
 		rules.Selectors.SellerRatings != "//div[text()='信用及评价']/ancestor::li" {
 		t.Fatal("卖家规则缺失或版本错误")
+	}
+	if rules.Selectors.LoginNick != "#header [class*='user-order-container--'] [class*='nick--']" {
+		t.Fatal("正面登录节点必须限定已确认用户区和昵称类前缀")
 	}
 	if rules.timeout("seller_items_response") != 8*time.Second || rules.timeout("seller_ratings_response") != 8*time.Second ||
 		rules.timeout("profile") != 20*time.Second || rules.timeout("profile_response") != 15*time.Second {

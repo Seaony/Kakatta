@@ -342,8 +342,8 @@ func TestMissingUnconfirmedCookieOnlyWarns(t *testing.T) {
 	if !warned {
 		t.Fatal("应记录本地预检警告")
 	}
-	if err := r.CheckLogin(ctx); err != nil {
-		t.Fatalf("首页正常、没有 Cookie 不能标记登录失效：%v", err)
+	if err := r.CheckLogin(ctx); err == nil || errors.Is(err, ErrLoginExpired) {
+		t.Fatalf("无正面身份只能表示尚未确认，不能成功或误标失效：%v", err)
 	}
 }
 

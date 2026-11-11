@@ -52,3 +52,27 @@ func TestLoginHeaderStructureIsBounded(t *testing.T) {
 		t.Fatal("观察结构必须有固定上限", len(nodes))
 	}
 }
+
+func TestLoginNicknameFactsRequireObservedDirectText(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		children []*chromedp.Node
+		hasText  bool
+		entry    bool
+	}{
+		{"空白", []*chromedp.Node{loginHeaderTestText(" \n\t　")}, false, false},
+		{"登录文案", []*chromedp.Node{loginHeaderTestText(" \n登录\t")}, true, true},
+		{"拆开的登录文案", []*chromedp.Node{loginHeaderTestText("登"), loginHeaderTestText("录")}, true, true},
+		{"正面昵称", []*chromedp.Node{loginHeaderTestText("本地身份示例")}, true, false},
+		{"其它组件", []*chromedp.Node{loginHeaderTestNode("SPAN", nil, loginHeaderTestText("本地身份示例"))}, false, false},
+		{"脚本", []*chromedp.Node{loginHeaderTestNode("SCRIPT", nil, loginHeaderTestText("本地身份示例"))}, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			node := loginHeaderTestNode("DIV", []string{"class", "nick--fixture"}, tc.children...)
+			hasText, entry := loginTextFacts(node)
+			if hasText != tc.hasText || entry != tc.entry {
+				t.Fatalf("昵称事实错误：非空%v，登录文案%v", hasText, entry)
+			}
+		})
+	}
+}

@@ -40,6 +40,7 @@ func (r *Runner) OwnProfile(ctx context.Context) (xianyu.SellerHead, error) {
 		return h, r.ReportFailure(ctx, "解析自己的资料", fmt.Errorf("解析自己的资料：%w", err), resp)
 	}
 	r.observeSellerHead(resp.Body)
+	r.observeMissingOwnItemCount(resp.Body, h.ItemCountKnown)
 	r.observation("own_profile", map[string]any{"without_user_id": true, "nickname_present": h.Nick != "", "avatar_present": h.Avatar != "", "identity_confirmed": false})
 	if err := r.wait(ctx, "主页停留", r.Pace.Action); err != nil {
 		return h, err

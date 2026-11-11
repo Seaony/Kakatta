@@ -13,6 +13,8 @@ const delayedLoginPage = `<!doctype html><meta charset="utf-8"><title>延迟登�
 <button id="continue-login" hidden style="width:180px;height:40px">触发登录后的页面变化</button>
 <script>
 const completion = LOGIN_COMPLETION;
+const nickState = LOGIN_NICK_STATE;
+const nextHeader = LOGIN_HEADER;
 setTimeout(() => {
   document.getElementById('login-waiting').remove();
   const box = document.createElement('iframe');
@@ -29,8 +31,9 @@ document.getElementById('finish-login').addEventListener('click', () => {
   document.getElementById('continue-login').hidden = false;
 });
 document.getElementById('continue-login').addEventListener('click', () => {
-  if (completion === 'navigation') location.href = '/fixture/login-evidence-complete';
-  if (completion === 'mtop') fetch('/h5/mtop.fake.login/1.0/?state=success&after_scan=1');
+  if (completion === 'navigation') location.href = '/fixture/login-evidence-complete?nick=' + encodeURIComponent(nickState);
+  if (completion === 'mtop') fetch('/h5/mtop.fake.login/1.0/?state=success&after_scan=1&nick=' + encodeURIComponent(nickState)).then(() => { document.getElementById('header').outerHTML = nextHeader; });
+  if (completion === 'none') document.getElementById('header').outerHTML = nextHeader;
 });
 </script>`
 
@@ -42,6 +45,14 @@ func (f *Xianyu) registerLoginEvidence(mux *http.ServeMux, page func(string) htt
 		}
 		http.SetCookie(w, &http.Cookie{Name: "unb", Value: "old-marker", Path: "/", Expires: expires})
 	}
+	mux.HandleFunc("/fixture/login-header", func(w http.ResponseWriter, r *http.Request) {
+		nick, ok := loginHeaderState(r)
+		if !ok {
+			http.Error(w, "登录夹具参数无效", http.StatusBadRequest)
+			return
+		}
+		page(pageWithLoginHeader(`<!doctype html><meta charset="utf-8"><title>用户区结构</title>`, nick))(w, r)
+	})
 	mux.HandleFunc("/fixture/login-delayed", func(w http.ResponseWriter, r *http.Request) {
 		completion := r.URL.Query().Get("completion")
 		if completion == "" {
@@ -51,14 +62,30 @@ func (f *Xianyu) registerLoginEvidence(mux *http.ServeMux, page func(string) htt
 			http.Error(w, "登录夹具参数无效", http.StatusBadRequest)
 			return
 		}
+		nick, ok := loginHeaderState(r)
+		if !ok {
+			http.Error(w, "登录夹具参数无效", http.StatusBadRequest)
+			return
+		}
 		setMarker(w, r.URL.Query().Get("cookie") == "expired")
-		page(strings.ReplaceAll(delayedLoginPage, "LOGIN_COMPLETION", strconv.Quote(completion)))(w, r)
+		source := strings.NewReplacer("LOGIN_COMPLETION", strconv.Quote(completion), "LOGIN_NICK_STATE", strconv.Quote(nick), "LOGIN_HEADER", strconv.Quote(loginHeader(nick))).Replace(delayedLoginPage)
+		page(pageWithLoginHeader(source, "login"))(w, r)
 	})
 	mux.HandleFunc("/fixture/login-cookie-only", func(w http.ResponseWriter, r *http.Request) {
 		setMarker(w, r.URL.Query().Get("cookie") == "expired")
-		page(`<!doctype html><meta charset="utf-8"><title>只有旧登录标记</title><div>没有新的登录页面证据</div>`)(w, r)
+		page(pageWithLoginHeader(`<!doctype html><meta charset="utf-8"><title>只有旧登录标记</title><div>没有新的登录页面证据</div>`, "login"))(w, r)
 	})
-	mux.HandleFunc("/fixture/login-evidence-complete", page(`<!doctype html><meta charset="utf-8"><title>扫码后页面</title><div>已完成扫码后的主框架导航</div>`))
+	mux.HandleFunc("/fixture/login-evidence-complete", func(w http.ResponseWriter, r *http.Request) {
+		nick, ok := loginHeaderState(r)
+		if !ok {
+			http.Error(w, "登录夹具参数无效", http.StatusBadRequest)
+			return
+		}
+		if nick == "valid" {
+			markFixtureLoginCompleted(w)
+		}
+		page(pageWithLoginHeader(`<!doctype html><meta charset="utf-8"><title>扫码后页面</title><div>已完成扫码后的主框架导航</div>`, nick))(w, r)
+	})
 	mux.HandleFunc("/fixture/login-gate", func(w http.ResponseWriter, r *http.Request) {
 		id, err := strconv.ParseUint(r.URL.Query().Get("id"), 10, 64)
 		f.mu.Lock()
@@ -75,7 +102,7 @@ func (f *Xianyu) registerLoginEvidence(mux *http.ServeMux, page func(string) htt
 		}()
 		select {
 		case <-gate:
-			http.SetCookie(w, &http.Cookie{Name: "fixture_login_completed", Value: "1", Path: "/", HttpOnly: true, Expires: time.Now().Add(30 * 24 * time.Hour)})
+			markFixtureLoginCompleted(w)
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(`{"completed":true}`))
 		case <-r.Context().Done():
@@ -96,6 +123,7 @@ func (f *Xianyu) automaticLoginPage() string {
 	source := strings.Replace(fakeHome, `<div style="height:80px">`, frame+`<div style="height:80px">`, 1)
 	return source + `<script>fetch('/fixture/login-gate?id=` + strconv.FormatUint(id, 10) + `').then(r => r.json()).then(() => {
 document.getElementById('alibaba-login-box').style.display = 'none';
+document.getElementById('header').outerHTML = ` + strconv.Quote(loginHeader("valid")) + `;
 fetch('/h5/mtop.fake.login/1.0/?state=success&after_scan=1');
 });</script>`
 }

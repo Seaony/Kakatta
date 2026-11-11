@@ -79,16 +79,19 @@ type Runner struct {
 	Log      Logger
 	Diagnose func(context.Context, Diagnostic) error
 
-	since            uint64 // 风控检查从这里开始查，见 checkResponses
-	handledRisks     map[uint64]handledRisk
-	observationMu    sync.Mutex
-	observed         map[string]string
-	observedFrameURL string
-	loginBoxSeen     bool
-	loginNavMark     uint64
-	loginRequestMark uint64
+	since             uint64 // 风控检查从这里开始查，见 checkResponses
+	handledRisks      map[uint64]handledRisk
+	observationMu     sync.Mutex
+	observed          map[string]string
+	observedFrameURL  string
+	loginBoxSeen      bool
+	loginNavMark      uint64
+	loginRequestMark  uint64
+	searchNickHints   int
+	detailCreditHints int
+	ownCountHints     int
 
-	// SearchInput 是首页搜索框的选择器；为空时自动找（XIANYU.md 3.6 节：还没用真实页面确认）。
+	// SearchInput 为空时自动找；固定属性选择器仍待真实确认（XIANYU.md 3.6 节）。
 	SearchInput string
 }
 

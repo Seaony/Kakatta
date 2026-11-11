@@ -41,6 +41,7 @@ func objectAt(root map[string]any, path ...string) map[string]any {
 
 func (r *Runner) observeDetail(body []byte) bool {
 	root := responseObject(body)
+	r.observeMissingDetailCredit(root)
 	item := objectAt(root, "data", "itemDO")
 	var descriptionPath string
 	for _, field := range []string{"desc", "description", "richTextDesc"} {
@@ -92,6 +93,7 @@ func (r *Runner) observeSearch(body []byte) {
 	areas := map[string]int{}
 	for _, entry := range list {
 		main := objectAt(asObject(entry), "data", "item", "main")
+		r.observeMissingSearchNick(main)
 		walkFields(main, "data.resultList[].data.item.main", func(path, key string, value any) {
 			low := strings.ToLower(key)
 			if low == "sellerid" || low == "userid" {

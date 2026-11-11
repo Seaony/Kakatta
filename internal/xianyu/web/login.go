@@ -148,8 +148,14 @@ func (r *Runner) VerificationPageNeedsRefresh(ctx context.Context) (bool, error)
 // ErrLoginTimeout 表示在规定时间内用户没有完成登录。
 var ErrLoginTimeout = errors.New("等待登录超时")
 
-// LoggedIn 只读本会话已观察到的登录框和页面变化，不把旧 Cookie 当作成功依据。
+// LoggedIn 只认已确认的可见昵称；本次见过登录框时还要求框消失和新页面活动。
 func (r *Runner) LoggedIn(ctx context.Context) (bool, error) {
+	if err := contextError(ctx); err != nil {
+		return false, err
+	}
+	if _, _, err := r.loginSignals(); err != nil {
+		return false, err
+	}
 	loggedIn, _, err := r.loginState(ctx)
 	return loggedIn, err
 }
@@ -196,8 +202,22 @@ func (r *Runner) loginState(ctx context.Context) (bool, bool, error) {
 		}
 		return false, true, nil
 	}
-	changed := r.S.NavigationMark() > r.loginNavMark || r.S.Capture.SentAfter(r.loginRequestMark, r.Site.mtop())
-	return r.loginBoxSeen && changed, false, nil
+	confirmed, _, err := r.loginNicknameFacts(ctx)
+	if err != nil {
+		return false, false, fmt.Errorf("读取页头登录身份失败：%w", err)
+	}
+	if !confirmed {
+		return false, false, nil
+	}
+	if r.loginBoxSeen {
+		changed := r.S.NavigationMark() > r.loginNavMark || r.S.Capture.SentAfter(r.loginRequestMark, r.Site.mtop())
+		return changed, false, nil
+	}
+	// 本来已登录不等于完成了人工验证，旧风险必须保持未处理。
+	if err := r.checkResponses("确认已有登录"); err != nil {
+		return false, false, err
+	}
+	return true, false, nil
 }
 
 // HasLoginCookie 只查本地有没有这个名字，不读取 Cookie 的值。
@@ -241,10 +261,16 @@ func (r *Runner) WaitForLoginWithViewport(ctx context.Context, timeout time.Dura
 			publish(view)
 		}
 		if err == nil && ok {
-			r.handleSignals(signals)
+			if r.loginBoxSeen {
+				r.handleSignals(signals)
+			}
 			present, cookieErr := r.HasLoginCookieContext(ctx)
 			r.observation("login_cookie", map[string]any{"after_login_available": cookieErr == nil, "after_login_present": cookieErr == nil && present, "used_as_login_evidence": false, "logout_checked": false})
-			r.observation("login_refresh", map[string]any{"after_login_box_seen": true, "main_frame_navigation": r.S.NavigationMark() > r.loginNavMark, "mtop_sent": r.S.Capture.SentAfter(r.loginRequestMark, r.Site.mtop()), "mtop_completed": len(r.S.Capture.DoneAfter(r.loginRequestMark, r.Site.mtop())), "login_box_disappeared": true})
+			completed := 0
+			if r.loginBoxSeen {
+				completed = len(r.S.Capture.DoneAfter(r.loginRequestMark, r.Site.mtop()))
+			}
+			r.observation("login_refresh", map[string]any{"after_login_box_seen": r.loginBoxSeen, "existing_positive_header": !r.loginBoxSeen, "main_frame_navigation": r.loginBoxSeen && r.S.NavigationMark() > r.loginNavMark, "mtop_sent": r.loginBoxSeen && r.S.Capture.SentAfter(r.loginRequestMark, r.Site.mtop()), "mtop_completed": completed, "login_box_disappeared": r.loginBoxSeen})
 			r.observeLoginHeader(ctx, "after_login")
 			return contextError(ctx)
 		}
@@ -316,5 +342,5 @@ func (r *Runner) CheckLogin(ctx context.Context) error {
 	if err := r.check(ctx, "检查登录"); err != nil {
 		return err
 	}
-	return nil
+	return r.RequireLoggedIn(ctx, "检查登录")
 }
