@@ -113,7 +113,7 @@ func TestGroupMessagesRejectsInconsistentProjection(t *testing.T) {
 }
 
 func TestFormatMessageKindsAndLocalizedCore(t *testing.T) {
-	for _, language := range []locales.Language{locales.ZhCN, locales.En} {
+	for _, language := range []locales.Language{locales.ZhCN, locales.En, locales.Ja} {
 		for _, test := range []struct {
 			kind        intentKind
 			mode        analysis.Mode
@@ -158,7 +158,7 @@ func TestFormatMessageKindsAndLocalizedCore(t *testing.T) {
 }
 
 func TestFormatSummaryCountsHiddenUrgentAndLinks(t *testing.T) {
-	for _, language := range []locales.Language{locales.ZhCN, locales.En} {
+	for _, language := range []locales.Language{locales.ZhCN, locales.En, locales.Ja} {
 		members := make([]candidate, 13)
 		for index := range members {
 			members[index] = formatCandidate(int64(index+1), intentPriceUpgrade, formatPtr(int64(84)))
@@ -199,7 +199,7 @@ func TestNotificationMoneyKeepsEveryCent(t *testing.T) {
 			t.Fatalf("%d=%s，预期%s", test.cents, got, test.want)
 		}
 	}
-	for _, language := range []locales.Language{locales.ZhCN, locales.En} {
+	for _, language := range []locales.Language{locales.ZhCN, locales.En, locales.Ja} {
 		r := messageRenderer{language: language}
 		if r.money(nil) == r.money(formatPtr(int64(0))) || r.err != nil {
 			t.Fatalf("未知价格被当作零：%v", r.err)
@@ -307,7 +307,7 @@ func TestFormatSavedSellerAssessmentIgnoresCurrentCache(t *testing.T) {
 			if got := notificationSeller(task, value); !reflect.DeepEqual(got, *value.Finding.SellerAssessment) {
 				t.Fatalf("当前缓存覆盖了已保存评估：%+v", got)
 			}
-			for _, language := range []locales.Language{locales.ZhCN, locales.En} {
+			for _, language := range []locales.Language{locales.ZhCN, locales.En, locales.Ja} {
 				message, err := formatGroup(task, messageGroup{Members: []candidate{value}}, formatChannel(notify.Bark), formatOpts(language))
 				if err != nil {
 					t.Fatal(err)
@@ -315,6 +315,8 @@ func TestFormatSavedSellerAssessmentIgnoresCurrentCache(t *testing.T) {
 				portrait, pending := "疑似商家、新号", "2 项待确认"
 				if language == locales.En {
 					portrait, pending = "Possibly a dealer, new account", "2 checks need confirmation"
+				} else if language == locales.Ja {
+					portrait, pending = "業者の可能性あり・新規アカウント", "要確認 2 項目"
 				}
 				if !strings.Contains(message.Reason, portrait) || !strings.Contains(message.Reason, pending) {
 					t.Fatalf("通知画像或待确认数量偏离持久结论：%s", message.Reason)
@@ -509,7 +511,7 @@ func TestFormatSystemAllKindsAndPersistentFacts(t *testing.T) {
 		{service.EventXianyuLayout, map[string]any{"reason": reason}},
 		{service.EventLoginFailures, map[string]any{"count": int64(20), "ip": "127.0.0.1"}},
 	}
-	for _, language := range []locales.Language{locales.ZhCN, locales.En} {
+	for _, language := range []locales.Language{locales.ZhCN, locales.En, locales.Ja} {
 		for _, test := range cases {
 			t.Run(string(language)+"/"+string(test.kind), func(t *testing.T) {
 				event := service.SystemEvent{Kind: &test.kind, Message: &locales.Message{Code: "persisted.event", Args: test.args}}

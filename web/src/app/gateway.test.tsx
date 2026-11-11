@@ -42,6 +42,21 @@ async function mountGateway(fetch: ApiFetch, backup = false) {
   } };
 }
 
+test('登录后的日语偏好接入网页和文档语言，不被旧中文身份覆盖', async () => {
+  const gateway = await mountGateway(async (request) => {
+    const path = new URL(request.url).pathname;
+    if (path === '/api/v1/setup') return Response.json({ initialized: true, token_expires_at: null });
+    if (path === '/api/v1/me') return Response.json(user);
+    if (path === '/api/v1/settings') return Response.json({ values: { 'general.language': 'ja' }, sources: {}, warnings: [] });
+    throw new Error(`测试未声明路径：${path}`);
+  });
+  try {
+    await screen.findByRole('link', { name: 'タスク' });
+    expect(document.documentElement.lang).toBe('ja');
+    expect(screen.getByRole('textbox', { name: '本地草稿' })).toBeTruthy();
+  } finally { await gateway.dispose(); }
+});
+
 test.each([
   { label: '初始化', marker: 'true', initialized: false, authenticated: false },
   { label: '登录前', marker: 'true', initialized: true, authenticated: false },

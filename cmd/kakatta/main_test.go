@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -20,6 +22,7 @@ import (
 	"github.com/Seaony/Kakatta/internal/security"
 	"github.com/Seaony/Kakatta/internal/settings"
 	"github.com/Seaony/Kakatta/internal/store"
+	webassets "github.com/Seaony/Kakatta/web"
 )
 
 type observedLog struct {
@@ -127,7 +130,7 @@ func TestServeStartsWithEmbeddedPageAndShutsDown(t *testing.T) {
 	if err != nil || json.Unmarshal([]byte(raw), &reason) != nil || reason.Code != "security.login_failures" || reason.Args["count"] != float64(20) || reason.Args["ip"] != "192.0.2.20" {
 		t.Fatalf("登录保护丢失次数或真实来源：%s %v", raw, err)
 	}
-	for _, language := range []locales.Language{locales.ZhCN, locales.En} {
+	for _, language := range []locales.Language{locales.ZhCN, locales.En, locales.Ja} {
 		if _, err := locales.Format(language, reason); err != nil {
 			t.Fatalf("登录告警无法按事件事实翻译：%v", err)
 		}
@@ -145,6 +148,34 @@ func TestServeStartsWithEmbeddedPageAndShutsDown(t *testing.T) {
 	defer logs.mu.Unlock()
 	if strings.Count(logs.lines.String(), `"token":`) != 1 || strings.Contains(logs.lines.String(), "local-test-password") {
 		t.Fatal("初始化日志次数错误或泄露了密码")
+	}
+}
+
+func TestEmbeddedPageIncludesThreeLanguages(t *testing.T) {
+	assets := webassets.Assets()
+	var scripts strings.Builder
+	if err := fs.WalkDir(assets, ".", func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() || !strings.HasSuffix(path, ".js") {
+			return err
+		}
+		raw, err := fs.ReadFile(assets, path)
+		scripts.Write(raw)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, language := range []locales.Language{locales.ZhCN, locales.En, locales.Ja} {
+		raw, err := locales.JSON(language)
+		var dictionary map[string]string
+		if err != nil || json.Unmarshal(raw, &dictionary) != nil {
+			t.Fatalf("没有嵌入%s字典：%v", language, err)
+		}
+		for _, code := range []string{"web.setup.title", "web.onboarding.title", "admin.diagnostics.preview", "runtime.storage_unavailable"} {
+			text := dictionary[code]
+			if text == "" || !strings.Contains(scripts.String(), text) && !strings.Contains(scripts.String(), strings.Trim(strconv.QuoteToASCII(text), `"`)) {
+				t.Fatalf("网页构建缺少%s文案%s，请先重建网页", language, code)
+			}
+		}
 	}
 }
 

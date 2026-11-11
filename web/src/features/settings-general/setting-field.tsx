@@ -32,6 +32,7 @@ export function SettingField({ definition, draft, source, errors, warnings, disa
       if (value === 'system') return t('web.settings.follow_system');
       if (value === 'zh-CN') return t('web.settings.language_zh');
       if (value === 'en') return t('web.settings.language_en');
+      if (value === 'ja') return t('web.settings.language_ja');
     }
     if (definition.key === 'general.appearance') {
       if (value === 'system') return t('web.settings.follow_system');

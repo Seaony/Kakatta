@@ -96,7 +96,7 @@ func TestSellerWarningsDoNotPersistRawErrorOrPretendKnownData(t *testing.T) {
 		if len(result.Warnings) != 1 || result.Warnings[0].Code != code || len(result.Warnings[0].Args) != 0 || result.Head != nil || result.Items != nil || result.Ratings != nil || !result.Opened {
 			t.Fatalf("普通错误只能留下固定原因，不能伪造资料：%+v", result)
 		}
-		for _, language := range []locales.Language{locales.ZhCN, locales.En} {
+		for _, language := range []locales.Language{locales.ZhCN, locales.En, locales.Ja} {
 			text, err := locales.Format(language, result.Warnings[0])
 			if err != nil || strings.Contains(text, "secret") || strings.Contains(text, "private") {
 				t.Fatalf("警告必须可双语显示且不泄漏：%q %v", text, err)

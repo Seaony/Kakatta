@@ -10,7 +10,7 @@ import { ApiProvider } from '../../api/hooks';
 import { apiKey } from '../../api/keys';
 import type { Schema } from '../../api/types';
 import { createAppQueryClient } from '../../app/query-client';
-import { createI18n, I18nProvider } from '../../i18n';
+import { createI18n, I18nProvider, type Locale } from '../../i18n';
 import { LoginForm } from './login';
 import { SetupPage } from './setup';
 
@@ -23,7 +23,7 @@ function failure(status: number, code: string, args = {}, fields: Schema<'FieldI
   return Response.json({ error: { code, args }, fields, request_id: 'request-local-27' }, { status });
 }
 
-async function mount(node: ReactNode, transport: ApiFetch, locale: 'zh-CN' | 'en' = 'zh-CN') {
+async function mount(node: ReactNode, transport: ApiFetch, locale: Locale = 'zh-CN') {
   const queryClient = createAppQueryClient();
   const route = createRootRoute({ component: () => node });
   const router = createRouter({ routeTree: route, history: createMemoryHistory({ initialEntries: ['/'] }) });
@@ -34,7 +34,7 @@ async function mount(node: ReactNode, transport: ApiFetch, locale: 'zh-CN' | 'en
   return { queryClient, view, close() { view.unmount(); queryClient.clear(); } };
 }
 
-test.each(['zh-CN', 'en'] as const)('%s 初始化页明确说明令牌文件位置与容器日志命令', async (locale) => {
+test.each(['zh-CN', 'en', 'ja'] as const)('%s 初始化页明确说明令牌文件位置与容器日志命令', async (locale) => {
   const page = await mount(<SetupPage />, async () => Response.json({ initialized: false, token_expires_at: Date.now() + 1_800_000 }), locale);
   try {
     const help = await screen.findByText(/data\/初始化令牌.txt/);

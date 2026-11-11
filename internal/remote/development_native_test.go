@@ -46,14 +46,14 @@ func TestDevelopmentNativePreviewUsesNativeNoticeAndRejectsInput(t *testing.T) {
 			t.Fatalf("本机开发画面仍必须验证登录：%s %d", route, response.Code)
 		}
 	}
-	for _, lang := range []string{"zh-CN", "en"} {
+	for _, lang := range []string{"zh-CN", "en", "ja"} {
 		response := httptest.NewRecorder()
 		request := httptest.NewRequest(http.MethodGet, "/", nil)
 		request.Header.Set("X-Development-Test", "yes")
 		request.Header.Set("Accept-Language", lang)
 		handler.ServeHTTP(response, request)
 		body := response.Body.String()
-		if response.Code != http.StatusOK || !strings.Contains(body, "本机假页请在独立的 Chrome 窗口操作") || !strings.Contains(body, "This web view is read-only.") || strings.Contains(body, "重启容器") || strings.Contains(body, "restarting the container") || strings.Contains(body, "<button") || captures.Load() != 0 {
+		if response.Code != http.StatusOK || !strings.Contains(body, "本机假页请在独立的 Chrome 窗口操作") || !strings.Contains(body, "This web view is read-only.") || !strings.Contains(body, "この画面は閲覧専用です。") || strings.Contains(body, "重启容器") || strings.Contains(body, "restarting the container") || strings.Contains(body, "<button") || captures.Load() != 0 {
 			t.Fatal("本机画面不得显示容器恢复指引、提供输入或提前截图", body)
 		}
 	}

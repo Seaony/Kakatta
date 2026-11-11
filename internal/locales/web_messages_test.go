@@ -213,7 +213,7 @@ func TestWebMessageArgumentsHaveBothLanguages(t *testing.T) {
 		{Code: "web.ai.budget_unlimited", Args: map[string]any{"used": "1", "count": 1}},
 		{Code: "web.ai.budget_unlimited", Args: map[string]any{"used": "1200", "count": 1200}},
 	} {
-		for _, lang := range []Language{ZhCN, En} {
+		for _, lang := range []Language{ZhCN, En, Ja} {
 			got, err := Format(lang, message)
 			if err != nil || strings.TrimSpace(got) == "" {
 				t.Errorf("网页消息%s/%s无法按实际参数显示：%q，%v", message.Code, lang, got, err)

@@ -113,7 +113,7 @@ func generationProblem(t *testing.T, err error, kind service.ErrorKind, code str
 	if !errors.As(err, &problem) || problem.Kind != kind || problem.Reason.Code != code {
 		t.Fatalf("错误没有安全分类：%v", err)
 	}
-	for _, lang := range []locales.Language{locales.ZhCN, locales.En} {
+	for _, lang := range []locales.Language{locales.ZhCN, locales.En, locales.Ja} {
 		if _, err := locales.Format(lang, problem.Reason); err != nil {
 			t.Fatal(err)
 		}

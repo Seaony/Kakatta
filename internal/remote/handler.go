@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Seaony/Kakatta/internal/locales"
 	"github.com/coder/websocket"
 )
 
@@ -58,6 +59,7 @@ func (s *Session) HandlerWithViewer(authorized func(*http.Request) bool, onAccep
 	})
 	fileServer := http.FileServerFS(files)
 	if s.preview == nil {
+		mux.HandleFunc("GET /{$}", viewerDocument)
 		mux.Handle("GET /", fileServer)
 	} else {
 		mux.HandleFunc("GET /{$}", s.previewDocument)
@@ -71,7 +73,7 @@ func (s *Session) HandlerWithViewer(authorized func(*http.Request) bool, onAccep
 		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
 		w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'self'; base-uri 'none'; form-action 'self'")
 		if authorized == nil || !authorized(r) {
-			http.Error(w, "请先登录", http.StatusUnauthorized)
+			http.Error(w, viewerText(locales.Select("", r.Header.Get("Accept-Language")), "unauthorized"), http.StatusUnauthorized)
 			return
 		}
 		mux.ServeHTTP(w, r)
@@ -85,7 +87,7 @@ func originAllowed(r *http.Request) bool {
 
 func (s *Session) serveVNC(w http.ResponseWriter, r *http.Request, onAccepted func(context.Context) error) {
 	if !originAllowed(r) {
-		http.Error(w, "远程画面只接受同一站点的连接", http.StatusForbidden)
+		http.Error(w, viewerText(locales.Select("", r.Header.Get("Accept-Language")), "origin_forbidden"), http.StatusForbidden)
 		return
 	}
 	ctx, cancel := context.WithCancel(r.Context())
@@ -101,7 +103,7 @@ func (s *Session) serveVNC(w http.ResponseWriter, r *http.Request, onAccepted fu
 	}
 	upstream, err := (&net.Dialer{Timeout: 3 * time.Second}).DialContext(ctx, "tcp4", s.address)
 	if err != nil {
-		http.Error(w, "远程画面已关闭，请重新打开", http.StatusServiceUnavailable)
+		http.Error(w, viewerText(locales.Select("", r.Header.Get("Accept-Language")), "closed"), http.StatusServiceUnavailable)
 		return
 	}
 	defer upstream.Close()

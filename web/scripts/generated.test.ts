@@ -11,9 +11,15 @@ test('生成器只替换固定说明，保留生成正文并能重复执行', ()
 });
 
 test('字典检查拒绝键、参数和复数对缺失，接受单层插值', () => {
-  expect(() => checkLocales({ key: '你好{name}' }, { key: 'Hello {name}' })).not.toThrow();
-  expect(() => checkLocales({ key: '你好{name}' }, { key: 'Hello {other}' })).toThrow();
-  expect(() => checkLocales({ key: '你好' }, {})).toThrow();
-  expect(() => checkLocales({ item_one: '{count}' }, { item_one: '{count}' })).toThrow();
-  expect(() => checkLocales({ key: {} }, { key: 'hello' })).toThrow();
+  expect(() => checkLocales({ key: '你好{name}' }, { key: 'Hello {name}' }, { key: 'こんにちは{name}' })).not.toThrow();
+  expect(() => checkLocales({ key: '你好{name}' }, { key: 'Hello {other}' }, { key: 'こんにちは{name}' })).toThrow();
+  expect(() => checkLocales({ key: '你好' }, {}, { key: 'こんにちは' })).toThrow();
+  expect(() => checkLocales({ item_one: '{count}' }, { item_one: '{count}' }, { item_one: '{count}' })).toThrow();
+  expect(() => checkLocales({ key: {} }, { key: 'hello' }, { key: 'こんにちは' })).toThrow();
+  expect(() => checkLocales({ key: '你好{name}' }, { key: 'Hello {name}' }, {})).toThrow();
+  expect(() => checkLocales({ key: '你好{name}' }, { key: 'Hello {name}' }, { key: 'こんにちは{other}' })).toThrow();
+  expect(() => checkLocales({ key: '你好' }, { key: 'Hello' }, { key: '' })).toThrow();
+  expect(() => checkLocales({ key: '你好' }, { key: 'Hello' }, { key: '　' })).toThrow();
+  expect(() => checkLocales({ item_one: '{count}', item_other: '{count}' },
+    { item_one: '{count}', item_other: '{count}' }, { item_one: '{count}件', item_other: '{count}件' })).not.toThrow();
 });

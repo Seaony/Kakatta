@@ -163,7 +163,7 @@ func checkSampleJSON(t *testing.T, db *sql.DB) {
 			if err := json.Unmarshal([]byte(raw), &message); err != nil || message.Args == nil {
 				t.Fatalf("原因没有使用正式 JSON：%q %v", raw, err)
 			}
-			for _, language := range []locales.Language{locales.ZhCN, locales.En} {
+			for _, language := range []locales.Language{locales.ZhCN, locales.En, locales.Ja} {
 				if _, err := locales.Format(language, message); err != nil {
 					t.Fatal(err)
 				}

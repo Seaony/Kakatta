@@ -13,6 +13,10 @@ cleanup() {
     if [ -s "$work/container.id" ]; then
         docker rm -f "$(cat "$work/container.id")" >/dev/null 2>&1 || true
     fi
+    cp -R "$work/screens/." build/m7-screens/ 2>/dev/null || true
+    if [ -f "$work/run.log" ]; then
+        cp "$work/run.log" build/m7-screens/web-smoke.log
+    fi
     rm -rf -- "$work"
 }
 trap cleanup EXIT
@@ -27,13 +31,13 @@ go test -c -o "$work/web.test" ./cmd/kakatta
 
 docker run --rm --pull=never --network none --no-healthcheck --cidfile "$work/container.id" \
     --security-opt seccomp=unconfined --tmpfs /data:rw,nosuid,nodev \
-    -e PUID="$(id -u)" -e PGID="$(id -g)" \
+    -e PUID="$(id -u)" -e PGID="$(id -g)" -e KAKATTA_WEB_SMOKE_TESTS="${2:-^TestWeb(Smoke|StorageFailureSmoke)$}" \
     --mount "type=bind,src=$work,dst=/tests,readonly" \
     --mount "type=bind,src=$work/screens,dst=/screens" \
     "$image" /bin/sh -eu -c '
         test "$(id -u)" -ne 0
         export KAKATTA_WEB_SMOKE=1
-        /tests/web.test -test.run "^TestWeb(Smoke|StorageFailureSmoke)$" -test.v -test.timeout=4m
+        /tests/web.test -test.run "$KAKATTA_WEB_SMOKE_TESTS" -test.v -test.timeout=8m
         for attempt in 1 2 3 4 5; do
             remaining=
             for file in /proc/[0-9]*/comm; do
@@ -49,5 +53,8 @@ docker run --rm --pull=never --network none --no-healthcheck --cidfile "$work/co
         done
         printf "浏览器进程没有退出：%s\n" "$remaining" >&2
         exit 1
-    '
-cp -R "$work/screens/." build/m7-screens/
+    ' > "$work/run.log" 2>&1 || {
+        cat "$work/run.log"
+        exit 1
+    }
+cat "$work/run.log"

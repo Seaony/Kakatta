@@ -4,7 +4,7 @@
 
 <p align="center">かかった! Got a bite!</p>
 
-[简体中文](README.zh-CN.md)
+[English](README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja.md)
 
 Kakatta watches Xianyu (闲鱼) for the things you want. It searches on a schedule, screens new listings with rules and optional AI analysis, and sends notifications for the ones worth a look. Run it in one Docker container on your server, NAS, or computer and use it from a browser.
 

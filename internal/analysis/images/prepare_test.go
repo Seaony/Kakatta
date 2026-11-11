@@ -503,7 +503,7 @@ func TestPrepareConfigurationAndCountErrorsHaveBothTranslations(t *testing.T) {
 		if err.Error() != message.Code || len(message.Args) != 0 {
 			t.Fatalf("错误只能含静态代码：%v %+v", err, message)
 		}
-		for _, language := range []locales.Language{locales.ZhCN, locales.En} {
+		for _, language := range []locales.Language{locales.ZhCN, locales.En, locales.Ja} {
 			if text, formatErr := locales.Format(language, message); formatErr != nil || text == "" {
 				t.Fatalf("%s缺%s文案：%v", language, message.Code, formatErr)
 			}
@@ -517,7 +517,7 @@ func assertIssueTranslations(t *testing.T, issues []Issue) {
 		if issue.Reason.Args == nil {
 			t.Fatalf("实际Issue参数必须为对象：%+v", issue)
 		}
-		for _, language := range []locales.Language{locales.ZhCN, locales.En} {
+		for _, language := range []locales.Language{locales.ZhCN, locales.En, locales.Ja} {
 			if text, err := locales.Format(language, issue.Reason); err != nil || text == "" {
 				t.Fatalf("实际Issue缺%s文案或参数不合法：%+v %v", language, issue, err)
 			}

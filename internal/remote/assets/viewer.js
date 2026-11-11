@@ -8,6 +8,8 @@ const help = document.querySelector('#help');
 const actual = document.querySelector('#actual');
 const fit = document.querySelector('#fit');
 const pan = document.querySelector('#pan');
+const copies = document.querySelector('#viewer-copy').content;
+const browserLanguage = document.documentElement.lang;
 const mobile = () => matchMedia('(max-width: 767px), (pointer: coarse)').matches;
 const ws = new URL('vnc', location.href);
 ws.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -25,9 +27,35 @@ let detachTouch = () => {};
 let panning = false;
 let pendingRegion;
 let connected = false;
+let connection = 'connecting';
+let helpState = 'initialHelp';
+let copy;
+
+function showCopy() {
+    const preference = new URLSearchParams(location.hash.slice(1)).get('lang');
+    const language = preference === 'en' || preference === 'zh-CN' || preference === 'ja' ? preference : browserLanguage;
+    copy = copies.querySelector(`[lang="${language}"]`).dataset;
+    document.documentElement.lang = language;
+    document.title = `${copy.title} · Kakatta`;
+    for (const [id, key] of [
+        ['viewer-heading', 'title'], ['actual', 'actual'], ['fit', 'fit'], ['text-toggle', 'textToggle'],
+        ['text-label', 'textLabel'], ['text-help', 'textHelp'], ['text-send', 'textSend'],
+        ['text-backspace', 'textBackspace'], ['text-enter', 'textEnter'], ['text-close', 'textClose'],
+    ]) document.querySelector(`#${id}`).textContent = copy[key];
+    document.querySelector('#viewer-toolbar').setAttribute('aria-label', copy.toolbar);
+    document.querySelector('#text-entry').setAttribute('aria-label', copy.textEntry);
+    host.setAttribute('aria-label', copy.screen);
+    const canvas = host.querySelector('canvas');
+    if (canvas) canvas.setAttribute('aria-label', copy.canvas);
+    pan.textContent = copy[panning ? 'resume' : 'pan'];
+    status.textContent = copy[connection];
+    help.textContent = copy[helpState];
+    textInput.setCopy({ sent: copy.textSent });
+}
 
 function showControlHelp() {
-    help.textContent = panning ? '拖动画面查看其他位置，不会向远程浏览器发送鼠标操作。' : '现在可以直接点击、输入或拖动远程浏览器。';
+    helpState = panning ? 'helpPan' : 'helpControl';
+    help.textContent = copy[helpState];
 }
 
 function focusRegion(region) {
@@ -41,7 +69,8 @@ function focusRegion(region) {
             scroll.scrollLeft = Math.max(0, region.x + region.width / 2 - scroll.clientWidth / 2);
             scroll.scrollTop = Math.max(0, region.y + region.height / 2 - scroll.clientHeight / 2);
         });
-        help.textContent = '已定位到验证区域。请自己完成验证；需要看其他位置时，切换到“移动画面”。';
+        helpState = 'helpVerification';
+        help.textContent = copy[helpState];
     } else {
         scroll.scrollLeft = 0;
         scroll.scrollTop = 0;
@@ -55,12 +84,13 @@ pan.addEventListener('click', () => {
     panning = !panning;
     pan.setAttribute('aria-pressed', String(panning));
     host.dataset.panning = String(panning);
-    pan.textContent = panning ? '继续操控' : '移动画面';
+    pan.textContent = copy[panning ? 'resume' : 'pan'];
     showControlHelp();
 });
 rfb.addEventListener('connect', async () => {
     connected = true;
-    status.textContent = '已连接';
+    connection = 'connected';
+    status.textContent = copy.connected;
     actual.disabled = false;
     fit.disabled = mobile();
     fit.hidden = mobile();
@@ -68,7 +98,7 @@ rfb.addEventListener('connect', async () => {
     textInput.setConnected(true);
     const canvas = host.querySelector('canvas');
     canvas.tabIndex = 0;
-    canvas.setAttribute('aria-label', '远程浏览器，可用键盘输入');
+    canvas.setAttribute('aria-label', copy.canvas);
     detachTouch = attachTouch(canvas, (x, y, mask) => rfb.sendPointer(x, y, mask), host.firstElementChild, () => panning);
     if (pendingRegion !== undefined) {
         if (pendingRegion !== null) focusRegion(pendingRegion);
@@ -80,18 +110,27 @@ rfb.addEventListener('connect', async () => {
             const region = await response.json();
             if (region && pendingRegion === undefined && connected) focusRegion(region);
         }
-    } catch { if (pendingRegion === undefined && connected) help.textContent = '位置提示暂时不可用，仍可在画面里手动操作。'; }
+    } catch {
+        if (pendingRegion === undefined && connected) {
+            helpState = 'helpPositionUnavailable';
+            help.textContent = copy[helpState];
+        }
+    }
 });
 rfb.addEventListener('disconnect', () => {
     connected = false;
     detachTouch();
     textInput.setConnected(false);
-    status.textContent = '连接已结束';
-    help.textContent = '画面会在会话结束时关闭。如需继续，请回到实验工具重新打开。';
+    connection = 'disconnected';
+    helpState = 'helpDisconnected';
+    status.textContent = copy[connection];
+    help.textContent = copy[helpState];
     for (const button of [actual, fit, pan]) button.disabled = true;
 });
-rfb.addEventListener('securityfailure', () => { status.textContent = '无法连接，请回到实验工具重新打开画面'; });
+rfb.addEventListener('securityfailure', () => { connection = 'connectionFailed'; status.textContent = copy[connection]; });
 window.addEventListener('message', event => {
     if (event.origin === location.origin && event.source === window.parent && event.data?.type === 'kakatta:viewport') focusRegion(event.data.region);
 });
 window.addEventListener('pagehide', () => { detachTouch(); textInput.dispose(); rfb.disconnect(); });
+window.addEventListener('hashchange', showCopy);
+showCopy();

@@ -304,7 +304,14 @@ func TestBusinessTransfersRunLogLanguageAndFilters(t *testing.T) {
 	path := fmt.Sprintf("/api/v1/runs/export?task_id=%d&outcome=failed&failure_kind=restart&q=wanted&from_at=%d&to_at=%d", task, now-500, now+1)
 	requireStatus(t, f.request(http.MethodGet, path, "", false), http.StatusUnauthorized)
 	requireStatus(t, f.request(http.MethodGet, path+"&limit=1", "", true), http.StatusBadRequest)
-	for _, preference := range []struct{ setting, header string }{{"system", "en-US,zh-CN;q=0.5"}, {"en", "zh-CN"}} {
+	for _, preference := range []struct {
+		setting, header string
+		language        locales.Language
+	}{
+		{"system", "en-US,zh-CN;q=0.5", locales.En}, {"en", "zh-CN", locales.En},
+		{"system", "ja_JP.UTF-8", locales.Ja}, {"ja", "en-US", locales.Ja},
+		{"system", "en;q=0.4,ja-JP;q=0.9", locales.Ja}, {"system", "fr-FR", locales.En},
+	} {
 		encoded, err := json.Marshal(preference.setting)
 		if err != nil {
 			t.Fatal(err)
@@ -316,8 +323,11 @@ func TestBusinessTransfersRunLogLanguageAndFilters(t *testing.T) {
 			r.Header.Set("Accept-Language", preference.header)
 		})
 		requireStatus(t, response, http.StatusOK)
-		translated, err := locales.Format(locales.En, locales.Message{Code: "run.no_account"})
+		translated, err := locales.Format(preference.language, locales.Message{Code: "run.no_account"})
 		body := response.Body.String()
+		if preference.language == locales.Ja && translated != "利用できる闲鱼アカウントがありません。" {
+			t.Fatal("日文运行原因没有使用实际译文", translated)
+		}
 		if err != nil || !strings.Contains(body, translated) || !strings.Contains(body, "wanted-task") ||
 			strings.Contains(body, "other-task") || strings.Contains(body, "wanted-older") ||
 			!strings.HasPrefix(response.Header().Get("Content-Type"), "text/plain") || strings.Count(body, "\n") != 2 {

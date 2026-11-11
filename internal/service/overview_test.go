@@ -365,7 +365,7 @@ func TestOverviewTaskStatePriorityKeepsOneState(t *testing.T) {
 		if got.Reason == nil {
 			t.Fatal("没有原状态说明时丢失账号阻断原因", state)
 		}
-		for _, language := range []locales.Language{locales.ZhCN, locales.En} {
+		for _, language := range []locales.Language{locales.ZhCN, locales.En, locales.Ja} {
 			if _, err := locales.Format(language, *got.Reason); err != nil {
 				t.Fatalf("账号阻断说明不能在%s显示：%v", language, err)
 			}

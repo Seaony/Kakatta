@@ -4,7 +4,7 @@
 
 <p align="center">かかった！上钩了！</p>
 
-[English](README.md)
+[English](README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja.md)
 
 帮你盯着闲鱼上想要的东西。按任务定时搜索，新商品先过规则，也可以用 AI 分析，值得看的再推送给你。在自己的服务器、NAS 或电脑上用一个 Docker 容器运行，从浏览器打开网页端。
 

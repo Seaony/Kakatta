@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/Seaony/Kakatta/internal/config"
+	"github.com/Seaony/Kakatta/internal/locales"
 	"github.com/Seaony/Kakatta/internal/security"
 	"github.com/Seaony/Kakatta/internal/settings"
 )
@@ -45,6 +46,9 @@ func TestCheckReadsSavedTimezoneAndProxyWithoutChangingProtection(t *testing.T) 
 	if _, err := db.Exec(`INSERT INTO settings(key,value_json) VALUES('general.timezone','"America/New_York"') ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json`); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := db.Exec(`INSERT INTO settings(key,value_json) VALUES('general.language','"ja"') ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json`); err != nil {
+		t.Fatal(err)
+	}
 	var before, after string
 	if err := db.QueryRow(`SELECT value FROM meta WHERE key='quota.clock'`).Scan(&before); err != nil {
 		t.Fatal(err)
@@ -56,8 +60,8 @@ func TestCheckReadsSavedTimezoneAndProxyWithoutChangingProtection(t *testing.T) 
 			}
 		}
 	}
-	zone, proxies, err := checkSavedConfiguration(t.Context(), config.Config{DataDir: data}, func(string) (string, bool) { return "", false })
-	if err != nil || zone != "America/New_York" || len(proxies) != 1 {
+	zone, proxies, language, err := checkSavedConfiguration(t.Context(), config.Config{DataDir: data}, func(string) (string, bool) { return "", false })
+	if err != nil || zone != "America/New_York" || len(proxies) != 1 || language != locales.Ja {
 		t.Fatalf("未只读加载实际配置：时区=%s，代理数=%d，错误=%v", zone, len(proxies), err)
 	}
 	if password, _ := proxies[0].User.Password(); password != "local-password" || proxies[0].Hostname() != "127.0.0.1" {
@@ -70,8 +74,8 @@ func TestCheckReadsSavedTimezoneAndProxyWithoutChangingProtection(t *testing.T) 
 
 func TestCheckDoesNotInitializeMissingDatabaseOrKey(t *testing.T) {
 	data := t.TempDir()
-	zone, proxies, err := checkSavedConfiguration(t.Context(), config.Config{DataDir: data, Environment: settings.Environment{TZ: "UTC"}}, nil)
-	if err != nil || zone != "UTC" || len(proxies) != 0 {
+	zone, proxies, language, err := checkSavedConfiguration(t.Context(), config.Config{DataDir: data, Environment: settings.Environment{TZ: "UTC"}}, func(key string) (string, bool) { return "ja_JP.UTF-8", key == "LANG" })
+	if err != nil || zone != "UTC" || len(proxies) != 0 || language != locales.Ja {
 		t.Fatalf("全新配置自检错误：%s，%d，%v", zone, len(proxies), err)
 	}
 	entries, err := os.ReadDir(data)
@@ -99,6 +103,28 @@ func TestCheckReportsCorruptSettingsBeforeStartingBrowser(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(data, "secret.key")); !os.IsNotExist(err) {
 		t.Fatal("损坏数据库自检重建了主密钥")
+	}
+}
+
+func TestCheckLocalizesFailureFromSystemWhenSavedSettingsCannotBeRead(t *testing.T) {
+	for _, tc := range []struct{ system, detail, action, summary string }{
+		{"ja_JP.UTF-8", "保存済みの設定を読み込めません", "アカウントの保護記録は削除しないでください", "環境チェックに失敗しました"},
+		{"fr_FR.UTF-8", "Existing settings cannot be read", "do not delete account protection records", "environment self-check failed"},
+	} {
+		t.Run(tc.system, func(t *testing.T) {
+			data := t.TempDir()
+			if err := os.WriteFile(filepath.Join(data, "kakatta.db"), []byte("invalid-database"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			var output bytes.Buffer
+			err := checkEnvironment(t.Context(), []string{"--data", data}, &output, func(key string) (string, bool) { return tc.system, key == "LANG" })
+			if err == nil || !strings.Contains(err.Error(), tc.summary) || !strings.Contains(output.String(), tc.detail) || !strings.Contains(output.String(), tc.action) {
+				t.Fatal("读取设置失败时没有按系统语言输出检查原因和建议", output.String(), err)
+			}
+			if _, err := os.Stat(filepath.Join(data, "secret.key")); !os.IsNotExist(err) {
+				t.Fatal("读取设置失败时创建了主密钥")
+			}
+		})
 	}
 }
 

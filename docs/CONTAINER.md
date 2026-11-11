@@ -175,10 +175,12 @@ PUID=$(id -u) PGID=$(id -g) docker compose run --rm kakatta experiment --check -
 正式服务也可以先自检，读取现有设置和已保存代理时只读数据库，不初始化或修改额度：
 
 ```sh
-PUID=$(id -u) PGID=$(id -g) docker compose run --rm kakatta check --data /data
+docker compose run --rm kakatta kakatta check --data /data
 ```
 
 8080 被其他项目占用时，把 `compose.yaml` 的宿主端口映射改为 `127.0.0.1:18080:8080`，访问 `http://127.0.0.1:18080`。交互实验的 `docker compose run -p` 同样改宿主侧为 18080；容器内仍监听 8080，健康检查不用变。若自行更改容器内 `--listen`，需要同步健康检查地址。监听失败会明确提示端口和换端口办法。
+
+自检的固定结果与处理办法支持中英日。正式服务的 `check` 只读已有通用语言设置；跟随系统或空数据目录时使用 `LANG`，实验自检也使用 `LANG`，不支持的语言回退英文。检查的项目和行为不随语言变化，原始系统错误和诊断现场保留原文。
 
 ## 测试时出了问题去哪里看
 

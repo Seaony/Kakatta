@@ -125,7 +125,7 @@ func TestDowngradeEventSurvivesQuotaAndRedactsProviderFields(t *testing.T) {
 func TestClientReasonsHaveBothTranslations(t *testing.T) {
 	codes := []string{"no_provider", "daily_limit", "infrastructure", "config_changed", "invalid_request", "auth", "balance", "not_found", "unsupported_image", "daily_quota", "thinking_too_long", "rate_limit", "server", "network", "timeout", "parse", "protocol", "localhost", "cancelled", "test_failed", "profile_thinking"}
 	for _, code := range codes {
-		for _, lang := range []locales.Language{locales.ZhCN, locales.En} {
+		for _, lang := range []locales.Language{locales.ZhCN, locales.En, locales.Ja} {
 			if text, err := locales.Format(lang, reason(code, 0, "")); err != nil || text == "" {
 				t.Fatalf("原因缺少%s文案%s：%v", lang, code, err)
 			}

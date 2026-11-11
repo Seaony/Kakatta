@@ -89,7 +89,7 @@ export function SettingsPage({ mode }: { mode: 'general' | 'limits' }) {
       if (!action.isCurrent(abort)) return;
       const language = result.values['general.language'];
       const appearance = result.values['general.appearance'];
-      if (language === 'system' || language === 'zh-CN' || language === 'en') await setLocale(selectLocale(language));
+      if (language === 'system' || language === 'zh-CN' || language === 'en' || language === 'ja') await setLocale(selectLocale(language));
       if (!action.isCurrent(abort)) return;
       queryClient.setQueryData(apiKey('settings'), result);
       if (appearance === 'system' || appearance === 'light' || appearance === 'dark') setTheme(appearance);

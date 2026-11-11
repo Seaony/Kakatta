@@ -502,7 +502,7 @@ func TestAccountStateMessagesRenderInBothLanguages(t *testing.T) {
 	}
 	rows.Close()
 	for _, message := range messages {
-		for _, language := range []locales.Language{locales.ZhCN, locales.En} {
+		for _, language := range []locales.Language{locales.ZhCN, locales.En, locales.Ja} {
 			if text, err := locales.Format(language, message); err != nil || text == "" {
 				t.Fatalf("状态消息不能显示：%s %s %v", language, message.Code, err)
 			}

@@ -449,7 +449,7 @@ func TestResultActionMessagesFormatInBothLanguages(t *testing.T) {
 		"findings.invalid_selection", "findings.not_found", "listings.invalid_patch", "listings.not_found", "tasks.invalid_id", "tasks.not_found",
 		"blocked_sellers.invalid_id", "blocked_sellers.invalid_nick", "notify.cancelled_deleted", "notify.cancelled_dismissed", "notify.cancelled_blocked",
 	} {
-		for _, language := range []locales.Language{locales.ZhCN, locales.En} {
+		for _, language := range []locales.Language{locales.ZhCN, locales.En, locales.Ja} {
 			if text, err := locales.Format(language, locales.Message{Code: code}); err != nil || text == "" {
 				t.Fatalf("本地动作消息缺失或参数错误：%s，%s，%v", code, language, err)
 			}

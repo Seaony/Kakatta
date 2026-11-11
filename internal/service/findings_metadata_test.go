@@ -182,7 +182,7 @@ func TestParseWarningsPersistSeparatelyFromModelFacts(t *testing.T) {
 	if _, present := plain["parse_warnings"]; present {
 		t.Fatal("内部元数据进入模型Facts结构")
 	}
-	for _, language := range []locales.Language{locales.ZhCN, locales.En} {
+	for _, language := range []locales.Language{locales.ZhCN, locales.En, locales.Ja} {
 		for _, warning := range finding.AnalysisWarnings {
 			if _, err := locales.Format(language, warning); err != nil {
 				t.Fatal(err)

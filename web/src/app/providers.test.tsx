@@ -59,12 +59,16 @@ test('未知路径使用双语可访问返回入口，不被业务首页吞掉',
   } finally { page.unmount(); queryClient.clear(); restore(); }
 });
 
-test('系统英文作为入口初值，显式中文调用者选择仍然保留', async () => {
+test.each([
+  { language: 'en-US', expected: 'en', title: 'Sign in' },
+  { language: 'ja-JP', expected: 'ja', title: 'ログイン' },
+  { language: 'fr-FR', expected: 'en', title: 'Sign in' },
+])('系统语言 $language 作为入口初值，显式中文调用者选择仍然保留', async ({ language, expected, title }) => {
   const descriptor = Object.getOwnPropertyDescriptor(navigator, 'language');
-  Object.defineProperty(navigator, 'language', { configurable: true, value: 'en-US' });
+  Object.defineProperty(navigator, 'language', { configurable: true, value: language });
   try {
     const cases = [
-      { locale: selectLocale('system'), expected: 'en', title: 'Sign in' },
+      { locale: selectLocale('system'), expected, title },
       { locale: 'zh-CN', expected: 'zh-CN', title: '登录' },
     ] as const;
     for (const { locale, expected, title } of cases) {

@@ -20,6 +20,7 @@ export type ConfirmDialogProps = {
   confirmLabel: string;
   cancelLabel: string;
   onConfirm(): void;
+  onCloseAutoFocus?(event: Event): void;
   pending?: boolean;
   error?: string;
   destructive?: boolean;
@@ -79,6 +80,7 @@ export function ConfirmDialog({
   confirmLabel,
   cancelLabel,
   onConfirm,
+  onCloseAutoFocus,
   pending = false,
   error,
   destructive = false,
@@ -93,6 +95,10 @@ export function ConfirmDialog({
         <AlertDialogPrimitive.Overlay className={overlayClass} />
         <AlertDialogPrimitive.Content
           {...focus}
+          onCloseAutoFocus={(event) => {
+            onCloseAutoFocus?.(event);
+            if (!event.defaultPrevented) focus.onCloseAutoFocus(event);
+          }}
           {...(!description ? { "aria-describedby": undefined } : {})}
           className={contentClass}
         >

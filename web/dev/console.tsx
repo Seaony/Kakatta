@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { messages, phaseText } from './messages';
+import { selectLocale } from '../src/i18n/locale';
 
 export type DevelopmentMode = 'fake' | 'real';
 export type FaultMode = 'normal' | 'expired' | 'risk' | 'missing' | 'api_error';
@@ -38,7 +39,7 @@ function backendReady(status: DevelopmentStatus): boolean {
 }
 
 function useLanguage() {
-  const current = () => document.documentElement.lang.startsWith('en') ? 'en' as const : 'zh-CN' as const;
+  const current = () => selectLocale('system', document.documentElement.lang);
   const [language, setLanguage] = useState(current);
   useEffect(() => {
     const observer = new MutationObserver(() => setLanguage(current()));

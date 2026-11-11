@@ -7,17 +7,20 @@ func TestModelserviceMessagesHaveBothLanguages(t *testing.T) {
 		message Message
 		zh      string
 		en      string
+		ja      string
 	}{
-		{Message{Code: "ai.provider_invalid", Args: map[string]any{"field": "api_key"}}, "AI 服务商设置无效，请检查填写的内容", "The AI provider settings are invalid. Check the supplied values"},
-		{Message{Code: "ai.provider_not_found", Args: map[string]any{}}, "这个 AI 服务商已不存在，请重新选择", "This AI provider no longer exists. Choose another provider"},
-		{Message{Code: "ai.url_normalized", Args: map[string]any{}}, "已移除接口地址末尾的 /chat/completions", "Removed the trailing /chat/completions from the endpoint"},
-		{Message{Code: "ai.provider_error", Args: map[string]any{"provider": "家用模型 {reason}", "reason": Message{Code: "analysis.client.auth", Args: map[string]any{"status": 401, "detail": ""}}}}, "AI 接口出错：家用模型 {reason}", "AI provider error: 家用模型 {reason}"},
+		{Message{Code: "ai.provider_invalid", Args: map[string]any{"field": "api_key"}}, "AI 服务商设置无效，请检查填写的内容", "The AI provider settings are invalid. Check the supplied values", "AIプロバイダーの設定が無効です。入力内容を確認してください。"},
+		{Message{Code: "ai.provider_not_found", Args: map[string]any{}}, "这个 AI 服务商已不存在，请重新选择", "This AI provider no longer exists. Choose another provider", "このAIプロバイダーはすでに存在しません。別のプロバイダーを選んでください。"},
+		{Message{Code: "ai.url_normalized", Args: map[string]any{}}, "已移除接口地址末尾的 /chat/completions", "Removed the trailing /chat/completions from the endpoint", "接続先URLの末尾から/chat/completionsを削除しました。"},
+		{Message{Code: "ai.provider_error", Args: map[string]any{"provider": "家用模型 {reason}", "reason": Message{Code: "analysis.client.auth", Args: map[string]any{"status": 401, "detail": ""}}}}, "AI 接口出错：家用模型 {reason}", "AI provider error: 家用模型 {reason}", "AIへのリクエストでエラーが発生しました：家用模型 {reason}"},
 	} {
-		for _, lang := range []Language{ZhCN, En} {
+		for _, lang := range []Language{ZhCN, En, Ja} {
 			t.Run(tc.message.Code+"/"+string(lang), func(t *testing.T) {
 				want := tc.zh
 				if lang == En {
 					want = tc.en
+				} else if lang == Ja {
+					want = tc.ja
 				}
 				got, err := Format(lang, tc.message)
 				if err != nil || got != want {

@@ -93,6 +93,7 @@ func TestPreviewReusesAuthorizationAndRejectsClientData(t *testing.T) {
 	w := httptest.NewRecorder()
 	page := httptest.NewRequest(http.MethodGet, "/", nil)
 	page.Header.Set("X-Test-Viewer", "yes")
+	page.Header.Set("Accept-Language", "zh-CN")
 	handler.ServeHTTP(w, page)
 	body := w.Body.String()
 	if w.Code != http.StatusOK || w.Header().Get("Cache-Control") != "no-store" || !strings.Contains(body, "等待 x11vnc 就绪超时") ||
@@ -107,6 +108,26 @@ func TestPreviewReusesAuthorizationAndRejectsClientData(t *testing.T) {
 	if w.Code != http.StatusOK || !strings.Contains(body, `<html lang="en">`) || !strings.Contains(body, "Fallback view only. Controls are unavailable.") ||
 		!strings.Contains(body, "Timed out waiting for x11vnc") || !strings.Contains(body, "check the container logs") || !strings.Contains(body, `data-disconnected="The fallback view disconnected"`) {
 		t.Fatalf("实验页面没有按请求语言返回完整的英文文案：%d %s", w.Code, body)
+	}
+	w = httptest.NewRecorder()
+	page.Header.Set("Accept-Language", "en;q=0.2,ja-JP;q=0.9,zh;q=0")
+	handler.ServeHTTP(w, page)
+	body = w.Body.String()
+	if w.Code != http.StatusOK || !strings.Contains(body, `<html lang="ja">`) || !strings.Contains(body, "予備の画面です。閲覧のみで操作はできません。") ||
+		!strings.Contains(body, "x11vncの起動待ちがタイムアウトしました") || !strings.Contains(body, "コンテナのログを確認してください") ||
+		!strings.Contains(body, `data-disconnected="予備の画面が切断されました。"`) || strings.Contains(body, "不公开的文件路径") {
+		t.Fatalf("备用页面没有完整使用日语或泄露原始原因：%d %s", w.Code, body)
+	}
+	for _, lang := range []string{"zh-CN", "en", "ja"} {
+		if strings.Count(body, `<span lang="`+lang+`"`) != 1 {
+			t.Fatalf("远程画面缺少或重复语言副本：%s", lang)
+		}
+	}
+	w = httptest.NewRecorder()
+	page.Header.Set("Accept-Language", "fr-FR")
+	handler.ServeHTTP(w, page)
+	if !strings.Contains(w.Body.String(), `<html lang="en">`) {
+		t.Fatal("未知语言未回退英文")
 	}
 	server := httptest.NewServer(handler)
 	defer server.Close()

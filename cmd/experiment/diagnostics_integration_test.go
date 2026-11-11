@@ -260,6 +260,7 @@ func TestControllerCrashAndFullDiskKeepCause(t *testing.T) {
 }
 
 func TestExperimentCheckRecordsUnreachableProxy(t *testing.T) {
+	t.Setenv("LANG", "zh_CN.UTF-8")
 	c := experimentController(t, 545)
 	keepExperimentArtifacts(t, c)
 	c.Close()

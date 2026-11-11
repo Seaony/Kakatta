@@ -12,7 +12,7 @@ import (
 )
 
 func TestMissingSellerNicknameDoesNotLeaveBlankNotificationContent(t *testing.T) {
-	for _, language := range []locales.Language{locales.ZhCN, locales.En} {
+	for _, language := range []locales.Language{locales.ZhCN, locales.En, locales.Ja} {
 		for _, mode := range []analysis.Mode{analysis.ModeAI, analysis.ModeKeyword} {
 			for _, kind := range []intentKind{intentRecommended, intentNew, intentPriceDrop, intentPriceUpgrade} {
 				for _, summary := range []bool{false, true} {

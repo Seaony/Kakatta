@@ -62,7 +62,7 @@ func TestProductionMessagesFormatInBothLanguages(t *testing.T) {
 	}
 	args := map[string]any{"value": "256G", "field": "checks", "item": "id_lock", "no": 1, "text": "国行", "name": "自定义名称", "word": "有锁", "min": "100", "max": "200", "days": 2, "count": 2, "words": "q1、mini", "kind": "wanted", "reason": "模型原话", "timezone": "UTC", "id": "id_lock", "day": "2026-11-10", "evidence": "卖家原话", "attitude": "confirm", "score": 89, "grade": "good", "limit": 89, "question": "用户原问题"}
 	for code := range codes {
-		for _, lang := range []locales.Language{locales.ZhCN, locales.En} {
+		for _, lang := range []locales.Language{locales.ZhCN, locales.En, locales.Ja} {
 			t.Run(string(lang)+"/"+code, func(t *testing.T) {
 				got, err := locales.Format(lang, locales.Message{Code: code, Args: args})
 				if err != nil || strings.TrimSpace(got) == "" {

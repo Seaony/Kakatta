@@ -207,6 +207,19 @@ test('跟随文档语言切换，英文控制、状态和错误文案齐全', as
   expect(screen.getAllByText('New code is built. Waiting for the current run to finish before switching.').length).toBeGreaterThan(0);
 });
 
+test('日语文档切换开发面板，未知语言使用英文', async () => {
+  await mount(async () => Response.json(status({ phase: 'reloading' })));
+  await act(async () => { document.documentElement.lang = 'ja-JP'; });
+  expect(screen.getByText('開発モード · スケジューラーは一時停止中')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '開発コンソールを開く' }));
+  expect(screen.getByRole('button', { name: 'スケジューラーを再開' })).toBeTruthy();
+  expect(screen.getByText('ログはまだありません')).toBeTruthy();
+  expect(screen.getAllByText('新しいコードのビルドが完了しました。現在の実行が終わってから切り替えます。').length).toBeGreaterThan(0);
+  await act(async () => { document.documentElement.lang = 'fr-FR'; });
+  expect(screen.getByText('Development mode · Scheduler paused')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Start scheduler' })).toBeTruthy();
+});
+
 test('模式不匹配或无效管理器响应不宣称调度已确认', async () => {
   await mount(async () => Response.json(status({ mode: 'fake' })));
   expand();

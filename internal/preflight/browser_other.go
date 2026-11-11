@@ -4,10 +4,10 @@ package preflight
 
 import "context"
 
-func browserChecks(_ context.Context, _ Options) []Check {
+func browserChecks(_ context.Context, o Options) []Check {
 	var checks []Check
 	for _, id := range []string{"display", "chrome", "remote", "cleanup"} {
-		checks = append(checks, Check{ID: id, Detail: "浏览器和远程画面自检需要 Linux 容器", Action: "在正式 Docker 镜像内运行同一条自检命令"})
+		checks = append(checks, Check{ID: id, Detail: text(o.Language, "linux_required", nil), Action: text(o.Language, "container_remedy", nil)})
 	}
 	return checks
 }

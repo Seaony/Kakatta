@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiData, useApi, useMessageText, useTimeZone } from '../../api/hooks';
 import { ApiError } from '../../api/errors';
@@ -31,6 +31,7 @@ export function AIPage({ providerId }: { providerId?: number }) {
 }
 
 export function PromptsPage() {
+  const tabsID = useId();
   const api = useApi();
   const { t, locale } = useTranslation();
   const errorText = useAIErrorDescription();
@@ -61,11 +62,15 @@ export function PromptsPage() {
     </div>;
   return <div className="min-w-0 space-y-xl">
     <PageHeader title={t('web.ai.prompts_title')} description={t('web.ai.prompt_next_run')} />
-    <Tabs label={t('web.ai.prompts_title')} value={kind} onValueChange={(value) => {
+    <Tabs id={tabsID} label={t('web.ai.prompts_title')} value={kind} onValueChange={(value) => {
       if (value !== 'analysis' && value !== 'title_screen' && value !== 'profile' && value !== 'market' || value === kind) return;
       if (dirty) setPendingKind(value); else { setKind(value); save.reset(); restore.reset(); }
     }} items={promptKinds.map((value) => ({ value, label: t(promptLabels[value]), ...(value === kind ? { content: activeContent } : {}) }))} />
-    <ConfirmDialog open={pendingKind !== null} onOpenChange={(open) => { if (!open) setPendingKind(null); }} title={t('web.ai.discard_title')} description={t('web.ai.discard_description')} confirmLabel={t('web.ai.discard_confirm')} cancelLabel={t('common.cancel')} onConfirm={() => {
+    <ConfirmDialog open={pendingKind !== null} onOpenChange={(open) => { if (!open) setPendingKind(null); }} title={t('web.ai.discard_title')} description={t('web.ai.discard_description')} confirmLabel={t('web.ai.discard_confirm')} cancelLabel={t('common.cancel')} onCloseAutoFocus={(event) => {
+      event.preventDefault();
+      // 回到已选标签，避免焦点触发另一轮切换确认。
+      globalThis.document.getElementById(tabsID)?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.focus();
+    }} onConfirm={() => {
       if (pendingKind) { setKind(pendingKind); setDirty(false); setPendingKind(null); save.reset(); restore.reset(); }
     }} />
   </div>;

@@ -19,7 +19,7 @@ func TestRecommendationShowsCriticalConclusionsBesideTextEvidence(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, language := range []locales.Language{locales.ZhCN, locales.En} {
+	for _, language := range []locales.Language{locales.ZhCN, locales.En, locales.Ja} {
 		for _, kind := range []intentKind{intentRecommended, intentPriceUpgrade} {
 			for _, channel := range []notify.Type{notify.Bark, notify.Telegram, notify.Webhook} {
 				t.Run(fmt.Sprintf("%s/%s/%s", language, kind, channel), func(t *testing.T) {
@@ -32,6 +32,8 @@ func TestRecommendationShowsCriticalConclusionsBesideTextEvidence(t *testing.T) 
 					want := []string{"国行：满足 · 原文：非国行", "ID 锁：没问题 · 原文：有ID锁", "自定义{count}：疑似 · 原文：待确认{count}"}
 					if language == locales.En {
 						want = []string{"国行: Met · Original text: 非国行", "ID lock: No issue found · Original text: 有ID锁", "自定义{count}: Suspected issue · Original text: 待确认{count}"}
+					} else if language == locales.Ja {
+						want = []string{"国行：満たしている・原文：非国行", "IDロック：問題なし・原文：有ID锁", "自定义{count}：疑いあり・原文：待确认{count}"}
 					}
 					previous := strings.Index(message.Body, "\n")
 					for _, line := range want {

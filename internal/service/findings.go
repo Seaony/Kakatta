@@ -38,7 +38,7 @@ func validateAnalysisWarnings(warnings []locales.Message) error {
 		if !ok || len(warning.Args) != 1 || !utf8.ValidString(value) {
 			return errors.New("分析解析警告的参数无效")
 		}
-		for _, language := range []locales.Language{locales.ZhCN, locales.En} {
+		for _, language := range []locales.Language{locales.ZhCN, locales.En, locales.Ja} {
 			if _, err := locales.Format(language, warning); err != nil {
 				return fmt.Errorf("分析解析警告无法显示：%w", err)
 			}

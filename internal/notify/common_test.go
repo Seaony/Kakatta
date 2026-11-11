@@ -282,7 +282,7 @@ func TestNotificationErrorMessagesHaveBothLanguages(t *testing.T) {
 		if code == "provider_rejected" {
 			message.Args["code"] = "400"
 		}
-		for _, language := range []locales.Language{locales.ZhCN, locales.En} {
+		for _, language := range []locales.Language{locales.ZhCN, locales.En, locales.Ja} {
 			if result, err := locales.Format(language, message); err != nil || result == "" {
 				t.Errorf("%s %s: %q %v", language, code, result, err)
 			}

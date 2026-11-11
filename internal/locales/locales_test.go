@@ -3,6 +3,7 @@ package locales
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"math"
 	"reflect"
@@ -31,13 +32,24 @@ func TestSystemEventMessagesHaveBothLanguages(t *testing.T) {
 		{"security.login_failures", map[string]any{"count": 20, "ip": "2001:db8::1"}, "登录失败已达到上限 20 次，最近一次来自 IP 2001:db8::1。如果不是你本人，请改一个更强的密码并开启两步验证。", "Sign-in failures have reached the limit of 20 attempts. The latest attempt came from IP 2001:db8::1. If this was not you, choose a stronger password and enable two-step verification."},
 		{"events.reset", nil, "事件记录已更新，请重新读取最新数据。", "The event history has changed. Reload the latest data."},
 	} {
-		for _, lang := range []Language{ZhCN, En} {
+		for _, lang := range []Language{ZhCN, En, Ja} {
 			want := tc.zh
 			if lang == En {
 				want = tc.en
 			}
 			message := Message{Code: tc.code, Args: tc.args}
 			got, err := Format(lang, message)
+			if lang == Ja {
+				if err != nil || got == "" || got == tc.zh || got == tc.en {
+					t.Errorf("日文系统事件没有独立译文：%s，%q，%v", tc.code, got, err)
+				}
+				for _, value := range tc.args {
+					if !strings.Contains(got, fmt.Sprint(value)) {
+						t.Errorf("日文系统事件丢失事实参数：%s，%v", got, value)
+					}
+				}
+				continue
+			}
 			if err != nil || got != want {
 				t.Errorf("系统事件%s/%s：%q，%v", tc.code, lang, got, err)
 			}
@@ -83,32 +95,35 @@ func TestDictionariesHaveSameKeysAndPlaceholders(t *testing.T) {
 		}
 		return dict
 	}
-	zh, en := read(ZhCN), read(En)
-	if len(zh) != len(en) {
-		t.Fatalf("字典键数量不同：%d/%d", len(zh), len(en))
-	}
-	for key, text := range zh {
-		other, exists := en[key]
-		if !exists {
-			t.Errorf("英文缺文案：%s", key)
-			continue
+	zh := read(ZhCN)
+	for _, lang := range []Language{En, Ja} {
+		other := read(lang)
+		if len(zh) != len(other) {
+			t.Errorf("字典键数量不同：%s=%d，中文=%d", lang, len(other), len(zh))
 		}
-		names := func(s string) []string {
-			all := placeholder.FindAllString(s, -1)
-			sort.Strings(all)
-			return all
-		}
-		if !reflect.DeepEqual(names(text), names(other)) {
-			t.Errorf("占位符不同：%s", key)
-		}
-		if strings.HasSuffix(key, "_one") {
-			if _, exists := zh[strings.TrimSuffix(key, "_one")+"_other"]; !exists {
-				t.Errorf("缺少复数形式：%s", key)
+		for key, text := range zh {
+			translation, exists := other[key]
+			if !exists {
+				t.Errorf("%s缺文案：%s", lang, key)
+				continue
 			}
-		}
-		if strings.HasSuffix(key, "_other") {
-			if _, exists := zh[strings.TrimSuffix(key, "_other")+"_one"]; !exists {
-				t.Errorf("缺少单数形式：%s", key)
+			names := func(s string) []string {
+				all := placeholder.FindAllString(s, -1)
+				sort.Strings(all)
+				return all
+			}
+			if !reflect.DeepEqual(names(text), names(translation)) {
+				t.Errorf("占位符不同：%s/%s", lang, key)
+			}
+			if strings.HasSuffix(key, "_one") {
+				if _, exists := zh[strings.TrimSuffix(key, "_one")+"_other"]; !exists {
+					t.Errorf("缺少复数形式：%s", key)
+				}
+			}
+			if strings.HasSuffix(key, "_other") {
+				if _, exists := zh[strings.TrimSuffix(key, "_other")+"_one"]; !exists {
+					t.Errorf("缺少单数形式：%s", key)
+				}
 			}
 		}
 	}
@@ -122,9 +137,19 @@ func TestSelectLanguage(t *testing.T) {
 		{"en", "zh-CN", En}, {"zh-CN", "en-US", ZhCN},
 		{"system", "en-US", En}, {"system", "zh-TW", ZhCN},
 		{"system", "en_GB.UTF-8", En}, {"system", "zh_CN.UTF-8@variant", ZhCN},
-		{"system", "fr-FR", ZhCN}, {"system", "de-DE", ZhCN},
-		{"system", "???", ZhCN}, {"system", "C.UTF-8", ZhCN}, {"system", "", ZhCN},
+		{"system", "fr-FR", En}, {"system", "de-DE", En},
+		{"system", "???", En}, {"system", "C.UTF-8", En}, {"system", "", En},
 		{"system", "zh-CN;q=0.2,en;q=0.9", En}, {"system", "en;q=0,zh-CN;q=1", ZhCN},
+		{"ja", "zh-CN,en", Ja}, {"en", "ja-JP", En},
+		{"system", "ja-JP", Ja}, {"system", "JA-jp", Ja},
+		{"system", "ja_JP.UTF-8", Ja}, {"system", "ja_JP.UTF-8@variant", Ja},
+		{"system", "ja;q=0.9,en;q=0.8,zh-CN;q=0.7", Ja},
+		{"system", "ja;q=0.3,en;q=0.8", En}, {"system", "ja;q=0,zh;q=0.8", ZhCN},
+		{"system", "ja;q=0.5,zh;q=0.5", Ja}, {"system", "zh;q=0.5,ja;q=0.5", ZhCN},
+		{"system", "fr;q=1,ja;q=0.5", Ja}, {"system", "fr;q=0.9,zh;q=0.5", ZhCN},
+		{"system", "ja;q=bad,en;q=0.8", En}, {"system", "en;q=2,ja;q=0.8", Ja},
+		{"system", "en;q=NaN,ja;q=0.8", Ja}, {"system", "ja;q=0,en;q=0", En},
+		{"system", "ko-KR,fr-FR;q=0.9", En},
 	} {
 		if got := Select(tc.preference, tc.system); got != tc.want {
 			t.Errorf("Select(%q,%q)=%q，期望%q", tc.preference, tc.system, got, tc.want)
@@ -175,12 +200,14 @@ func TestFormatUsesSinglePassAndCountForms(t *testing.T) {
 }
 
 func TestDictionaryBytesAreIndependent(t *testing.T) {
-	first, _ := JSON(ZhCN)
-	original := bytes.Clone(first)
-	first[0] = '!'
-	second, _ := JSON(ZhCN)
-	if !bytes.Equal(second, original) {
-		t.Fatal("修改返回字节污染了字典")
+	for _, lang := range []Language{ZhCN, En, Ja} {
+		first, _ := JSON(lang)
+		original := bytes.Clone(first)
+		first[0] = '!'
+		second, _ := JSON(lang)
+		if !bytes.Equal(second, original) {
+			t.Fatal("修改返回字节污染了字典")
+		}
 	}
 	if _, err := JSON("system"); err == nil {
 		t.Fatal("读取字典前必须确定实际语言")

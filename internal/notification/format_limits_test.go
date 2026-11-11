@@ -30,7 +30,7 @@ func formatEvidenceFixture(count, nameLength int, quote string) (service.Task, c
 }
 
 func TestRecommendationFormatLevelsPreserveEvidenceAndDeclaredLimits(t *testing.T) {
-	for _, language := range []locales.Language{locales.ZhCN, locales.En} {
+	for _, language := range []locales.Language{locales.ZhCN, locales.En, locales.Ja} {
 		for _, publicURL := range []bool{true, false} {
 			for _, test := range []struct {
 				name, quote      string
@@ -75,6 +75,8 @@ func TestRecommendationFormatLevelsPreserveEvidenceAndDeclaredLimits(t *testing.
 					quoteLabel, foldedPattern, omittedPattern := "原文：", "另有 %d 条证据见详情", "另有 %d 项未显示"
 					if language == locales.En {
 						quoteLabel, foldedPattern, omittedPattern = "Original text: ", "%d additional evidence excerpts in details", "%d additional checks not shown"
+					} else if language == locales.Ja {
+						quoteLabel, foldedPattern, omittedPattern = "原文：", "ほか %d 件の根拠は詳細で確認", "ほか %d 項目は非表示"
 					}
 					if test.level == 1 {
 						want := string([]rune(test.quote)[:59]) + "…"
@@ -111,7 +113,7 @@ func TestRecommendationFormatLevelsPreserveEvidenceAndDeclaredLimits(t *testing.
 						if publicURL && !strings.Contains(message.Body, message.KakattaURL) {
 							t.Fatal("省略内容后没有详情链接")
 						}
-						if !publicURL && !strings.Contains(message.Body, map[locales.Language]string{locales.ZhCN: "在 Kakatta 结果页查看", locales.En: "View this item on the Kakatta results page"}[language]) {
+						if !publicURL && !strings.Contains(message.Body, map[locales.Language]string{locales.ZhCN: "在 Kakatta 结果页查看", locales.En: "View this item on the Kakatta results page", locales.Ja: "Kakattaの結果ページで確認"}[language]) {
 							t.Fatal("未配置外部地址时没有本地查看提示")
 						}
 					}

@@ -84,6 +84,7 @@ func checkWebSmokeDiagnostics(t *testing.T, browser context.Context, events *web
 	}`, files.page, files.screenshot, files.loginScreenshot,
 		smokeTranslation(t, language, "admin.diagnostics.preview"), smokeTranslation(t, language, "admin.diagnostics.excluded"),
 		smokeTranslation(t, language, "diagnostics.login_screenshot_excluded"), smokeTranslation(t, language, "admin.diagnostics.download"))
+	writeWebSmokeScreenshot(t, browser, events, filepath.Join(shots, "diagnostics-export-"+string(language)+".png"))
 	waitWebSmoke(t, browser, events, `(path) => {
 		const dialog = document.querySelector('[role=dialog]');
 		const file = [...dialog.querySelectorAll('li > p:first-child')].find(node => node.textContent === path);
@@ -92,8 +93,7 @@ func checkWebSmokeDiagnostics(t *testing.T, browser context.Context, events *web
 			document.documentElement.scrollWidth <= innerWidth && dialog.scrollWidth <= dialog.clientWidth + 1 &&
 			[...dialog.querySelectorAll('li,p')].every(node => node.scrollWidth <= node.clientWidth + 1);
 	}`, files.page)
-	writeWebSmokeScreenshot(t, browser, events, filepath.Join(shots, "diagnostics-export-"+string(language)+".png"))
 	close := `//*[@role='dialog']//button[normalize-space(.)=` + strconv.Quote(smokeTranslation(t, language, "common.close")) + `]`
 	runWebSmoke(t, browser, events, chromedp.Click(chromedp.Search(close)))
-	waitWebSmoke(t, browser, events, `() => !document.querySelector('[role=dialog]')`)
+	waitWebSmokeFocus(t, browser, events, `//main//button[normalize-space(.)=`+strconv.Quote(smokeTranslation(t, language, "admin.diagnostics.export"))+`]`)
 }

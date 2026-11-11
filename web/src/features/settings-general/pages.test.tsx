@@ -15,6 +15,7 @@ import { createI18n, I18nProvider } from '../../i18n';
 import type { components } from '../../api/schema.gen';
 import { GeneralPage, LimitsPage } from './index';
 import { definitions, snapshot } from './fixtures.test';
+import ja from '../../../../internal/locales/ja.json';
 
 function pageSnapshot() { const value = snapshot(); value.values['general.language'] = 'zh-CN'; value.sources['general.language'] = 'stored'; return value; }
 
@@ -90,7 +91,7 @@ describe('真实设置协议的本地页面回归', () => {
     expect(sent[1]).toEqual({ values: { 'general.timezone': 'Europe/London', 'general.public_url': 'https://local.test/kakatta' } });
   });
 
-  test('保存成功后统一切换语言和外观，只发送这两项', async () => {
+  test.each(['en', 'ja'] as const)('保存成功后统一切换%s和外观，只发送这两项', async (language) => {
     let sent: components['schemas']['SettingsPatch'] | undefined;
     mount(<GeneralPage />, fixtureFetch(async (request) => {
       if (request.method !== 'PATCH') return undefined;
@@ -101,13 +102,14 @@ describe('真实设置协议的本地页面回归', () => {
     }));
     await generalReady();
     const user = userEvent.setup();
-    await user.selectOptions(screen.getByRole('combobox', { name: '语言' }), 'en');
+    if (language === 'ja') expect(screen.getByRole('option', { name: '日本語' }).getAttribute('value')).toBe('ja');
+    await user.selectOptions(screen.getByRole('combobox', { name: '语言' }), language);
     await user.selectOptions(screen.getByRole('combobox', { name: '外观' }), 'dark');
     await user.click(screen.getByRole('button', { name: '保存设置' }));
-    await screen.findByText('Settings saved.');
-    expect(document.documentElement.lang).toBe('en');
+    await screen.findByText(language === 'ja' ? (ja as Record<string, string>)['web.settings.saved']! : 'Settings saved.');
+    expect(document.documentElement.lang).toBe(language);
     expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
-    expect(sent).toEqual({ values: { 'general.language': 'en', 'general.appearance': 'dark' } });
+    expect(sent).toEqual({ values: { 'general.language': language, 'general.appearance': 'dark' } });
   });
 
   test('推荐外和区间小数按原值发送，26项含唯一时段入口', async () => {

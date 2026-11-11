@@ -134,7 +134,7 @@ func TestBusinessMessagesHaveBothLanguages(t *testing.T) {
 		{Code: "run.layout_empty_repeated", Args: map[string]any{"count": int64(1)}},
 		{Code: "run.layout_empty_repeated", Args: map[string]any{"count": int64(3)}},
 	} {
-		for _, lang := range []Language{ZhCN, En} {
+		for _, lang := range []Language{ZhCN, En, Ja} {
 			got, err := Format(lang, message)
 			if err != nil || strings.TrimSpace(got) == "" || got == message.Code {
 				t.Errorf("业务消息%s/%s无法显示：%q，%v", message.Code, lang, got, err)
@@ -164,7 +164,7 @@ func TestBrowserStepMessagesHaveOptionalDiagnostics(t *testing.T) {
 		{Code: "run.browser_retry"},
 	} {
 		for _, args := range []map[string]any{message.Args, {}} {
-			for _, lang := range []Language{ZhCN, En} {
+			for _, lang := range []Language{ZhCN, En, Ja} {
 				got, err := Format(lang, Message{Code: message.Code, Args: args})
 				if err != nil || strings.TrimSpace(got) == "" {
 					t.Errorf("浏览器步骤%s/%s缺少可选诊断值就无法显示：%q，%v", message.Code, lang, got, err)
@@ -176,23 +176,25 @@ func TestBrowserStepMessagesHaveOptionalDiagnostics(t *testing.T) {
 
 func TestBusinessMessageArgumentsPreserveTheirMeaning(t *testing.T) {
 	for _, tc := range []struct {
-		message Message
-		zh, en  string
+		message    Message
+		zh, en, ja string
 	}{
-		{Message{Code: "service.invalid_query"}, "查询条件或游标无效", "The query or cursor is invalid"},
-		{Message{Code: "notification.legacy_retry_unknown"}, "旧提醒的首次失败时间无法确认，已停止重发", "The original failure time is unknown; retries have stopped"},
-		{Message{Code: "maintenance.confirmation_required"}, "请输入「清除」确认清除业务数据", `Enter "清除" to confirm clearing business data`},
-		{Message{Code: "analysis.prompts.invalid_input", Args: map[string]any{"field": "{price}"}}, "模型输入无效：{price}", "Invalid model input: {price}"},
-		{Message{Code: "analysis.prompts.missing_keys", Args: map[string]any{"kind": "analysis", "keys": `"checks", "adjust"`}}, `提示词缺少带引号的键名："checks", "adjust"`, `Prompt is missing quoted keys: "checks", "adjust"`},
-		{Message{Code: "analysis.images.http_failed", Args: map[string]any{"status": 503}}, "图片下载失败：HTTP 503", "Image download failed: HTTP 503"},
-		{Message{Code: "analysis.images.resource_limit", Args: map[string]any{"field": "source_bytes"}}, "图片超出资源限制：source_bytes", "Image exceeds the resource limit: source_bytes"},
-		{Message{Code: "service.search_page_failed", Args: map[string]any{"page": int64(2), "cause": "page {code} failed"}}, "第 2 页搜索失败：page {code} failed", "Search page 2 failed: page {code} failed"},
-		{Message{Code: "run.daily_detail_quota", Args: map[string]any{"used": int64(100), "limit": int64(100), "next_allowed_at": int64(1_800_000_000_000)}}, "今日详情及卖家页访问额度不足（已用 100/100）", "Not enough daily detail and seller-page visits remain (100/100 used)"},
+		{Message{Code: "service.invalid_query"}, "查询条件或游标无效", "The query or cursor is invalid", "検索条件またはカーソルが無効です。"},
+		{Message{Code: "notification.legacy_retry_unknown"}, "旧提醒的首次失败时间无法确认，已停止重发", "The original failure time is unknown; retries have stopped", "以前の通知で最初に失敗した時刻を確認できないため、再送を停止しました"},
+		{Message{Code: "maintenance.confirmation_required"}, "请输入「清除」确认清除业务数据", `Enter "清除" to confirm clearing business data`, "業務データの消去を確認するため、「清除」と入力してください。"},
+		{Message{Code: "analysis.prompts.invalid_input", Args: map[string]any{"field": "{price}"}}, "模型输入无效：{price}", "Invalid model input: {price}", "モデルへの入力が無効です：{price}"},
+		{Message{Code: "analysis.prompts.missing_keys", Args: map[string]any{"kind": "analysis", "keys": `"checks", "adjust"`}}, `提示词缺少带引号的键名："checks", "adjust"`, `Prompt is missing quoted keys: "checks", "adjust"`, "プロンプトに引用符付きのキーがありません：\"checks\", \"adjust\""},
+		{Message{Code: "analysis.images.http_failed", Args: map[string]any{"status": 503}}, "图片下载失败：HTTP 503", "Image download failed: HTTP 503", "画像のダウンロードに失敗しました：HTTP 503"},
+		{Message{Code: "analysis.images.resource_limit", Args: map[string]any{"field": "source_bytes"}}, "图片超出资源限制：source_bytes", "Image exceeds the resource limit: source_bytes", "画像がリソースの上限を超えています：source_bytes"},
+		{Message{Code: "service.search_page_failed", Args: map[string]any{"page": int64(2), "cause": "page {code} failed"}}, "第 2 页搜索失败：page {code} failed", "Search page 2 failed: page {code} failed", "検索の2ページ目で失敗しました：page {code} failed"},
+		{Message{Code: "run.daily_detail_quota", Args: map[string]any{"used": int64(100), "limit": int64(100), "next_allowed_at": int64(1_800_000_000_000)}}, "今日详情及卖家页访问额度不足（已用 100/100）", "Not enough daily detail and seller-page visits remain (100/100 used)", "今日の商品詳細・出品者ページの残りアクセス回数が不足しています（使用済み100/100）。"},
 	} {
-		for _, lang := range []Language{ZhCN, En} {
+		for _, lang := range []Language{ZhCN, En, Ja} {
 			want := tc.zh
 			if lang == En {
 				want = tc.en
+			} else if lang == Ja {
+				want = tc.ja
 			}
 			got, err := Format(lang, tc.message)
 			if err != nil || got != want {
@@ -230,7 +232,7 @@ func TestBusinessMessageCountForms(t *testing.T) {
 				args["task"], args["minutes"] = "手机", int64(1)
 				args["reason"] = Message{Code: "run.page_failed"}
 			}
-			for _, lang := range []Language{ZhCN, En} {
+			for _, lang := range []Language{ZhCN, En, Ja} {
 				got, err := Format(lang, Message{Code: tc.code, Args: args})
 				if err != nil || !strings.Contains(got, strconv.FormatInt(count, 10)) {
 					t.Fatalf("数量消息%s/%s/%d：%q，%v", tc.code, lang, count, got, err)
@@ -253,7 +255,7 @@ func TestBusinessMessageCountForms(t *testing.T) {
 				}
 			}
 			delete(args, "count")
-			for _, lang := range []Language{ZhCN, En} {
+			for _, lang := range []Language{ZhCN, En, Ja} {
 				if got, err := Format(lang, Message{Code: tc.code, Args: args}); err == nil || got != "" {
 					t.Errorf("数量消息%s/%s缺count仍显示：%q，%v", tc.code, lang, got, err)
 				}

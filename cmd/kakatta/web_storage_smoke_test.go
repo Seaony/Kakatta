@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Seaony/Kakatta/internal/locales"
 	"github.com/Seaony/Kakatta/internal/settings"
 	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/emulation"
@@ -37,7 +36,7 @@ func TestWebStorageFailureSmoke(t *testing.T) {
 		name          string
 		width, height int64
 	}{{"desktop", 1280, 900}, {"mobile", 393, 852}} {
-		for _, language := range []locales.Language{locales.ZhCN, locales.En} {
+		for _, language := range webSmokeLanguages {
 			t.Run(viewport.name+"/"+string(language), func(t *testing.T) {
 				g := graphFixture(t)
 				session := graphAdmin(t, g)
@@ -95,6 +94,7 @@ func TestWebStorageFailureSmoke(t *testing.T) {
 				visitWebSmokePage(t, browser, &events, webSmokePage{"storage-failure", "/settings/system", "admin.system.title", "", "@runtime.storage_unavailable"}, language, viewport.width)
 				waitWebSmoke(t, browser, &events, `(text) => document.querySelector('main')?.innerText.includes(text)`, smokeTranslation(t, language, "admin.system.health_unavailable"))
 				waitWebSmoke(t, browser, &events, `() => document.documentElement.scrollWidth <= innerWidth && !document.querySelector('input[name=password]')`)
+				assertWebSmokeLayout(t, browser, &events)
 				directory := filepath.Join("/screens", viewport.name)
 				if err := os.MkdirAll(directory, 0755); err != nil {
 					t.Fatal(err)

@@ -102,7 +102,7 @@ func (s *Session) previewDocument(w http.ResponseWriter, r *http.Request) {
 		Current previewCopy
 		Copies  []previewCopy
 	}
-	for _, copyLang := range []locales.Language{locales.ZhCN, locales.En} {
+	for _, copyLang := range []locales.Language{locales.ZhCN, locales.En, locales.Ja} {
 		text := func(code string) string { return previewText(copyLang, code, nil) }
 		copy := previewCopy{
 			Lang: copyLang, Title: text("title"), Heading: text("heading"), Alt: text("alt"),

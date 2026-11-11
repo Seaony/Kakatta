@@ -1,30 +1,33 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="{{.Current.Lang}}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="viewer.css">
-<title>浏览器远程画面 · Kakatta</title>
+<title>{{.Current.Text.title}} · Kakatta</title>
 </head>
 <body>
 <header>
-    <div><strong>浏览器远程画面</strong><span id="status" role="status">正在连接</span></div>
-    <nav aria-label="画面操作">
-        <button id="actual" disabled>实际大小</button>
-        <button id="fit" disabled>适应窗口</button>
-        <button id="pan" aria-pressed="false" disabled>移动画面</button>
-        <button id="text-toggle" aria-expanded="false" aria-controls="text-entry" disabled>输入文字</button>
+    <div><strong id="viewer-heading">{{.Current.Text.title}}</strong><span id="status" role="status">{{.Current.Text.connecting}}</span></div>
+    <nav id="viewer-toolbar" aria-label="{{.Current.Text.toolbar}}">
+        <button id="actual" disabled>{{.Current.Text.actual}}</button>
+        <button id="fit" disabled>{{.Current.Text.fit}}</button>
+        <button id="pan" aria-pressed="false" disabled>{{.Current.Text.pan}}</button>
+        <button id="text-toggle" aria-expanded="false" aria-controls="text-entry" disabled>{{.Current.Text.text_toggle}}</button>
     </nav>
 </header>
-<p id="help">请自己点击右上角的登录并扫码。遇到验证时，由你在这个画面里完成。</p>
-<section id="text-entry" hidden aria-label="向远程浏览器输入文字">
-    <label for="text-input">要发送的文字</label>
-    <p id="text-help">先点远程页面的输入框，再在这里输入并点击“发送文字”。退格、回车直接发送到远程页面。</p>
+<p id="help">{{.Current.Text.initial_help}}</p>
+<section id="text-entry" hidden aria-label="{{.Current.Text.text_entry}}">
+    <label id="text-label" for="text-input">{{.Current.Text.text_label}}</label>
+    <p id="text-help">{{.Current.Text.text_help}}</p>
     <textarea id="text-input" rows="2" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="text" aria-describedby="text-help"></textarea>
-    <div class="text-actions"><button id="text-send" disabled>发送文字</button><button id="text-backspace">退格</button><button id="text-enter">回车</button><button id="text-close">清空并关闭</button><span id="text-status" role="status"></span></div>
+    <div class="text-actions"><button id="text-send" disabled>{{.Current.Text.text_send}}</button><button id="text-backspace">{{.Current.Text.text_backspace}}</button><button id="text-enter">{{.Current.Text.text_enter}}</button><button id="text-close">{{.Current.Text.text_close}}</button><span id="text-status" role="status"></span></div>
 </section>
-<div id="screen" aria-label="远程浏览器画面"></div>
+<div id="screen" aria-label="{{.Current.Text.screen}}"></div>
+<template id="viewer-copy">
+{{range .Copies}}<span lang="{{.Lang}}" data-title="{{.Text.title}}" data-connecting="{{.Text.connecting}}" data-connected="{{.Text.connected}}" data-disconnected="{{.Text.disconnected}}" data-connection-failed="{{.Text.connection_failed}}" data-toolbar="{{.Text.toolbar}}" data-actual="{{.Text.actual}}" data-fit="{{.Text.fit}}" data-pan="{{.Text.pan}}" data-resume="{{.Text.resume}}" data-text-toggle="{{.Text.text_toggle}}" data-initial-help="{{.Text.initial_help}}" data-text-entry="{{.Text.text_entry}}" data-text-label="{{.Text.text_label}}" data-text-help="{{.Text.text_help}}" data-text-send="{{.Text.text_send}}" data-text-backspace="{{.Text.text_backspace}}" data-text-enter="{{.Text.text_enter}}" data-text-close="{{.Text.text_close}}" data-screen="{{.Text.screen}}" data-canvas="{{.Text.canvas}}" data-help-pan="{{.Text.help_pan}}" data-help-control="{{.Text.help_control}}" data-help-verification="{{.Text.help_verification}}" data-help-position-unavailable="{{.Text.help_position_unavailable}}" data-help-disconnected="{{.Text.help_disconnected}}" data-text-sent="{{.Text.text_sent}}"></span>
+{{end}}</template>
 <script type="module" src="viewer.js"></script>
 </body>
 </html>

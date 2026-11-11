@@ -1,10 +1,11 @@
 import keysyms from './novnc/core/input/keysymdef.js';
 import KeyTable from './novnc/core/input/keysym.js';
 
-export function attachTextInput(elements, sendKey) {
+export function attachTextInput(elements, sendKey, copy = { sent: '文字已发送，本地输入已清空。' }) {
     const { toggle, panel, input, send, backspace, enter, close, status } = elements;
     let connected = false;
     let composing = false;
+    let sent = false;
     const listeners = [];
     const listen = (node, name, handler) => {
         node.addEventListener(name, handler);
@@ -19,6 +20,7 @@ export function attachTextInput(elements, sendKey) {
         input.value = '';
         composing = false;
         status.textContent = '';
+        sent = false;
         panel.hidden = true;
         toggle.setAttribute('aria-expanded', 'false');
         update();
@@ -32,7 +34,7 @@ export function attachTextInput(elements, sendKey) {
     });
     listen(input, 'compositionstart', () => { composing = true; update(); });
     listen(input, 'compositionend', () => { composing = false; update(); });
-    listen(input, 'input', () => { status.textContent = ''; update(); });
+    listen(input, 'input', () => { status.textContent = ''; sent = false; update(); });
     listen(send, 'click', () => {
         if (!connected || composing || input.value.length === 0) return;
         const text = input.value.replace(/\r\n?/g, '\n');
@@ -44,7 +46,8 @@ export function attachTextInput(elements, sendKey) {
             else if (character === '\t') sendKey(KeyTable.XK_Tab, 'Tab');
             else if (point >= 0x20 && (point < 0x7f || point > 0x9f)) sendKey(keysyms.lookup(point));
         }
-        status.textContent = '文字已发送，本地输入已清空。';
+        sent = true;
+        status.textContent = copy.sent;
     });
     listen(backspace, 'click', () => { if (connected && !composing) sendKey(KeyTable.XK_BackSpace, 'Backspace'); });
     listen(enter, 'click', () => { if (connected && !composing) sendKey(KeyTable.XK_Return, 'Enter'); });
@@ -52,6 +55,7 @@ export function attachTextInput(elements, sendKey) {
     hide();
     return {
         setConnected(value) { connected = value; if (!value) hide(); else update(); },
+        setCopy(value) { copy = value; if (sent) status.textContent = copy.sent; },
         dispose() { connected = false; hide(); listeners.forEach(remove => remove()); },
     };
 }

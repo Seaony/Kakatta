@@ -101,7 +101,7 @@ func Definitions(env Environment) []Definition {
 		definition("notify.link_target", KindString, `"mobile"`, "", -1, -1, false, `"mobile"`, `"desktop"`),
 		definition("notify.max_per_run", KindInteger, `5`, "count", -1, -1, false),
 		definition("notify.system_channel_ids", KindIDs, `[]`, "", -1, -1, false),
-		definition("general.language", KindString, `"system"`, "", -1, -1, false, `"system"`, `"zh-CN"`, `"en"`),
+		definition("general.language", KindString, `"system"`, "", -1, -1, false, `"system"`, `"zh-CN"`, `"en"`, `"ja"`),
 		definition("general.appearance", KindString, `"system"`, "", -1, -1, false, `"system"`, `"light"`, `"dark"`),
 		definition("general.timezone", KindString, string(timezone), "", -1, -1, false),
 		definition("general.public_url", KindString, `""`, "", -1, -1, false),

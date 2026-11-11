@@ -9,18 +9,20 @@ import (
 )
 
 func TestFormatLocalizesOnlyIdentifiedRiskNames(t *testing.T) {
-	for _, tc := range []struct{ code, zh, en string }{
-		{"analysis.risk_confirmed", "发现ID 锁，按你的要求不建议", "Confirmed ID lock; your settings exclude it"},
-		{"analysis.risk_penalty", "发现ID 锁，按你的设置扣分", "Confirmed ID lock; a deduction applies under your settings"},
-		{"analysis.risk_uncertain", "ID 锁还需确认", "ID lock needs confirmation"},
-		{"analysis.risk_unknown", "ID 锁没有写明，先问清楚", "ID lock was not disclosed; ask the seller first"},
+	for _, tc := range []struct{ code, zh, en, ja string }{
+		{"analysis.risk_confirmed", "发现ID 锁，按你的要求不建议", "Confirmed ID lock; your settings exclude it", "IDロック が確認されたため、設定に従いおすすめしません"},
+		{"analysis.risk_penalty", "发现ID 锁，按你的设置扣分", "Confirmed ID lock; a deduction applies under your settings", "IDロック が確認されたため、設定に従い減点します"},
+		{"analysis.risk_uncertain", "ID 锁还需确认", "ID lock needs confirmation", "IDロック の確認が必要です"},
+		{"analysis.risk_unknown", "ID 锁没有写明，先问清楚", "ID lock was not disclosed; ask the seller first", "IDロック の記載がありません。まず出品者に確認してください"},
 	} {
 		message := Message{Code: tc.code, Args: map[string]any{"id": "id_lock", "name": "模型原文 {attitude}", "attitude": "confirm"}}
 		before, _ := json.Marshal(message)
-		for _, lang := range []Language{En, ZhCN} {
+		for _, lang := range []Language{En, ZhCN, Ja} {
 			want := tc.en
 			if lang == ZhCN {
 				want = tc.zh
+			} else if lang == Ja {
+				want = tc.ja
 			}
 			if got, err := Format(lang, message); err != nil || got != want {
 				t.Errorf("风险名称%s/%s：%q，期望%q，%v", tc.code, lang, got, want, err)
@@ -73,8 +75,10 @@ func TestFormatRiskNamesCanShareMessageAcrossLanguages(t *testing.T) {
 		go func() {
 			defer wait.Done()
 			lang, want := En, "ID lock was not disclosed; ask the seller first"
-			if i%2 == 0 {
+			if i%3 == 0 {
 				lang, want = ZhCN, "ID 锁没有写明，先问清楚"
+			} else if i%3 == 1 {
+				lang, want = Ja, "IDロック の記載がありません。まず出品者に確認してください"
 			}
 			if got, err := Format(lang, message); err != nil || got != want {
 				t.Errorf("共享原因在不同语言间污染：%s，%q，%v", lang, got, err)

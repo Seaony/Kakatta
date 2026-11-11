@@ -158,7 +158,7 @@ func TestNotificationMessagesHaveBothLanguages(t *testing.T) {
 		{Code: "analysis.risk_name.seller_bad_reviews"},
 		{Code: "analysis.risk_name.seller_partial_refund"},
 	} {
-		for _, lang := range []Language{ZhCN, En} {
+		for _, lang := range []Language{ZhCN, En, Ja} {
 			got, err := Format(lang, message)
 			if err != nil || strings.TrimSpace(got) == "" || got == message.Code {
 				t.Errorf("通知消息%s/%s无法显示：%q，%v", message.Code, lang, got, err)
@@ -198,7 +198,7 @@ func TestNotificationQuantityMessages(t *testing.T) {
 				tc.args[tc.countField] = count
 			}
 			message := Message{Code: tc.code, Args: tc.args}
-			for _, lang := range []Language{ZhCN, En} {
+			for _, lang := range []Language{ZhCN, En, Ja} {
 				got, err := Format(lang, message)
 				if err != nil || !strings.Contains(got, fmt.Sprint(count)) {
 					t.Fatalf("通知数量%s/%s/%d：%q，%v", tc.code, lang, count, got, err)
@@ -216,7 +216,7 @@ func TestNotificationQuantityMessages(t *testing.T) {
 			}
 		}
 		delete(tc.args, "count")
-		for _, lang := range []Language{ZhCN, En} {
+		for _, lang := range []Language{ZhCN, En, Ja} {
 			if got, err := Format(lang, Message{Code: tc.code, Args: tc.args}); err == nil || got != "" {
 				t.Errorf("通知数量%s/%s缺count仍显示：%q，%v", tc.code, lang, got, err)
 			}
@@ -226,18 +226,20 @@ func TestNotificationQuantityMessages(t *testing.T) {
 
 func TestNotificationArgumentsRemainPlainText(t *testing.T) {
 	for _, tc := range []struct {
-		message Message
-		zh, en  string
+		message    Message
+		zh, en, ja string
 	}{
-		{Message{Code: "notify.over_budget", Args: map[string]any{"price": "¥3,400", "budget": "¥3,000"}}, "当前价 ¥3,400 超过预算上限 ¥3,000", "The price of ¥3,400 exceeds the budget limit of ¥3,000"},
-		{Message{Code: "notification.unmatched", Args: map[string]any{"reason": "原话 {name}"}}, "不符合需求：原话 {name}", "Does not meet your requirements: 原话 {name}"},
-		{Message{Code: "notification.check_names", Args: map[string]any{"first": "{name}", "second": "ID lock"}}, "{name}、ID lock", "{name}, ID lock"},
-		{Message{Code: "notification.system.ai_error.body", Args: map[string]any{"reason": "原话 {status}"}}, "原话 {status}", "原话 {status}"},
+		{Message{Code: "notify.over_budget", Args: map[string]any{"price": "¥3,400", "budget": "¥3,000"}}, "当前价 ¥3,400 超过预算上限 ¥3,000", "The price of ¥3,400 exceeds the budget limit of ¥3,000", "現在の価格 ¥3,400 が予算上限 ¥3,000 を超えています"},
+		{Message{Code: "notification.unmatched", Args: map[string]any{"reason": "原话 {name}"}}, "不符合需求：原话 {name}", "Does not meet your requirements: 原话 {name}", "購入条件に合いません：原话 {name}"},
+		{Message{Code: "notification.check_names", Args: map[string]any{"first": "{name}", "second": "ID lock"}}, "{name}、ID lock", "{name}, ID lock", "{name}、ID lock"},
+		{Message{Code: "notification.system.ai_error.body", Args: map[string]any{"reason": "原话 {status}"}}, "原话 {status}", "原话 {status}", "原话 {status}"},
 	} {
-		for _, lang := range []Language{ZhCN, En} {
+		for _, lang := range []Language{ZhCN, En, Ja} {
 			want := tc.zh
 			if lang == En {
 				want = tc.en
+			} else if lang == Ja {
+				want = tc.ja
 			}
 			got, err := Format(lang, tc.message)
 			if err != nil || got != want {
@@ -259,7 +261,7 @@ func TestDeliveryMessagesReuseLocalizedCauses(t *testing.T) {
 		if cause == "provider_rejected" {
 			args["code"] = "40014"
 		}
-		for _, lang := range []Language{ZhCN, En} {
+		for _, lang := range []Language{ZhCN, En, Ja} {
 			reason, err := Format(lang, Message{Code: "notify.error." + cause, Args: args})
 			if err != nil {
 				t.Fatal(err)
@@ -267,6 +269,8 @@ func TestDeliveryMessagesReuseLocalizedCauses(t *testing.T) {
 			prefix := "群{status} 发送失败："
 			if lang == En {
 				prefix = "群{status} failed: "
+			} else if lang == Ja {
+				prefix = "群{status} への送信に失敗："
 			}
 			got, err := Format(lang, Message{Code: "notification.delivery." + cause, Args: args})
 			if err != nil || got != prefix+reason {

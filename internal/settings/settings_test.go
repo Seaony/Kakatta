@@ -27,6 +27,19 @@ func defaults(t *testing.T) Snapshot {
 
 func values(key, raw string) Values { return Values{key: json.RawMessage(raw)} }
 
+func TestLanguageSettingAcceptsJapaneseAndKeepsUnknownInvalid(t *testing.T) {
+	for _, code := range []string{"system", "zh-CN", "en", "ja"} {
+		raw, _ := json.Marshal(code)
+		result, err := Apply(defaults(t), Values{"general.language": raw})
+		if err != nil || string(result.Values["general.language"]) != string(raw) {
+			t.Fatalf("合法界面语言%s未原样保存：%v", code, err)
+		}
+	}
+	if _, err := Apply(defaults(t), values("general.language", `"ja-JP"`)); err == nil {
+		t.Fatal("设置只接受规范语言编号，浏览器区域变体应交给system选择")
+	}
+}
+
 func requireIssue(t *testing.T, err error, key, code string) {
 	t.Helper()
 	var invalid *ValidationError
@@ -34,7 +47,7 @@ func requireIssue(t *testing.T, err error, key, code string) {
 		t.Fatalf("没有返回字段错误：%v", err)
 	}
 	for _, i := range invalid.Issues {
-		for _, lang := range []locales.Language{locales.ZhCN, locales.En} {
+		for _, lang := range []locales.Language{locales.ZhCN, locales.En, locales.Ja} {
 			if _, err := locales.Format(lang, i.Reason); err != nil {
 				t.Fatalf("校验原因缺少翻译：%+v，%v", i, err)
 			}
@@ -87,7 +100,7 @@ func TestDefaultsMatchAllDocumentedSettings(t *testing.T) {
 			t.Errorf("元数据默认值或分组不符：%s", d.Key)
 		}
 		for _, m := range []locales.Message{d.Label, d.Why, d.Risk, d.Recommendation.Text} {
-			for _, lang := range []locales.Language{locales.ZhCN, locales.En} {
+			for _, lang := range []locales.Language{locales.ZhCN, locales.En, locales.Ja} {
 				if text, err := locales.Format(lang, m); err != nil || text == "" {
 					t.Errorf("元数据文案缺失：%s/%s，%v", d.Key, lang, err)
 				}
@@ -193,7 +206,7 @@ func TestAllowedZerosAndValuesOutsideRecommendation(t *testing.T) {
 	warned := map[string]bool{}
 	for _, i := range next.Warnings {
 		warned[i.Key] = true
-		for _, lang := range []locales.Language{locales.ZhCN, locales.En} {
+		for _, lang := range []locales.Language{locales.ZhCN, locales.En, locales.Ja} {
 			if _, err := locales.Format(lang, i.Reason); err != nil {
 				t.Fatal(err)
 			}

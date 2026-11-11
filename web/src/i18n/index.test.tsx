@@ -24,7 +24,7 @@ test.each(['toString', '__proto__'])('原型键 %s 在纯格式化和 React 翻�
     expect(failure).toBeInstanceOf(TranslationError);
     expect((failure as TranslationError).kind).toBe('unknown_code');
   };
-  for (const locale of ['zh-CN', 'en'] as const) assertUnknown(() => formatMessage({ code, args: {} }, locale));
+  for (const locale of ['zh-CN', 'en', 'ja'] as const) assertUnknown(() => formatMessage({ code, args: {} }, locale));
   assertUnknown(() => hook.result.current.t(code as TranslationKey));
   hook.unmount();
 });
@@ -66,18 +66,41 @@ test('React 入口响应语言变化并更新 html.lang，卸载后归还原值'
   await act(async () => { await setLocale(instance, 'en'); });
   expect(screen.getByRole('status').textContent).toBe('en:Cancel');
   expect(document.documentElement.lang).toBe('en');
+  await act(async () => { await setLocale(instance, 'ja'); });
+  expect(screen.getByRole('status').textContent).toBe('ja:キャンセル');
+  expect(document.documentElement.lang).toBe('ja');
   rendered.unmount();
   expect(document.documentElement.lang).toBe(original);
 });
 
+test('日语严格格式化保持单次插值、复数与卖家原文，不改模型提供的自由文字', () => {
+  const original = '{next} $t(common.cancel) 卖家原话';
+  expect(formatMessage({ code: 'settings.unknown_field', args: { field: original } }, 'ja')).toContain(original);
+  for (const count of [0, 1, 2]) {
+    const value = formatMessage({ code: 'settings.selected_channels', args: { count } }, 'ja');
+    expect(value).toContain(String(count));
+    expect(value).not.toContain('{count}');
+  }
+  for (const count of ['1', null, NaN, Infinity]) {
+    expect(() => formatMessage({ code: 'settings.selected_channels', args: { count } }, 'ja')).toThrow(TranslationError);
+  }
+  expect(formatMessage({ code: 'analysis.risk_unknown', args: { id: 'custom_17', name: original } }, 'ja')).toContain(original);
+});
+
 test('系统语言、显式偏好和 Accept-Language 权重与服务端约定一致', () => {
   for (const [input, expected] of [
-    ['en-US', 'en'], ['zh-TW', 'zh-CN'], ['fr-FR', 'zh-CN'], ['de-DE', 'zh-CN'],
-    ['not_a_locale', 'zh-CN'], ['C.UTF-8', 'zh-CN'], ['', 'zh-CN'], ['en_GB.UTF-8', 'en'],
+    ['en-US', 'en'], ['zh-TW', 'zh-CN'], ['fr-FR', 'en'], ['de-DE', 'en'],
+    ['not_a_locale', 'en'], ['C.UTF-8', 'en'], ['', 'en'], ['en_GB.UTF-8', 'en'],
+    ['ja-JP', 'ja'], ['JA-jp', 'ja'], ['ja_JP.UTF-8', 'ja'],
     ['zh-CN;q=.2,en;q=.9', 'en'], ['en;q=0,zh-CN;q=.2', 'zh-CN'],
+    ['ja-JP;q=.9,en;q=.5', 'ja'], ['en;q=.9,ja;q=.5', 'en'],
+    ['ja;q=0,en;q=.5', 'en'], ['ja;q=broken,zh-CN;q=.5', 'zh-CN'],
+    ['fr;q=.9,zh;q=.5', 'zh-CN'], ['ja;q=.8,en;q=.8', 'ja'],
+    ['en;q=0,ja;q=0', 'en'], ['fr-FR;q=1', 'en'],
   ] as const) expect(selectLocale('system', input)).toBe(expected);
   expect(selectLocale('en', 'zh-CN')).toBe('en');
   expect(selectLocale('zh-CN', 'en-US')).toBe('zh-CN');
+  expect(selectLocale('ja', 'zh-CN')).toBe('ja');
 });
 
 test('只有四类风险原因按固定编号翻译名称，参数不被修改', () => {

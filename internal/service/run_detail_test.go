@@ -300,7 +300,7 @@ func TestRunDetailRecordsDowngradesWhenTheNextRequestHitsQuota(t *testing.T) {
 	if status != StepFail || !reflect.DeepEqual(got, want) {
 		t.Fatalf("降级步骤错误：%s %s", status, raw)
 	}
-	for _, language := range []locales.Language{locales.ZhCN, locales.En} {
+	for _, language := range []locales.Language{locales.ZhCN, locales.En, locales.Ja} {
 		if rendered, err := locales.Format(language, got); err != nil || !strings.Contains(rendered, "local-model") {
 			t.Fatalf("%s 运行日志未正确翻译：%s %v", language, rendered, err)
 		}

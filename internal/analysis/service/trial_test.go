@@ -552,7 +552,7 @@ func TestTrialStepMapsMissingUsageWithoutFakingNotRunSuccess(t *testing.T) {
 func TestTrialMessagesAreSafeAndTranslated(t *testing.T) {
 	for _, err := range []error{context.Canceled, context.DeadlineExceeded, client.ErrConfigChanged, client.ErrDailyLimit, client.ErrNoProvider, client.ErrInfrastructure, errors.New("private-SQL-body")} {
 		reason := trialReason(err)
-		for _, lang := range []locales.Language{locales.ZhCN, locales.En} {
+		for _, lang := range []locales.Language{locales.ZhCN, locales.En, locales.Ja} {
 			if _, formatErr := locales.Format(lang, *reason); formatErr != nil {
 				t.Fatalf("缺原因文案：%s %v", reason.Code, formatErr)
 			}

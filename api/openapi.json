@@ -9011,7 +9011,8 @@
             "enum": [
               "system",
               "zh-CN",
-              "en"
+              "en",
+              "ja"
             ]
           },
           "appearance": {

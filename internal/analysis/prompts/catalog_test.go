@@ -364,7 +364,7 @@ func TestCatalogMissingKeysHasBothTranslations(t *testing.T) {
 	if !errors.As(err, &invalid) {
 		t.Fatalf("应为typed原因：%v", err)
 	}
-	for _, language := range []locales.Language{locales.ZhCN, locales.En} {
+	for _, language := range []locales.Language{locales.ZhCN, locales.En, locales.Ja} {
 		if text, err := locales.Format(language, invalid.Message); err != nil || text == "" {
 			t.Fatalf("缺少%s原因文案：%v", language, err)
 		}

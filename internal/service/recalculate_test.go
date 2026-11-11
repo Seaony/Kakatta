@@ -501,7 +501,7 @@ func TestLegacySellerAssessmentBackfillsOnceFromExistingEvidence(t *testing.T) {
 			compatibility := false
 			for _, reason := range assessment.Reasons {
 				compatibility = compatibility || reason.Code == code
-				for _, language := range []locales.Language{locales.ZhCN, locales.En} {
+				for _, language := range []locales.Language{locales.ZhCN, locales.En, locales.Ja} {
 					if _, err := locales.Format(language, reason); err != nil {
 						t.Fatal("兼容或原有原因没有两语文案", err)
 					}

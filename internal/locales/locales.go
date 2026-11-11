@@ -11,6 +11,7 @@ import (
 	"math"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"golang.org/x/text/language"
@@ -21,6 +22,7 @@ type Language string
 const (
 	ZhCN Language = "zh-CN"
 	En   Language = "en"
+	Ja   Language = "ja"
 )
 
 type Message struct {
@@ -36,16 +38,15 @@ func (m Message) MarshalJSON() ([]byte, error) {
 	return json.Marshal(plain(m))
 }
 
-//go:embed zh-CN.json en.json
+//go:embed zh-CN.json en.json ja.json
 var files embed.FS
 
 var dictionaries = load()
 var placeholder = regexp.MustCompile(`\{([A-Za-z_][A-Za-z0-9_]*)\}`)
-var matcher = language.NewMatcher([]language.Tag{language.SimplifiedChinese, language.English})
 
 func load() map[Language]map[string]string {
-	all := make(map[Language]map[string]string, 2)
-	for _, lang := range []Language{ZhCN, En} {
+	all := make(map[Language]map[string]string, 3)
+	for _, lang := range []Language{ZhCN, En, Ja} {
 		b, err := files.ReadFile(string(lang) + ".json")
 		if err != nil {
 			panic(err)
@@ -60,20 +61,43 @@ func load() map[Language]map[string]string {
 }
 
 func Select(preference, systemLocale string) Language {
-	if preference == string(En) || preference == string(ZhCN) {
+	if preference == string(En) || preference == string(ZhCN) || preference == string(Ja) {
 		return Language(preference)
 	}
-	// 容器的 LANG 可能带字符集和修饰符，浏览器则传 Accept-Language。
-	if !strings.ContainsAny(systemLocale, ",;") {
-		systemLocale, _, _ = strings.Cut(systemLocale, ".")
-		systemLocale, _, _ = strings.Cut(systemLocale, "@")
-		systemLocale = strings.ReplaceAll(systemLocale, "_", "-")
+	selected, best := En, float64(0)
+	for _, candidate := range strings.Split(systemLocale, ",") {
+		parts := strings.Split(candidate, ";")
+		quality, valid, weighted := float64(1), true, false
+		for _, parameter := range parts[1:] {
+			key, value, found := strings.Cut(strings.TrimSpace(parameter), "=")
+			if strings.EqualFold(key, "q") {
+				var err error
+				quality, err = strconv.ParseFloat(strings.TrimSpace(value), 64)
+				valid = valid && found && !weighted && err == nil && !math.IsNaN(quality) && !math.IsInf(quality, 0) && quality > 0 && quality <= 1
+				weighted = true
+			}
+		}
+		if !valid || quality <= best {
+			continue
+		}
+		// 容器的 LANG 可能带字符集和修饰符，浏览器则传带权重的语言列表。
+		name, _, _ := strings.Cut(strings.TrimSpace(parts[0]), ".")
+		name, _, _ = strings.Cut(name, "@")
+		tag, err := language.Parse(strings.ReplaceAll(name, "_", "-"))
+		if err != nil {
+			continue
+		}
+		base, _ := tag.Base()
+		switch base.String() {
+		case "zh":
+			selected, best = ZhCN, quality
+		case "en":
+			selected, best = En, quality
+		case "ja":
+			selected, best = Ja, quality
+		}
 	}
-	_, index := language.MatchStrings(matcher, systemLocale)
-	if index == 1 {
-		return En
-	}
-	return ZhCN
+	return selected
 }
 
 func Format(lang Language, m Message) (string, error) {

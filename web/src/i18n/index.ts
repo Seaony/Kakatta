@@ -5,9 +5,11 @@ import type { i18n } from 'i18next';
 import { I18nextProvider, initReactI18next, useTranslation as useReactTranslation } from 'react-i18next';
 import zhCN from '../../../internal/locales/zh-CN.json';
 import en from '../../../internal/locales/en.json';
+import ja from '../../../internal/locales/ja.json';
+import type { Locale } from './locale';
 
-export type Locale = 'zh-CN' | 'en';
-export type LocalePreference = Locale | 'system';
+export { selectLocale } from './locale';
+export type { Locale, LocalePreference } from './locale';
 export type I18nInstance = i18n;
 type DictionaryKey = keyof typeof zhCN;
 type PluralKey = { [K in DictionaryKey]: K extends `${infer Base}_other` ? Base : never }[DictionaryKey];
@@ -18,6 +20,7 @@ export type Message = { code: string; args: MessageArgs };
 const dictionaries: Readonly<Record<Locale, Readonly<Record<string, string>>>> = Object.freeze({
   'zh-CN': Object.freeze({ ...zhCN }),
   en: Object.freeze({ ...en }),
+  ja: Object.freeze({ ...ja }),
 });
 const placeholder = /\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
 const namedRisks = new Set(['analysis.risk_confirmed', 'analysis.risk_penalty', 'analysis.risk_uncertain', 'analysis.risk_unknown']);
@@ -32,28 +35,6 @@ export class TranslationError extends Error {
 function dictionary(locale: Locale) {
   if (!Object.hasOwn(dictionaries, locale)) throw new TranslationError('unsupported_locale');
   return dictionaries[locale];
-}
-
-export function selectLocale(preference: LocalePreference, systemLocale = globalThis.navigator?.language ?? ''): Locale {
-  if (preference === 'zh-CN' || preference === 'en') return preference;
-  let language = systemLocale;
-  if (!/[,;]/.test(language)) language = language.split(/[.@]/, 1)[0]?.replaceAll('_', '-') ?? '';
-  const choices = language.split(',').map((part, order) => {
-    const [tag = '', ...parameters] = part.trim().split(';');
-    const quality = parameters.find((parameter) => /^\s*q\s*=/.test(parameter));
-    return { tag, order, quality: quality === undefined ? 1 : Number(quality.split('=')[1]) };
-  }).filter((choice) => choice.quality > 0 && choice.quality <= 1 && Number.isFinite(choice.quality))
-    .sort((left, right) => right.quality - left.quality || left.order - right.order);
-  for (const { tag } of choices) {
-    try {
-      const primary = new Intl.Locale(tag).language;
-      if (primary === 'en') return 'en';
-      if (primary === 'zh') return 'zh-CN';
-    } catch {
-      // 无法识别的系统语言不影响界面启动。
-    }
-  }
-  return 'zh-CN';
 }
 
 export function formatMessage(message: Message, locale: Locale): string {
@@ -85,7 +66,7 @@ export function createI18n(locale: Locale = 'zh-CN'): I18nInstance {
   const instance = createInstance();
   void instance.use(initReactI18next).init({
     lng: locale,
-    supportedLngs: ['zh-CN', 'en'],
+    supportedLngs: ['zh-CN', 'en', 'ja'],
     fallbackLng: false,
     load: 'currentOnly',
     initAsync: false,
@@ -97,6 +78,7 @@ export function createI18n(locale: Locale = 'zh-CN'): I18nInstance {
     resources: {
       'zh-CN': { translation: { ...dictionaries['zh-CN'] } },
       en: { translation: { ...dictionaries.en } },
+      ja: { translation: { ...dictionaries.ja } },
     },
     interpolation: { prefix: '{', suffix: '}', escapeValue: false, skipOnVariables: true },
     react: { useSuspense: false },
@@ -108,7 +90,7 @@ export function createI18n(locale: Locale = 'zh-CN'): I18nInstance {
 
 function instanceLocale(instance: I18nInstance): Locale {
   const locale = instance.resolvedLanguage ?? instance.language;
-  if (locale !== 'zh-CN' && locale !== 'en') throw new TranslationError('unsupported_locale');
+  if (locale !== 'zh-CN' && locale !== 'en' && locale !== 'ja') throw new TranslationError('unsupported_locale');
   return locale;
 }
 

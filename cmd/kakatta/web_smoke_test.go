@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net"
@@ -16,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Seaony/Kakatta/internal/analysis"
 	"github.com/Seaony/Kakatta/internal/analysis/prompts"
 	"github.com/Seaony/Kakatta/internal/config"
 	"github.com/Seaony/Kakatta/internal/locales"
@@ -25,6 +27,7 @@ import (
 	"github.com/chromedp/cdproto/emulation"
 	"github.com/chromedp/cdproto/log"
 	"github.com/chromedp/cdproto/network"
+	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 	"github.com/chromedp/chromedp/kb"
@@ -35,6 +38,10 @@ type webSmokePage struct {
 }
 
 const webSmokeTimezone = "Asia/Shanghai"
+const webSmokeUsername = "smoke-local"
+const webSmokePassword = "local-smoke-only-password"
+
+var webSmokeLanguages = []locales.Language{locales.ZhCN, locales.En, locales.Ja}
 
 var webSmokePages = []webSmokePage{
 	{"onboarding", "/onboarding", "web.onboarding.title", "main h2", ""},
@@ -48,6 +55,7 @@ var webSmokePages = []webSmokePage{
 	{"compare", "/results/compare?ids=4,5", "web.compare.title", "main table", "【示例】轻薄本，正常使用痕迹"},
 	{"logs", "/logs?run_id=2", "logs.title", "#logs-list-title", "示例 · 轻薄本"},
 	{"accounts", "/accounts", "accounts.title", "main h2", ""},
+	{"account-detail", "/accounts?account_id=1", "accounts.title", "main h2", "网页冒烟假账号"},
 	{"settings-general", "/settings/general", "web.settings.general_title", "#setting-general-language", ""},
 	{"settings-ai", "/settings/ai", "web.ai.title", "main h2", ""},
 	{"settings-notifications", "/settings/notifications", "web.notify.title", "main h2", ""},
@@ -85,6 +93,18 @@ func TestWebSmoke(t *testing.T) {
 			defer stopBrowser()
 			var events webSmokeEvents
 			events.base = base
+			events.checkSmokeAuth = true
+			t.Cleanup(func() {
+				events.mu.Lock()
+				defer events.mu.Unlock()
+				raw, err := json.MarshalIndent(map[string]any{"requests": events.authChecks, "inputs": events.inputChecks, "javascript_dialogs": events.jsDialogs, "clean_guards": events.cleanGuards}, "", "  ")
+				if err == nil {
+					err = os.WriteFile(filepath.Join("/screens", viewport.name, "authentication.json"), append(raw, '\n'), 0600)
+				}
+				if err != nil {
+					t.Error("不能保存合成账号的认证检查", err)
+				}
+			})
 			if _, err := chromedp.Run(browser, chromedp.Evaluate[string](`navigator.userAgent`)); err != nil {
 				t.Fatal(err)
 			}
@@ -99,7 +119,8 @@ func TestWebSmoke(t *testing.T) {
 				t.Fatal(err)
 			}
 			runWebSmoke(t, browser, &events, chromedp.Func(func(ctx context.Context, _ *chromedp.Target) error {
-				if _, err := chromedp.Call(ctx, network.Enable, network.EnableParams{}); err != nil {
+				postSize := int64(4096)
+				if _, err := chromedp.Call(ctx, network.Enable, network.EnableParams{MaxPostDataSize: &postSize}); err != nil {
 					return err
 				}
 				if _, err := chromedp.Call(ctx, log.Enable, cdp.Empty{}); err != nil {
@@ -119,6 +140,7 @@ func TestWebSmoke(t *testing.T) {
 			if err := os.MkdirAll(shots, 0755); err != nil {
 				t.Fatal(err)
 			}
+			backup := ""
 			checkPage := func(page webSmokePage, lang locales.Language, takeScreenshot bool) {
 				t.Helper()
 				t.Logf("%s %s", lang, page.path)
@@ -153,7 +175,10 @@ func TestWebSmoke(t *testing.T) {
 					}`, smokeTranslation(t, lang, "web.detail.seller_detail.title"), smokeTranslation(t, lang, "web.detail.seller_detail.note"), smokeTranslation(t, lang, "web.detail.seller_detail.auth_false"))
 				}
 				if takeScreenshot {
-					writeWebSmokeScreenshot(t, browser, &events, filepath.Join(shots, page.name+".png"))
+					writeWebSmokeScreenshot(t, browser, &events, filepath.Join(shots, page.name+"-"+string(lang)+".png"))
+				}
+				if page.name == "tasks" {
+					assertWebSmokeTaskSearch(t, browser, &events, lang, viewport.width)
 				}
 				if page.name == "settings-prompts" || page.name == "result-detail" {
 					heading := "web.ai.prompt_system_suffix"
@@ -170,18 +195,27 @@ func TestWebSmoke(t *testing.T) {
 				if page.name == "settings-system" {
 					checkWebSmokeDiagnostics(t, browser, &events, diagnosticFiles, lang, shots)
 				}
+				checkWebSmokeDialogs(t, browser, &events, page, lang, shots, backup)
+				assertWebSmokeLayout(t, browser, &events)
 			}
-			const username, password = "smoke-local", "local-smoke-only-password"
+			const username, password = webSmokeUsername, webSmokePassword
 			setup := webSmokePage{"setup", "/setup", "web.setup.title", "main input[name=token]", ""}
-			checkPage(setup, locales.ZhCN, true)
-			runWebSmoke(t, browser, &events, smokeBrowserLanguage("en"))
+			for _, language := range webSmokeLanguages {
+				browserLanguage := string(language)
+				if language == locales.Ja {
+					browserLanguage = "ja-JP"
+				}
+				runWebSmoke(t, browser, &events, smokeBrowserLanguage(browserLanguage))
+				checkPage(setup, language, true)
+			}
+			runWebSmoke(t, browser, &events, smokeBrowserLanguage("fr-FR"))
 			checkPage(setup, locales.En, false)
 			runWebSmoke(t, browser, &events, smokeBrowserLanguage("zh-CN"))
 			checkPage(setup, locales.ZhCN, false)
+			fillWebSmokeInput(t, browser, &events, `input[name=token]`, token)
+			fillWebSmokeInput(t, browser, &events, `input[name=username]`, username)
+			fillWebSmokeInput(t, browser, &events, `input[name=password]`, password)
 			runWebSmoke(t, browser, &events,
-				chromedp.SendKeys(chromedp.CSS(`input[name=token]`), token),
-				chromedp.SendKeys(chromedp.CSS(`input[name=username]`), username),
-				chromedp.SendKeys(chromedp.CSS(`input[name=password]`), password),
 				chromedp.Click(chromedp.CSS(`main button[type=submit]`)),
 				chromedp.WaitVisible(chromedp.CSS(`main h2`)),
 			)
@@ -190,29 +224,32 @@ func TestWebSmoke(t *testing.T) {
 				return err
 			}))
 			login := webSmokePage{"login", "/login", "web.auth.sign_in", "main input[name=username]", ""}
-			checkPage(login, locales.ZhCN, true)
-			runWebSmoke(t, browser, &events, smokeBrowserLanguage("en"))
-			checkPage(login, locales.En, false)
+			for _, language := range webSmokeLanguages {
+				browserLanguage := string(language)
+				if language == locales.Ja {
+					browserLanguage = "ja-JP"
+				}
+				runWebSmoke(t, browser, &events, smokeBrowserLanguage(browserLanguage))
+				checkPage(login, language, true)
+			}
 			runWebSmoke(t, browser, &events, smokeBrowserLanguage("zh-CN"))
 			checkPage(login, locales.ZhCN, false)
+			fillWebSmokeInput(t, browser, &events, `input[name=username]`, username)
+			fillWebSmokeInput(t, browser, &events, `input[name=password]`, password)
 			runWebSmoke(t, browser, &events,
-				chromedp.SendKeys(chromedp.CSS(`input[name=username]`), username),
-				chromedp.SendKeys(chromedp.CSS(`input[name=password]`), password),
 				chromedp.Click(chromedp.CSS(`main button[type=submit]`)),
 				chromedp.WaitVisible(chromedp.CSS(`main h2`)),
 			)
-			for _, language := range []locales.Language{locales.ZhCN, locales.En} {
-				if language == locales.En {
-					switchWebSmokeLanguage(t, browser, &events)
-				}
+			backup = seedWebSmokeConfigurations(t, base, username, password)
+			for _, language := range webSmokeLanguages {
+				switchWebSmokeLanguage(t, browser, &events, language)
 				for _, page := range webSmokePages {
-					checkPage(page, language, language == locales.ZhCN)
+					checkPage(page, language, true)
 				}
 				clickWebSmokeButton(t, browser, &events, smokeTranslation(t, language, "admin.about.show_docs"))
 				waitWebSmoke(t, browser, &events, `() => [...document.querySelectorAll('main summary code')].some(node => node.textContent === '/api/v1/setup')`)
-				if language == locales.ZhCN {
-					writeWebSmokeScreenshot(t, browser, &events, filepath.Join(shots, "openapi.png"))
-				}
+				writeWebSmokeScreenshot(t, browser, &events, filepath.Join(shots, "openapi-"+string(language)+".png"))
+				assertWebSmokeLayout(t, browser, &events)
 			}
 		})
 	}
@@ -274,7 +311,23 @@ func seedWebSmokeSellerMetrics(t *testing.T, data string) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	_, err = db.DB().ExecContext(t.Context(), `UPDATE listings SET seller_detail_json=? WHERE item_id=(SELECT item_id FROM findings WHERE id=4)`, `{"item_count":0,"has_sold_num_integer":8,"avg_reply_30d_long":1.25,"new_good_ratio_rate":"98%（样例原文）","last_visit_time":"刚刚来过（样例原文）","idle_fish_credit_level":"L4（未确认）","zhima_auth":false}`)
+	_, err = db.DB().ExecContext(t.Context(), `UPDATE listings SET seller_id='web-smoke-seller',seller_detail_json=? WHERE item_id=(SELECT item_id FROM findings WHERE id=4)`, `{"item_count":0,"has_sold_num_integer":8,"avg_reply_30d_long":1.25,"new_good_ratio_rate":"98%（样例原文）","last_visit_time":"刚刚来过（样例原文）","idle_fish_credit_level":"L4（未确认）","zhima_auth":false}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw string
+	if err := db.DB().QueryRowContext(t.Context(), `SELECT profile_json FROM tasks WHERE id=(SELECT task_id FROM findings WHERE id=4)`).Scan(&raw); err != nil {
+		t.Fatal(err)
+	}
+	var profile analysis.Profile
+	if err := json.Unmarshal([]byte(raw), &profile); err != nil {
+		t.Fatal(err)
+	}
+	profile.Specs = []analysis.ProfileSpec{{Name: "内存（网页样例）", Options: []string{"16GB"}, Values: []string{"16GB"}, Source: analysis.SourceUser, Edited: true}}
+	encoded, err := json.Marshal(profile)
+	if err == nil {
+		_, err = db.DB().ExecContext(t.Context(), `UPDATE tasks SET profile_json=? WHERE id=(SELECT task_id FROM findings WHERE id=4)`, string(encoded))
+	}
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -289,6 +342,39 @@ type webSmokeEvents struct {
 	issues         []string
 	pending        map[network.RequestID]struct{}
 	lastActivity   time.Time
+	authChecks     []webSmokeAuthCheck
+	inputChecks    []webSmokeInputCheck
+	checkSmokeAuth bool
+	jsDialogs      []string
+	cleanGuards    []webSmokeCleanGuard
+}
+
+type webSmokeCleanGuard struct {
+	Language  locales.Language `json:"language"`
+	ElapsedMS int64            `json:"elapsed_ms"`
+	Released  bool             `json:"released"`
+}
+
+type webSmokeInputCheck struct {
+	Selector     string `json:"selector"`
+	BeforeLength int    `json:"before_length"`
+	AfterLength  int    `json:"after_length"`
+	Matches      bool   `json:"matches"`
+	Appended     bool   `json:"appended"`
+	MissingFirst bool   `json:"missing_first"`
+	BeforeFocus  string `json:"before_focus"`
+	AfterFocus   string `json:"after_focus"`
+	SameNode     bool   `json:"same_node"`
+	TargetFocus  bool   `json:"target_focused"`
+}
+
+type webSmokeAuthCheck struct {
+	Path            string `json:"path"`
+	Observed        bool   `json:"observed"`
+	UsernameMatches bool   `json:"username_matches"`
+	PasswordMatches bool   `json:"password_matches"`
+	UsernameLength  int    `json:"username_length"`
+	PasswordLength  int    `json:"password_length"`
 }
 
 func (events *webSmokeEvents) receive(event any) {
@@ -297,6 +383,21 @@ func (events *webSmokeEvents) receive(event any) {
 	var issue string
 	switch value := event.(type) {
 	case *network.EventRequestWillBeSent:
+		if events.checkSmokeAuth && value.Request.Method == http.MethodPost && (value.Request.URL == events.base+"/api/v1/setup" || value.Request.URL == events.base+"/api/v1/auth/login") {
+			var raw []byte
+			for _, entry := range value.Request.PostDataEntries {
+				raw = append(raw, entry.Bytes...)
+			}
+			var submitted struct{ Username, Password string }
+			observed := json.Unmarshal(raw, &submitted) == nil
+			check := webSmokeAuthCheck{Path: strings.TrimPrefix(value.Request.URL, events.base), Observed: observed,
+				UsernameMatches: submitted.Username == webSmokeUsername, PasswordMatches: submitted.Password == webSmokePassword,
+				UsernameLength: len(submitted.Username), PasswordLength: len(submitted.Password)}
+			events.authChecks = append(events.authChecks, check)
+			if observed && (!check.UsernameMatches || !check.PasswordMatches) {
+				issue = fmt.Sprintf("合成账号认证请求与测试输入不符：用户名匹配=%t，密码匹配=%t", check.UsernameMatches, check.PasswordMatches)
+			}
+		}
 		if events.readOnly && value.Request.Method != http.MethodGet && value.Request.Method != http.MethodHead {
 			issue = "诊断页面发起了写请求"
 		}
@@ -340,6 +441,8 @@ func (events *webSmokeEvents) receive(event any) {
 			entry.URL == events.base+"/api/v1/me" && strings.Contains(entry.Text, "401")) {
 			issue = entry.Text
 		}
+	case *page.EventJavascriptDialogOpening:
+		events.jsDialogs = append(events.jsDialogs, string(value.Type)+" "+strings.TrimPrefix(value.URL, events.base))
 	}
 	if issue != "" {
 		events.issues = append(events.issues, events.page+"："+issue)
@@ -388,17 +491,21 @@ func visitWebSmokePage(t *testing.T, browser context.Context, events *webSmokeEv
 	}`, path, string(lang), width, heading, page.selector, content)
 }
 
-func switchWebSmokeLanguage(t *testing.T, browser context.Context, events *webSmokeEvents) {
+func switchWebSmokeLanguage(t *testing.T, browser context.Context, events *webSmokeEvents, language locales.Language) {
 	t.Helper()
 	events.mu.Lock()
 	events.page = "/settings/general"
 	events.mu.Unlock()
+	runWebSmoke(t, browser, events, chromedp.Navigate(events.base+"/settings/general"), chromedp.WaitVisible(chromedp.CSS(`#setting-general-language select`)))
+	index, err := chromedp.Run(browser, chromedp.Evaluate[int](`(language => [...document.querySelector('#setting-general-language select').options].findIndex(option => option.value === language))(`+strconv.Quote(string(language))+`)`))
+	if err != nil || index < 0 {
+		t.Fatalf("语言选项缺失：%s %v", language, err)
+	}
 	runWebSmoke(t, browser, events,
-		chromedp.Navigate(events.base+"/settings/general"),
-		chromedp.SendKeys(chromedp.CSS(`#setting-general-language select`), kb.End),
+		chromedp.SendKeys(chromedp.CSS(`#setting-general-language select`), kb.Home+strings.Repeat(kb.ArrowDown, index)+kb.Enter),
 		chromedp.Click(chromedp.CSS(`main form button[type=submit]:not(:disabled)`)),
 	)
-	waitWebSmoke(t, browser, events, `() => document.documentElement.lang === 'en'`)
+	waitWebSmoke(t, browser, events, `(language) => document.documentElement.lang === language && document.querySelector('#setting-general-language select')?.value === language`, string(language))
 }
 
 func smokeBrowserLanguage(lang string) chromedp.Action[chromedp.Void] {
@@ -435,6 +542,48 @@ func clickWebSmokeButton(t *testing.T, browser context.Context, events *webSmoke
 	runWebSmoke(t, browser, events, chromedp.Click(chromedp.Search(selector)))
 }
 
+func fillWebSmokeInput(t *testing.T, browser context.Context, events *webSmokeEvents, selector, value string) {
+	t.Helper()
+	beforeFocus, err := chromedp.Run(browser, chromedp.Evaluate[string](`(selector => {
+		window.__webSmokeInputNode = document.querySelector(selector);
+		const node = document.activeElement;
+		return node ? node.tagName + '#' + node.id + '[name=' + (node.getAttribute('name') ?? '') + ']' : '';
+	})(`+strconv.Quote(selector)+`)`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := chromedp.Run(browser, chromedp.Value(chromedp.CSS(selector)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runWebSmoke(t, browser, events, chromedp.SendKeys(chromedp.CSS(selector), value))
+	after, err := chromedp.Run(browser, chromedp.Value(chromedp.CSS(selector)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	check := webSmokeInputCheck{Selector: selector, BeforeLength: len(before), AfterLength: len(after), Matches: after == value,
+		Appended: before != "" && after == before+value, MissingFirst: len(value) > 0 && after == value[1:], BeforeFocus: beforeFocus}
+	focus, err := chromedp.Run(browser, chromedp.Evaluate[struct {
+		Name    string `json:"name"`
+		Same    bool   `json:"same"`
+		Focused bool   `json:"focused"`
+	}](`(selector => {
+		const active = document.activeElement;
+		return {name: active ? active.tagName + '#' + active.id + '[name=' + (active.getAttribute('name') ?? '') + ']' : '',
+			same: document.querySelector(selector) === window.__webSmokeInputNode, focused: active === window.__webSmokeInputNode};
+	})(`+strconv.Quote(selector)+`)`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	check.AfterFocus, check.SameNode, check.TargetFocus = focus.Name, focus.Same, focus.Focused
+	events.mu.Lock()
+	events.inputChecks = append(events.inputChecks, check)
+	events.mu.Unlock()
+	if !check.Matches {
+		t.Fatalf("合成账号输入不符：%s 输入前%d字节、输入后%d字节、预期%d字节，追加已有内容=%t、缺首字符=%t、同一节点=%t、目标仍聚焦=%t、前=%s、后=%s", selector, len(before), len(after), len(value), check.Appended, check.MissingFirst, check.SameNode, check.TargetFocus, check.BeforeFocus, check.AfterFocus)
+	}
+}
+
 func runWebSmoke(t *testing.T, browser context.Context, events *webSmokeEvents, actions ...chromedp.Action[chromedp.Void]) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(browser, 12*time.Second)
@@ -443,6 +592,18 @@ func runWebSmoke(t *testing.T, browser context.Context, events *webSmokeEvents, 
 		_, err := chromedp.Run(ctx, action)
 		events.assert(t)
 		if err != nil {
+			capture, stop := context.WithTimeout(browser, time.Second)
+			if shot, shotErr := chromedp.Run(capture, chromedp.CaptureScreenshot()); shotErr == nil {
+				path := filepath.Join("/screens", "failure-"+strconv.FormatInt(time.Now().UnixNano(), 10)+".png")
+				if os.WriteFile(path, shot, 0644) == nil {
+					t.Log("失败截图：", path)
+				}
+			}
+			stop()
+			events.mu.Lock()
+			dialogs := append([]string{}, events.jsDialogs...)
+			events.mu.Unlock()
+			t.Log("原生弹窗记录：", dialogs)
 			t.Fatalf("%s 操作失败：%v", events.page, err)
 		}
 	}
@@ -455,8 +616,8 @@ func waitWebSmoke(t *testing.T, browser context.Context, events *webSmokeEvents,
 	_, err := chromedp.Run(ctx, chromedp.PollFunction[bool](predicate, chromedp.WithPollingArgs(args...), chromedp.WithPollingInterval(40*time.Millisecond)))
 	events.assert(t)
 	if err != nil {
-		state, _ := chromedp.Run(browser, chromedp.Evaluate[string](`JSON.stringify({path:location.pathname+location.search,lang:document.documentElement.lang,width:screen.width,title:document.querySelector('main h1')?.textContent,text:document.querySelector('main')?.innerText.slice(0, 250)})`))
-		t.Fatalf("%s 未出现页面内容：%v %s", events.page, err, state)
+		state, _ := chromedp.Run(browser, chromedp.Evaluate[string](`JSON.stringify({path:location.pathname+location.search,lang:document.documentElement.lang,width:screen.width,title:document.querySelector('main h1')?.textContent,text:document.querySelector('main')?.innerText.slice(0, 250),active:{tag:document.activeElement?.tagName,id:document.activeElement?.id,name:document.activeElement?.getAttribute('name'),text:document.activeElement?.tagName === 'BUTTON' ? document.activeElement.textContent.trim().slice(0,80) : undefined},dialogs:[...document.querySelectorAll('[role=dialog],[role=alertdialog]')].map(node => ({role:node.getAttribute('role'),title:node.querySelector('h2')?.textContent}))})`))
+		t.Fatalf("%s 等待条件未满足：%v %s", events.page, err, state)
 	}
 	// 等本页请求完成，别在切到下一页时把慢响应取消掉。
 	ticker := time.NewTicker(25 * time.Millisecond)

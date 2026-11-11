@@ -11,7 +11,7 @@ let connection = 'connecting';
 
 function showCopy() {
     const preference = new URLSearchParams(location.hash.slice(1)).get('lang');
-    const language = preference === 'en' || preference === 'zh-CN' ? preference : browserLanguage;
+    const language = preference === 'en' || preference === 'zh-CN' || preference === 'ja' ? preference : browserLanguage;
     const { dataset: copy } = copies.querySelector(`[lang="${language}"]`);
     document.documentElement.lang = language;
     document.title = `${copy.title} · Kakatta`;

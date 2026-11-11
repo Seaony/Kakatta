@@ -21,7 +21,7 @@ var runExportHeader = []string{
 }
 
 func (s *Service) ExportRunLogs(ctx context.Context, query RunQuery, language locales.Language, dst io.Writer) (ExportInfo, error) {
-	if dst == nil || language != locales.ZhCN && language != locales.En {
+	if dst == nil || language != locales.ZhCN && language != locales.En && language != locales.Ja {
 		return ExportInfo{}, queryError()
 	}
 	query.ListQuery = ListQuery{}

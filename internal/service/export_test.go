@@ -472,7 +472,7 @@ func TestExportRunLogsFoldWindowAndLocalizedWarnings(t *testing.T) {
 	warnings, _ := json.Marshal([]locales.Message{{Code: "run.network_failed"}, {Code: "run.cancelled"}})
 	queryExec(t, s.db, `UPDATE run_records SET warnings_json=? WHERE id=?`, string(warnings), run.ID)
 	queryExec(t, s.db, `UPDATE tasks SET name='新名称' WHERE id=?`, taskID)
-	for _, language := range []locales.Language{locales.ZhCN, locales.En} {
+	for _, language := range []locales.Language{locales.ZhCN, locales.En, locales.Ja} {
 		for _, window := range []bool{false, true} {
 			query, count := RunQuery{TaskID: &taskID}, "3"
 			if window {

@@ -7,10 +7,12 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/Seaony/Kakatta/internal/locales"
 )
 
 func TestTemporaryAccountIDSkipsOccupiedPort(t *testing.T) {
-	first, err := temporaryAccountID()
+	first, err := temporaryAccountID(locales.ZhCN)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -19,9 +21,32 @@ func TestTemporaryAccountIDSkipsOccupiedPort(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer listener.Close()
-	next, err := temporaryAccountID()
+	next, err := temporaryAccountID(locales.ZhCN)
 	if err != nil || next == first {
 		t.Fatalf("自检复用了已占用的浏览器端口：%d，%v", next, err)
+	}
+}
+
+func TestBrowserSetupFailureUsesSelectedLanguage(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(file, []byte("original"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, language := range []locales.Language{locales.ZhCN, locales.En, locales.Ja} {
+		t.Run(string(language), func(t *testing.T) {
+			checks := browserChecks(t.Context(), Options{DataDir: filepath.Join(file, "child"), Language: language})
+			if len(checks) != 4 {
+				t.Fatalf("创建目录失败后检查项不全：%+v", checks)
+			}
+			for _, check := range checks[:3] {
+				if check.Passed || check.Detail == "" || check.Action == "" || check.Detail != text(language, "profile_failed", nil) || check.Action != text(language, "mount_remedy", nil) {
+					t.Errorf("浏览器启动前失败没有保留译文：%+v", check)
+				}
+			}
+			if cleanup := checks[3]; cleanup.ID != "cleanup" || !cleanup.Passed || cleanup.Action != "" || cleanup.Detail == "" || cleanup.Detail != text(language, "processes_not_started", nil) {
+				t.Errorf("未启动进程时清理说明不正确：%+v", cleanup)
+			}
+		})
 	}
 }
 

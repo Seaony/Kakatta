@@ -1999,7 +1999,7 @@ export interface components {
             /** Format: int64 */
             token_id: number;
             /** @enum {string} */
-            language: "system" | "zh-CN" | "en";
+            language: "system" | "zh-CN" | "en" | "ja";
             /** @enum {string} */
             appearance: "system" | "light" | "dark";
             totp_enabled: boolean;

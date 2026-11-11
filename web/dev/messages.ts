@@ -34,9 +34,26 @@ export const messages = {
     stopping: 'Stopping', backendRunning: 'Running', error: 'Backend error', otherPhase: 'Backend status: ',
     unavailable: 'Unconfirmed', requestStatus: 'Response status',
   },
+  ja: {
+    development: '開発モード', fake: 'この端末のテストデータ', paused: 'スケジューラーは一時停止中', running: 'スケジューラーは実行中',
+    unknown: 'スケジューラーの状態は不明', connecting: '開発マネージャーに接続中', connectionError: '開発状態を取得できません。自動的に再試行します。',
+    console: '開発コンソール', expand: '開発コンソールを開く', collapse: '開発コンソールを閉じる',
+    scheduler: 'タスクのスケジュール', pause: 'スケジューラーを一時停止', resume: 'スケジューラーを再開', pending: '送信中…',
+    generation: 'バックエンドの世代', status: 'バックエンドの状態', lastError: 'ビルドまたはバックエンドのエラー',
+    controlError: '操作を送信できませんでした。もう一度お試しください。', logs: '最近のログ', noLogs: 'ログはまだありません',
+    logLimit: '最新のログを100件表示', fixture: 'テストデータの障害', nextRun: '次回の実行から反映されます。タスクを自動実行することはありません。',
+    normal: '正常に戻す', expired: 'ログイン期限切れ', risk: '認証が必要', missing: 'ページの項目が欠落', api_error: 'APIエラー',
+    selectedFault: '現在の障害', starting: '起動中', building: 'ビルド中', compiling: 'ビルド中',
+    reloading: '新しいコードのビルドが完了しました。現在の実行が終わってから切り替えます。',
+    waiting: '新しいコードのビルドが完了しました。現在の実行が終わってから切り替えます。',
+    reload_failed: '新しいバックエンドを起動できませんでした。エラーとログを確認してください。',
+    shutdown_blocked: 'まだ終了していません。現在の実行が終わってから、もう一度 Ctrl+C を押してください。',
+    stopping: '停止中', backendRunning: '実行中', error: 'バックエンドでエラーが発生', otherPhase: 'バックエンドの状態：',
+    unavailable: '未確認', requestStatus: '応答ステータス',
+  },
 } as const;
 
-export type DevelopmentMessages = typeof messages['zh-CN'] | typeof messages.en;
+export type DevelopmentMessages = typeof messages[keyof typeof messages];
 
 export function phaseText(phase: string, text: DevelopmentMessages): string {
   if (phase === 'running') return text.backendRunning;

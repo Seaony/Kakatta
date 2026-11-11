@@ -58,7 +58,7 @@ export function Gateway({ children }: { children: ReactNode }) {
   const language = preferences.data?.values['general.language'] ?? me.data?.language;
   const appearance = preferences.data?.values['general.appearance'] ?? me.data?.appearance;
   useEffect(() => {
-    if (language === 'system' || language === 'zh-CN' || language === 'en') void setLocale(selectLocale(language));
+    if (language === 'system' || language === 'zh-CN' || language === 'en' || language === 'ja') void setLocale(selectLocale(language));
   }, [language, setLocale]);
   useEffect(() => {
     if (appearance === 'system' || appearance === 'light' || appearance === 'dark') setTheme(appearance);
