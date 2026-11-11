@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -27,6 +28,7 @@ type formalRequestRecord struct {
 	RequestID  network.RequestID  `json:"request_id"`
 	Method     string             `json:"method"`
 	Path       string             `json:"path"`
+	Origin     string             `json:"origin,omitempty"`
 	Phase      string             `json:"phase"`
 	Identity   string             `json:"identity"`
 	Initiator  *network.Initiator `json:"initiator"`
@@ -38,16 +40,17 @@ type formalRequestRecord struct {
 }
 
 type formalRequestAudit struct {
-	mu       sync.Mutex
-	phase    string
-	identity string
-	closed   bool
-	requests map[network.RequestID]*formalRequestRecord
-	scripts  map[cdp.ScriptID]string
-	writer   io.Writer
-	events   *webSmokeEvents
-	readBody func(network.RequestID) ([]byte, error)
-	pending  sync.WaitGroup
+	mu                 sync.Mutex
+	phase              string
+	identity           string
+	fixtureImageOrigin string
+	closed             bool
+	requests           map[network.RequestID]*formalRequestRecord
+	scripts            map[cdp.ScriptID]string
+	writer             io.Writer
+	events             *webSmokeEvents
+	readBody           func(network.RequestID) ([]byte, error)
+	pending            sync.WaitGroup
 }
 
 func newFormalRequestAudit(stage string, writer io.Writer, events *webSmokeEvents, readBody func(network.RequestID) ([]byte, error)) *formalRequestAudit {
@@ -56,6 +59,25 @@ func newFormalRequestAudit(stage string, writer io.Writer, events *webSmokeEvent
 		identity = "setup"
 	}
 	return &formalRequestAudit{phase: "01身份/" + stage, identity: identity, requests: make(map[network.RequestID]*formalRequestRecord), scripts: make(map[cdp.ScriptID]string), writer: writer, events: events, readBody: readBody}
+}
+
+func (a *formalRequestAudit) configureFixtureImages(home string) error {
+	address, err := url.Parse(home)
+	if err != nil || address.Scheme != "http" || address.Hostname() != "127.0.0.1" || address.User != nil ||
+		address.Opaque != "" || address.RawQuery != "" || address.ForceQuery || address.Fragment != "" || address.RawFragment != "" ||
+		address.RawPath != "" || (address.Path != "" && address.Path != "/") {
+		return fmt.Errorf("正式图片夹具必须来自明确的本机回环地址")
+	}
+	port, err := strconv.Atoi(address.Port())
+	if err != nil || port < 1 || port > 65535 {
+		return fmt.Errorf("正式图片夹具必须指定有效端口")
+	}
+	origin := address.Scheme + "://" + address.Host
+	if home != origin && home != origin+"/" {
+		return fmt.Errorf("正式图片夹具不能带查询参数或片段")
+	}
+	a.fixtureImageOrigin = origin
+	return nil
 }
 
 func formalNetworkPhase(ctx context.Context, phase string) {
@@ -92,6 +114,7 @@ func (a *formalRequestAudit) receive(event any) {
 	if a.closed {
 		return
 	}
+	fixtureImage := false
 	switch value := event.(type) {
 	case *network.EventRequestWillBeSent:
 		address, err := url.Parse(value.Request.URL)
@@ -101,6 +124,15 @@ func (a *formalRequestAudit) receive(event any) {
 		}
 		record := &formalRequestRecord{Event: "request", RequestID: value.RequestID, Method: value.Request.Method, Path: address.Path,
 			Phase: a.phase, Identity: a.identity, Initiator: value.Initiator, Local: value.Request.URL == formalBaseURL+address.Path, Allowed: true}
+		if address.Host != "" {
+			record.Origin = address.Scheme + "://" + address.Host
+		}
+		name, imagePath := strings.CutPrefix(address.Path, "/images/")
+		number, jpeg := strings.CutSuffix(name, ".jpg")
+		fixtureImage = a.identity == "authenticated" && a.fixtureImageOrigin != "" &&
+			value.Request.Method == http.MethodGet && value.Type == network.ResourceTypeImage &&
+			imagePath && jpeg && number != "" && strings.Trim(number, "0123456789") == "" &&
+			value.Request.URL == a.fixtureImageOrigin+address.Path
 		a.requests[value.RequestID] = record
 		if address.Host == "127.0.0.1:18080" && len(address.Path) >= 5 && address.Path[:5] == "/api/" && a.identity != "authenticated" {
 			record.Allowed = record.Local && (record.Method == http.MethodGet && record.Path == "/api/v1/setup" ||
@@ -162,7 +194,18 @@ func (a *formalRequestAudit) receive(event any) {
 			return
 		}
 	}
-	a.events.receive(event)
+	if fixtureImage {
+		request := event.(*network.EventRequestWillBeSent)
+		a.events.mu.Lock()
+		if a.events.pending == nil {
+			a.events.pending = make(map[network.RequestID]struct{})
+		}
+		a.events.pending[request.RequestID] = struct{}{}
+		a.events.lastActivity = time.Now()
+		a.events.mu.Unlock()
+	} else {
+		a.events.receive(event)
+	}
 }
 
 func formalExpectedIdentityProbe(record formalRequestRecord) bool {

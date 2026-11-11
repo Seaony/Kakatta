@@ -76,6 +76,9 @@ func TestFormalPathJourney(t *testing.T) {
 		t.Fatal("打开正式请求记录失败", err)
 	}
 	audit := newFormalRequestAudit(stage, trace, &events, func(id network.RequestID) ([]byte, error) { return formalReadResponseBody(browser, id) })
+	if err := audit.configureFixtureImages(metadata.Site.Home); err != nil {
+		t.Fatal(err)
+	}
 	browser = context.WithValue(browser, formalNetworkKey{}, audit)
 	listening, stopListening := context.WithCancel(browser)
 	defer func() {
