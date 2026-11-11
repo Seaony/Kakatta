@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -633,7 +634,15 @@ func waitWebSmoke(t *testing.T, browser context.Context, events *webSmokeEvents,
 		select {
 		case <-ticker.C:
 		case <-ctx.Done():
-			t.Fatalf("%s 页面请求未在时限内结束", events.page)
+			events.mu.Lock()
+			pending := make([]string, 0, len(events.pending))
+			for id := range events.pending {
+				pending = append(pending, string(id))
+			}
+			idleFor := time.Since(events.lastActivity)
+			events.mu.Unlock()
+			sort.Strings(pending)
+			t.Fatalf("%s 页面请求未在时限内结束，未结束请求：%v，距最后请求活动：%s", events.page, pending, idleFor)
 		}
 	}
 }
