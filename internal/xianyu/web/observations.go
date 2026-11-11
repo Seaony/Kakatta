@@ -203,8 +203,21 @@ func retCodes(ret []string) []string {
 }
 
 func (r *Runner) signal(fields map[string]any) {
-	encoded, _ := json.Marshal(fields)
-	key := "signal:" + string(encoded)
+	r.observedEvent("风控信号", fields)
+}
+
+func (r *Runner) observedEvent(event string, fields map[string]any) {
+	identity := fields
+	if _, response := fields["响应序号"]; response {
+		identity = make(map[string]any, len(fields))
+		for key, value := range fields {
+			if key != "步骤" {
+				identity[key] = value
+			}
+		}
+	}
+	encoded, _ := json.Marshal(identity)
+	key := event + ":" + string(encoded)
 	r.observationMu.Lock()
 	if r.observed == nil {
 		r.observed = map[string]string{}
@@ -213,8 +226,18 @@ func (r *Runner) signal(fields map[string]any) {
 	r.observed[key] = "1"
 	r.observationMu.Unlock()
 	if !seen && r.Log != nil {
-		r.Log("风控信号", fields)
+		r.Log(event, fields)
 	}
+}
+
+func (r *Runner) observeResponseRisk(where string, response *browser.Response, kind xianyu.RetKind, ret []string) {
+	fields := responseRiskFields(where, response, kind, ret)
+	if kind == xianyu.RetSessionExpired {
+		fields["判定"] = "仅观察"
+		r.observedEvent("接口登录观察", fields)
+		return
+	}
+	r.signal(fields)
 }
 
 func (r *Runner) observeLoginEntry(ctx context.Context) {
@@ -262,7 +285,7 @@ func responseRiskFields(where string, response *browser.Response, kind xianyu.Re
 	if len(sources) == 0 {
 		sources = append(sources, "ret")
 	}
-	fields := map[string]any{"步骤": where, "来源": strings.Join(sources, ","), "信号": kind.String(), "ret_codes": retCodes(ret), "响应序号": response.Seq, "网址": diagnosticURL(response.URL), "处罚网址命中": punished}
+	fields := map[string]any{"步骤": where, "来源": strings.Join(sources, ","), "信号": kind.String(), "ret_codes": retCodes(ret), "响应序号": response.Seq, "到达顺序": response.BodyOrder, "网址": diagnosticURL(response.URL), "处罚网址命中": punished}
 	if punished {
 		fields["处罚动作"] = action
 	}

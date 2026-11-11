@@ -267,6 +267,7 @@ func (c *controller) makeResources(ctx context.Context, manual bool) (r *resourc
 	if err != nil {
 		return r, err
 	}
+	c.recordCookieMetadata(ctx, r.chrome, "after_startup")
 	version, versionErr := r.chrome.Version(ctx)
 	if versionErr != nil {
 		version = "读取失败：" + diagnosticReason(versionErr)
@@ -403,6 +404,7 @@ func (c *controller) loginReserved(job context.Context) (err error) {
 		err = c.recordStep("等待扫码登录", func() error { return r.runner.WaitForLogin(job, 10*time.Minute) })
 	}
 	if err == nil {
+		c.recordCookieMetadata(job, r.chrome, "after_login")
 		var head xianyu.SellerHead
 		err = c.recordStep("读取自己的主页", func() error { var failure error; head, failure = r.runner.OwnProfile(job); return failure })
 		if err != nil && !web.IsStop(err) {

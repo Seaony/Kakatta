@@ -239,6 +239,9 @@ func prepareProfile(dir string) error {
 	if active {
 		return fmt.Errorf("这个账号的浏览器还在运行")
 	}
+	if err := prepareSessionProfile(dir); err != nil {
+		return err
+	}
 	for _, name := range []string{"SingletonLock", "SingletonSocket", "SingletonCookie"} {
 		if err := os.Remove(filepath.Join(dir, name)); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("清理浏览器旧锁：%w", err)

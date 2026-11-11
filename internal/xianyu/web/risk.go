@@ -41,8 +41,16 @@ func IsStop(err error) bool {
 }
 
 // checkPage 检查当前页面：网址是不是登录页、有没有可见的验证遮罩、有没有「非法访问」文字。
-func (r *Runner) checkPage(ctx context.Context, where string) (failure error) {
+func (r *Runner) checkPage(ctx context.Context, where string) error {
+	return r.checkPageState(ctx, where, false)
+}
+
+func (r *Runner) checkPageState(ctx context.Context, where string, manualLogin bool) (failure error) {
 	defer func() {
+		// 人工窗口本来就在等登录，状态仍返回给调用方，不把等待记成故障。
+		if manualLogin && errors.Is(failure, ErrLoginExpired) {
+			return
+		}
 		if IsStop(failure) && !errors.Is(failure, ErrDiagnostics) {
 			failure = r.ReportFailure(ctx, where, failure, nil)
 		}
@@ -101,8 +109,22 @@ func (r *Runner) checkPage(ctx context.Context, where string) (failure error) {
 	}
 	if verification != nil {
 		r.observeIframes(ctx, current, true)
+		return verification
 	}
-	return verification
+	boxes, err := r.H.FindNow(ctx, rules.Selectors.LoginBox)
+	if err != nil {
+		return fmt.Errorf("%s：检查登录框失败：%w", where, err)
+	}
+	for _, box := range boxes {
+		visible, err := r.H.VisibleCheckedContext(ctx, box)
+		if err != nil {
+			return fmt.Errorf("%s：检查登录框是否可见失败：%w", where, err)
+		}
+		if visible {
+			return &RiskError{Kind: ErrLoginExpired, Where: where, Signal: "可见登录框 " + rules.Selectors.LoginBox}
+		}
+	}
+	return nil
 }
 
 func pageURLRisk(current, where string) error {
@@ -126,7 +148,7 @@ func (r *Runner) isMtopResponse(response *browser.Response) bool {
 }
 
 // checkResponses 检查这个 Runner 创建以来完成的全部 mtop 接口：响应头 bxpunish、ret 和 data.url。
-// 不管是不是正在等的那个接口、是哪一步发出的，只要是风控就立即结束（XIANYU.md 4.1 节）：
+// 不管是不是正在等的那个接口、是哪一步发出的，只要是验证码或拒绝就立即结束（XIANYU.md 4.1 节）：
 // 两步之间才返回的风控响应也要在下一次检查时拦住，所以不按每一步自己的标记来查。
 func (r *Runner) checkResponses(where string) error {
 	if err := r.S.Capture.Err(); err != nil {
@@ -135,7 +157,7 @@ func (r *Runner) checkResponses(where string) error {
 	var pending error
 	for _, resp := range r.S.Capture.HeadersAfter(r.since, browser.Match{}) {
 		if (resp.MainDocument || r.isMtopResponse(resp)) && resp.Headers["bxpunish"] == "1" && (resp.HeaderOrder == 0 || resp.HeaderOrder > r.handledRisks[resp.Seq].header) {
-			r.signal(map[string]any{"步骤": where, "来源": "响应头", "信号": "bxpunish=1", "响应序号": resp.Seq, "网址": diagnosticURL(resp.URL)})
+			r.signal(map[string]any{"步骤": where, "来源": "响应头", "信号": "bxpunish=1", "响应序号": resp.Seq, "到达顺序": resp.HeaderOrder, "网址": diagnosticURL(resp.URL)})
 			pending = &RiskError{Kind: ErrNeedVerify, Where: where, Signal: "响应头 bxpunish"}
 		}
 	}
@@ -151,7 +173,7 @@ func (r *Runner) checkResponses(where string) error {
 			continue
 		}
 		if kind == xianyu.RetNeedVerify || kind == xianyu.RetDenied || kind == xianyu.RetSessionExpired {
-			r.signal(responseRiskFields(where, resp, kind, ret))
+			r.observeResponseRisk(where, resp, kind, ret)
 		}
 		switch kind {
 		case xianyu.RetNeedVerify:
@@ -160,10 +182,6 @@ func (r *Runner) checkResponses(where string) error {
 			}
 		case xianyu.RetDenied:
 			return r.ReportFailure(r.S.Context(), where, &RiskError{Kind: ErrDenied, Where: where, Signal: kind.String()}, nil)
-		case xianyu.RetSessionExpired:
-			if resp.BodyOrder == 0 || resp.BodyOrder > r.handledRisks[resp.Seq].body {
-				pending = &RiskError{Kind: ErrLoginExpired, Where: where, Signal: kind.String()}
-			}
 		}
 	}
 	return r.ReportFailure(r.S.Context(), where, pending, nil)
@@ -211,7 +229,7 @@ func (r *Runner) waitAPIResponse(ctx context.Context, mark uint64, m browser.Mat
 	start := time.Now()
 	deadline := start.Add(timeout)
 	for {
-		resp, err := r.waitResponse(ctx, after, m, where, time.Until(deadline), quiet)
+		resp, err := r.waitResponse(ctx, after, mark, m, where, time.Until(deadline), quiet)
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil, contextError(ctx)
@@ -234,7 +252,7 @@ func (r *Runner) waitAPIResponse(ctx context.Context, mark uint64, m browser.Mat
 		if resp.Status < 200 || resp.Status > 299 {
 			return nil, fmt.Errorf("%s：HTTP 状态码 %d", where, resp.Status)
 		}
-		kind, _, err := xianyu.CheckEnvelope(resp.Body)
+		kind, ret, err := xianyu.CheckEnvelope(resp.Body)
 		if err != nil {
 			return nil, r.ReportFailure(ctx, where, fmt.Errorf("%s：响应不是有效的接口数据：%w", where, err), resp)
 		}
@@ -246,24 +264,48 @@ func (r *Runner) waitAPIResponse(ctx context.Context, mark uint64, m browser.Mat
 			// 页面会自己刷新令牌并重发，继续等下一条。
 			after = resp.Seq
 			continue
+		case xianyu.RetSessionExpired:
+			return nil, r.targetLoginExpired(ctx, where, resp, ret)
 		default:
 			return nil, fmt.Errorf("%s：%s", where, kind)
 		}
 	}
 }
 
+func (r *Runner) targetLoginExpired(ctx context.Context, where string, response *browser.Response, ret []string) error {
+	fields := responseRiskFields(where, response, xianyu.RetSessionExpired, ret)
+	fields["判定"] = "目标接口登录失效"
+	r.signal(fields)
+	return r.ReportFailure(ctx, where, &RiskError{Kind: ErrLoginExpired, Where: where, Signal: "本次目标接口登录失效"}, nil)
+}
+
 // 等待接口时也处理其他接口的风控；页面检查在这里串行执行，不在网络回调里发命令。
-func (r *Runner) waitResponse(ctx context.Context, mark uint64, m browser.Match, where string, timeout, quiet time.Duration) (*browser.Response, error) {
+func (r *Runner) waitResponse(ctx context.Context, after, operationMark uint64, m browser.Match, where string, timeout, quiet time.Duration) (*browser.Response, error) {
 	if timeout <= 0 {
 		return nil, browser.ErrResponseTimeout
 	}
 	var resp *browser.Response
-	err := r.watch(ctx, where, func(waitCtx context.Context) error {
+	err := r.watchChecked(ctx, func(checkCtx context.Context) error {
+		if err := r.check(checkCtx, where); err != nil {
+			return err
+		}
+		// 只认本次操作的目标接口；取最后响应之前，较早的失效也必须拦住。
+		for _, response := range r.S.Capture.DoneAfter(operationMark, m) {
+			if response.Err != nil || response.MainDocument {
+				continue
+			}
+			kind, ret, err := xianyu.CheckEnvelope(response.Body)
+			if err == nil && kind == xianyu.RetSessionExpired {
+				return r.targetLoginExpired(checkCtx, where, response, ret)
+			}
+		}
+		return nil
+	}, func(waitCtx context.Context) error {
 		var err error
 		if quiet > 0 {
-			resp, err = r.S.Capture.WaitLastAfter(waitCtx, mark, m, quiet, timeout)
+			resp, err = r.S.Capture.WaitLastAfter(waitCtx, after, m, quiet, timeout)
 		} else {
-			resp, err = r.S.Capture.WaitAfter(waitCtx, mark, m, timeout)
+			resp, err = r.S.Capture.WaitAfter(waitCtx, after, m, timeout)
 		}
 		return err
 	})

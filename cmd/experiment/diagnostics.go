@@ -24,7 +24,7 @@ import (
 
 var errBrowserDisconnected = errors.New("浏览器连接已中断")
 
-var experimentChecks = []string{"search_input", "search_prefill", "search_same_tab", "search_url", "search_suggestion", "chinese_input", "filter_container", "publish_container", "region_requests", "search_seller_id", "detail_sale_status", "detail_description_path", "seller_item_count", "seller_credit_mapping", "search_area_format", "rating_time_format", "login_cookie", "login_selectors", "login_refresh", "own_profile", "iframe_urls", "rule_selectors"}
+var experimentChecks = []string{"search_input", "search_prefill", "search_same_tab", "search_url", "search_suggestion", "chinese_input", "filter_container", "publish_container", "region_requests", "search_seller_id", "detail_sale_status", "detail_description_path", "seller_item_count", "seller_credit_mapping", "search_area_format", "rating_time_format", "login_cookie", "cookie_metadata", "login_selectors", "login_refresh", "own_profile", "iframe_urls", "rule_selectors"}
 
 type experimentStep struct {
 	Name       string `json:"name"`
@@ -137,6 +137,37 @@ func (c *controller) recordStep(name string, action func() error) error {
 		return errors.Join(err, web.ErrDiagnostics, logErr)
 	}
 	return err
+}
+
+func (c *controller) recordCookieMetadata(ctx context.Context, chrome *browser.Session, stage string) {
+	metadata, err := chrome.CookieMetadata(ctx)
+	c.logCookieMetadata(stage, metadata, err)
+}
+
+func (c *controller) logCookieMetadata(stage string, metadata []browser.CookieMetadata, err error) {
+	result := map[string]any{"available": err == nil}
+	state := "已观察"
+	if err != nil {
+		state = "未知"
+		reason := "Cookie 元数据读取失败"
+		if errors.Is(err, context.DeadlineExceeded) {
+			reason = "Cookie 元数据读取超时"
+		} else if errors.Is(err, context.Canceled) {
+			reason = "Cookie 元数据读取已取消"
+		}
+		result["reason"] = reason
+	} else {
+		if metadata == nil {
+			metadata = []browser.CookieMetadata{}
+		}
+		result["cookies"] = metadata
+	}
+	fields := map[string]any{"stage": stage}
+	for key, value := range result {
+		fields[key] = value
+	}
+	c.log("Cookie元数据", fields)
+	c.log("待确认观察", map[string]any{"事项": "cookie_metadata", "状态": state, "结果": map[string]any{stage: result}})
 }
 
 func (c *controller) finishSummary(phase string, err error) {

@@ -173,11 +173,11 @@ func TestConfirmVerificationRecoversCompletedRiskAfterSuccess(t *testing.T) {
 	}
 }
 
-func TestConfirmVerificationSuccessCannotClearDenialOrExpired(t *testing.T) {
+func TestConfirmVerificationKeepsDenialAndOnlyObservesSideExpiry(t *testing.T) {
 	for _, tc := range []struct {
 		state string
 		want  error
-	}{{"denied", ErrDenied}, {"expired", ErrLoginExpired}} {
+	}{{"denied", ErrDenied}, {"expired", nil}} {
 		t.Run(tc.state, func(t *testing.T) {
 			f := newFake(t)
 			r, _, ctx := startRunner(t, f)
@@ -189,7 +189,7 @@ func TestConfirmVerificationSuccessCannotClearDenialOrExpired(t *testing.T) {
 			otherLoginSuccess(t, r, ctx, f.Home())
 			before := r.S.Capture.Mark()
 			if err := r.ConfirmVerification(ctx); !errors.Is(err, tc.want) {
-				t.Fatalf("人工验证不能通过后续成功清除%s：%v", tc.state, err)
+				t.Fatalf("人工验证仍须拦拒绝，旁路失效只作观察，状态%s：%v", tc.state, err)
 			}
 			if after := r.S.Capture.Mark(); after != before {
 				t.Fatalf("确认不能产生新请求：%d→%d", before, after)

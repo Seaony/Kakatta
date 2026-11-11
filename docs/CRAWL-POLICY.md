@@ -53,6 +53,7 @@
 
 - 要运行任务时才启动，跑完就关（`DECISIONS.md` 第 16 条）。登录状态保存在配置目录里，重开浏览器不会丢。
 - **启动前清旧锁**：先确认这个账号没有 Chrome 进程在跑（按命令行里的 `--user-data-dir` 查），再删掉配置目录里的 `Singleton*` 文件（`SingletonLock`、`SingletonSocket`、`SingletonCookie`）。容器重建后主机名变了，旧锁会让 Chrome 以为别的机器在用这个目录，拒绝启动。有进程在跑时不删，这次启动失败。
+- **保留会话 Cookie，不恢复旧网页**：实验和正式服务共用启动入口。占用检查通过后，合并 `Default/Preferences` 中的 `session.restore_on_startup=1`，只清 `Default/Sessions`、`Default/Sessions_Encrypted` 两个窗口恢复目录，再启动一个 `about:blank`。配置读取、写入或清理失败就拒绝启动。其余偏好和登录数据保留，不导入导出 Cookie；正常关闭和强杀后都不能自动访问旧网址。只设置「继续上次」会自动打开旧网页，不能单独使用（第 130 条）。
 - **关闭**：先用 CDP 的 `Browser.close` 让 Chrome 正常退出，把登录状态写回配置目录；10 秒内没退出，再结束整个进程组（`DECISIONS.md` 第 59 条）。
 - 内存：实测打开一个很重的电商首页，容器峰值约 0.9–1GB，容器至少给 1GB（`DECISIONS.md` 第 38 条）。闲鱼页面的实际数字在实验里量。
 
@@ -95,7 +96,8 @@
 | 接口 `data.url` 含 `punish` 且 `action=deny` | **直接拒绝**，不给验证机会 |
 | 响应头 `bxpunish: 1`（接口响应和页面文档本身的响应都查） | 被处罚 |
 | 页面出现可见的「非法访问」「请使用正常浏览器访问」 | 环境被识别（#339），**按直接拒绝处理**。也可能是请求头错配（#509），所以我们不改任何请求头 |
-| 接口 `ret` 含 `FAIL_SYS_SESSION_EXPIRED` | 登录失效 |
+| 可见的登录框 `#alibaba-login-box` | 普通运行按未登录停手，人工登录仍等扫码；直接拒绝、环境异常和验证码优先 |
+| 本次操作目标接口的 `ret` 含 `FAIL_SYS_SESSION_EXPIRED` | 登录失效；`loginuser.get`、`page.nav` 等旁路接口只记观察，不结束运行（第 130 条） |
 | `FAIL_SYS_TOKEN_EXOIRED` / `EXPIRED` / `EMPTY` | 令牌过期，页面会自己刷新，忽略这条响应 |
 
 只认网址和可见内容，不能因为页面加载了 baxia 的脚本就判定为风控：每个正常页面都会预加载它（GooFish-AIMonitor 的经验）。

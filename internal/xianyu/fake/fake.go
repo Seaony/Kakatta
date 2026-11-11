@@ -143,6 +143,12 @@ func Start() *Xianyu {
 		home(w, r)
 	})
 	mux.HandleFunc("/mini_login", page(`<!doctype html><meta charset="utf-8"><div>请登录</div><script>fetch('/h5/mtop.fake.login/1.0/?state=expired');</script>`))
+	for _, api := range []string{"mtop.taobao.idlemessage.pc.loginuser.get", "mtop.idle.web.user.page.nav"} {
+		mux.HandleFunc("/h5/"+api+"/1.0/", func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"ret":["FAIL_SYS_SESSION_EXPIRED::登录失效"],"data":{}}`)
+		})
+	}
 	mux.HandleFunc("/search", page(fakeSearch))
 	mux.HandleFunc("/item", page(fakeItem))
 	mux.HandleFunc("/personal", func(w http.ResponseWriter, r *http.Request) {
@@ -247,6 +253,8 @@ func Start() *Xianyu {
 			ret = "RGV587::需要验证"
 		case "expired":
 			ret = "FAIL_SYS_SESSION_EXPIRED::登录失效"
+		case "token_expired":
+			ret = "FAIL_SYS_TOKEN_EXPIRED::令牌过期"
 		case "denied":
 			data["url"] = f.srv.URL + "/punish?action=deny"
 		}

@@ -89,7 +89,7 @@ func (r *Runner) loginSignals() ([]loginSignal, uint64, error) {
 			continue
 		}
 		if kind == xianyu.RetNeedVerify || kind == xianyu.RetDenied || kind == xianyu.RetSessionExpired {
-			r.signal(responseRiskFields("等待登录", response, kind, ret))
+			r.observeResponseRisk("等待登录", response, kind, ret)
 		}
 		if kind == xianyu.RetDenied {
 			return signals, success, r.ReportFailure(r.S.Context(), "等待登录", &RiskError{Kind: ErrDenied, Where: "等待登录", Signal: kind.String()}, nil)

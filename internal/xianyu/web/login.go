@@ -104,7 +104,7 @@ func (r *Runner) ConfirmVerification(ctx context.Context) error {
 			continue
 		}
 		if signal.expired {
-			return &RiskError{Kind: ErrLoginExpired, Where: "人工验证完成", Signal: signal.signal}
+			continue
 		}
 		// 只确认成功接口之前已经到达的头或正文；先发出但晚完成的风险仍然拦住。
 		if signal.order > 0 && signal.order < success {
@@ -135,7 +135,7 @@ func (r *Runner) VerificationPageNeedsRefresh(ctx context.Context) (bool, error)
 	if errors.Is(responseErr, ErrDenied) {
 		return false, responseErr
 	}
-	pageErr := r.checkPage(ctx, "检查人工验证窗口")
+	pageErr := r.checkPageState(ctx, "检查人工验证窗口", true)
 	if errors.Is(pageErr, ErrDiagnostics) || pageErr != nil && !errors.Is(pageErr, ErrNeedVerify) && !errors.Is(pageErr, ErrLoginExpired) {
 		return false, pageErr
 	}
@@ -168,7 +168,7 @@ func (r *Runner) loginState(ctx context.Context) (bool, bool, error) {
 		}
 		visibleBox = visibleBox || visible
 	}
-	if err := r.checkPage(ctx, "检查登录"); err != nil {
+	if err := r.checkPageState(ctx, "检查登录", true); err != nil {
 		if errors.Is(err, ErrDiagnostics) {
 			return false, visibleBox, err
 		}
@@ -280,7 +280,7 @@ func (r *Runner) RequireLoginCookieContext(ctx context.Context) error {
 	}
 	r.observation("login_cookie", map[string]any{"before_navigation_present": ok})
 	if !ok {
-		r.Log("本地登录预检警告", map[string]any{"原因": "没有 unb Cookie，是否已失效以首页跳转为准"})
+		r.Log("本地登录预检警告", map[string]any{"原因": "没有 unb Cookie，是否已失效以首页登录状态和本次目标接口为准"})
 	}
 	return nil
 }

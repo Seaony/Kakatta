@@ -108,21 +108,21 @@ func TestOpenLoginKeepsExpiredAndVerificationForUser(t *testing.T) {
 	}
 }
 
-func TestOpenLoginDoesNotAcknowledgeSessionExpiry(t *testing.T) {
+func TestOpenLoginKeepsSideExpiryFreshnessEvidence(t *testing.T) {
 	f := newFake(t)
 	r, budget, ctx := startRunner(t, f)
 	if _, err := r.S.NavigateContext(ctx, f.LoginURL(), 15*time.Second); err != nil {
 		t.Fatal(err)
 	}
 	sendLoginSignal(t, r, ctx, f.Home(), "state=expired")
-	if err := r.OpenHome(ctx); !errors.Is(err, ErrLoginExpired) {
-		t.Fatalf("普通首页仍应在失效时停止：%v", err)
+	if err := r.OpenHome(ctx); err != nil {
+		t.Fatalf("旁路失效不能中止普通首页：%v", err)
 	}
 	if err := r.OpenLogin(ctx); err != nil {
 		t.Fatalf("同一次人工登录必须留给用户处理失效：%v", err)
 	}
-	if len(budget.got) != 1 {
-		t.Fatalf("被普通门禁挡住不能记一次实际访问：%v", budget.got)
+	if len(budget.got) != 2 {
+		t.Fatalf("普通首页和人工登录各计一次实际访问：%v", budget.got)
 	}
 	limited, cancel := context.WithTimeout(ctx, 150*time.Millisecond)
 	err := r.WaitForLogin(limited, 5*time.Second)

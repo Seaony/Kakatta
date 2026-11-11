@@ -56,7 +56,7 @@ func TestGuardLateRiskCancelsBlockedHTTPAndPreventsNextCall(t *testing.T) {
 	}{
 		{"verify", ErrNeedVerify},
 		{"denied", ErrDenied},
-		{"expired", ErrLoginExpired},
+		{"login_box", ErrLoginExpired},
 		{"environment", ErrEnvBlocked},
 	} {
 		t.Run(test.state, func(t *testing.T) {
@@ -95,8 +95,12 @@ func TestGuardLateRiskCancelsBlockedHTTPAndPreventsNextCall(t *testing.T) {
 			case <-guardCtx.Done():
 				t.Fatal("没有进入本地阻塞请求")
 			}
-			if test.state == "environment" {
-				if _, err := r.S.NavigateContext(ctx, f.Home()+"blocked-mask", 15*time.Second); err != nil {
+			if test.state == "environment" || test.state == "login_box" {
+				path := "blocked-mask"
+				if test.state == "login_box" {
+					path = "login-box"
+				}
+				if _, err := r.S.NavigateContext(ctx, f.Home()+path, 15*time.Second); err != nil {
 					t.Fatal(err)
 				}
 			} else {
