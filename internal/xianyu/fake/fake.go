@@ -84,6 +84,10 @@ type Xianyu struct {
 	searchQueries         []string
 	riskWithoutNavigation bool
 	loginRequired         bool
+	automaticLogin        bool
+	sellerProfile         bool
+	sellerHits            SellerVisitCounts
+	searchPages           *[2][]SearchItem
 }
 
 // Start 在本机随机端口启动假闲鱼，用完调用 Close。
@@ -121,17 +125,33 @@ func Start() *Xianyu {
 	mux.HandleFunc("/{$}", func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		loginRequired := f.loginRequired
+		automaticLogin := f.automaticLogin
 		f.mu.Unlock()
 		if loginRequired {
 			http.Redirect(w, r, "/mini_login", http.StatusFound)
 			return
+		}
+		if automaticLogin {
+			http.SetCookie(w, &http.Cookie{Name: "unb", Value: "1", Path: "/", Expires: time.Now().Add(30 * 24 * time.Hour)})
 		}
 		home(w, r)
 	})
 	mux.HandleFunc("/mini_login", page(`<!doctype html><meta charset="utf-8"><div>请登录</div><script>fetch('/h5/mtop.fake.login/1.0/?state=expired');</script>`))
 	mux.HandleFunc("/search", page(fakeSearch))
 	mux.HandleFunc("/item", page(fakeItem))
-	mux.HandleFunc("/personal", page(fakePersonal))
+	mux.HandleFunc("/personal", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		seller := f.sellerProfile && r.URL.Query().Get("userId") != ""
+		if seller {
+			f.sellerHits.Pages++
+		}
+		f.mu.Unlock()
+		if seller {
+			page(fakeSeller)(w, r)
+			return
+		}
+		page(fakePersonal)(w, r)
+	})
 	mux.HandleFunc("/blocked", page(`<!doctype html><meta charset="utf-8"><div>非法访问，请使用正常浏览器访问</div>`))
 	mux.HandleFunc("/hidden-risk", page(`<!doctype html><meta charset="utf-8"><script>const message = '非法访问';</script><style>body::before { content: '请使用正常浏览器访问'; display: none; }</style><div style="display:none">非法访问</div><div class="baxia-dialog-mask" style="display:none">验证</div><div data-message="非法访问">正常页面</div>`))
 	mux.HandleFunc("/document-block", func(w http.ResponseWriter, r *http.Request) {
@@ -151,9 +171,19 @@ func Start() *Xianyu {
 		jpeg.Encode(w, img, &jpeg.Options{Quality: 80})
 	})
 	mux.HandleFunc("/h5/mtop.idle.web.user.page.head/1.0/", func(w http.ResponseWriter, r *http.Request) {
+		if f.serveSellerAPI(w, r, "head") {
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{"ret": []string{"SUCCESS::调用成功"}, "data": map[string]any{"module": map[string]any{"base": map[string]any{"displayName": "测试号"}}}})
 	})
+	for kind, endpoint := range map[string]string{"items": "mtop.idle.web.xyh.item.list", "ratings": "mtop.idle.web.trade.rate.list"} {
+		mux.HandleFunc("/h5/"+endpoint+"/1.0/", func(w http.ResponseWriter, r *http.Request) {
+			if !f.serveSellerAPI(w, r, kind) {
+				http.NotFound(w, r)
+			}
+		})
+	}
 	// 一个总是要求验证的接口，用来模拟页面在两步之间自己发出、却被风控拦下的请求。
 	mux.HandleFunc("/h5/mtop.fake.risk/1.0/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -257,6 +287,7 @@ func Start() *Xianyu {
 		f.searchQueries = append(f.searchQueries, r.URL.RawQuery)
 		finalFails := f.finalFails
 		finalDelay := f.finalDelay
+		pages := f.searchPages
 		f.mu.Unlock()
 		if finalDelay > 0 && r.URL.Query().Get("final") == "1" {
 			select {
@@ -270,12 +301,33 @@ func Start() *Xianyu {
 			json.NewEncoder(w).Encode(map[string]any{"ret": []string{"FAIL_BIZ_SEARCH::搜索失败"}, "data": map[string]any{}})
 			return
 		}
-		json.NewEncoder(w).Encode(searchJSON(f.srv.URL, r.URL.Query().Get("page") == "2"))
+		page2 := r.URL.Query().Get("page") == "2"
+		if pages != nil {
+			index := 0
+			if page2 {
+				index = 1
+			}
+			json.NewEncoder(w).Encode(searchItemsJSON(f.srv.URL, pages[index]))
+			return
+		}
+		json.NewEncoder(w).Encode(searchJSON(f.srv.URL, page2))
 	})
 	mux.HandleFunc("/h5/mtop.taobao.idle.pc.detail/1.0/", func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		f.detailHits++
 		ret := f.detailRet
+		sellerID := "998"
+		if f.searchPages != nil {
+		findSeller:
+			for _, items := range *f.searchPages {
+				for _, item := range items {
+					if item.ID == r.URL.Query().Get("id") && item.SellerID != "" {
+						sellerID = item.SellerID
+						break findSeller
+					}
+				}
+			}
+		}
 		f.mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		if ret != "" && r.URL.Query().Get("n") == "1" {
@@ -286,7 +338,7 @@ func Start() *Xianyu {
 			"ret": []string{"SUCCESS::调用成功"},
 			"data": map[string]any{
 				"itemDO":   map[string]any{"imageInfos": []any{map[string]any{"url": f.srv.URL + "/images/1.jpg"}}, "wantCnt": 3, "browseCnt": 50, "desc": "电池 92%，无拆修"},
-				"sellerDO": map[string]any{"sellerId": "998", "userRegDay": 800, "zhimaLevelInfo": map[string]any{"levelName": "信用极好"}},
+				"sellerDO": map[string]any{"sellerId": sellerID, "userRegDay": 800, "zhimaLevelInfo": map[string]any{"levelName": "信用极好"}},
 			},
 		})
 	})
@@ -308,6 +360,13 @@ func (f *Xianyu) APIHost() string { return strings.TrimPrefix(f.srv.URL, "http:/
 
 // LoginURL 打开后会写入登录 Cookie，模拟扫码登录成功。
 func (f *Xianyu) LoginURL() string { return f.srv.URL + "/login" }
+
+// EnableAutomaticLogin 模拟本地页面已完成扫码，登录判断仍走正式浏览器流程。
+func (f *Xianyu) EnableAutomaticLogin() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.automaticLogin = true
+}
 
 // RequireLoginOnHome 让首页跳到登录页并报告会话失效。
 func (f *Xianyu) RequireLoginOnHome() {
@@ -384,16 +443,9 @@ func (f *Xianyu) SearchQueries() []string {
 
 // searchJSON 构造一页搜索结果。第 2 页和第 1 页有一个商品重复，和真实翻页时新商品把列表往后挤的情况一样。
 func searchJSON(baseURL string, page2 bool) map[string]any {
-	item := func(id, title, price string, age time.Duration) map[string]any {
-		return map[string]any{"data": map[string]any{"item": map[string]any{"main": map[string]any{
-			"exContent":  map[string]any{"itemId": id, "title": title, "price": []any{map[string]any{"text": "¥"}, map[string]any{"text": price}}, "area": "上海", "userNickName": "卖家" + id, "picUrl": baseURL + "/images/" + id + ".jpg"},
-			"clickParam": map[string]any{"args": map[string]any{"publishTime": fmt.Sprint(time.Now().Add(-age).UnixMilli()), "wantNum": 2}},
-			"targetUrl":  "fleamarket://item?id=" + id,
-		}}}}
-	}
-	list := []any{item("101", "MacBook Pro M3", "8999", time.Hour), item("102", "MacBook Air", "5200", 2*time.Hour)}
+	list := []any{searchItemJSON(baseURL, "101", "MacBook Pro M3", "8999", time.Hour), searchItemJSON(baseURL, "102", "MacBook Air", "5200", 2*time.Hour)}
 	if page2 {
-		list = []any{item("102", "MacBook Air", "5200", 2*time.Hour), item("103", "MacBook Pro M4", "11999", 30*time.Minute)}
+		list = []any{searchItemJSON(baseURL, "102", "MacBook Air", "5200", 2*time.Hour), searchItemJSON(baseURL, "103", "MacBook Pro M4", "11999", 30*time.Minute)}
 	}
 	return map[string]any{"ret": []string{"SUCCESS::调用成功"}, "data": map[string]any{"resultList": list}}
 }

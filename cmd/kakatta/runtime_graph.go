@@ -32,6 +32,11 @@ import (
 
 func newRuntimeGraph(life context.Context, cfg config.Config, paths config.Paths, key [backup.MasterKeyBytes]byte, source backup.KeySource, generation string) (_ *runtimeGraph, err error) {
 	defer clear(key[:])
+	return newRuntimeGraphWithSite(life, cfg, paths, key, source, generation, web.Goofish())
+}
+
+func newRuntimeGraphWithSite(life context.Context, cfg config.Config, paths config.Paths, key [backup.MasterKeyBytes]byte, source backup.KeySource, generation string, site web.Site) (_ *runtimeGraph, err error) {
+	defer clear(key[:])
 	if err := life.Err(); err != nil {
 		return nil, err
 	}
@@ -67,7 +72,7 @@ func newRuntimeGraph(life context.Context, cfg config.Config, paths config.Paths
 	if err != nil {
 		return nil, err
 	}
-	factory, err := resources.New(web.Goofish())
+	factory, err := resources.New(site)
 	if err != nil {
 		return nil, err
 	}
