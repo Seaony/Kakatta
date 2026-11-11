@@ -401,20 +401,7 @@ func (s *Session) HasCookie(urls []string, name string) (bool, error) {
 	return s.HasCookieContext(s.ctx, urls, name)
 }
 
-func (s *Session) HasCookieContext(ctx context.Context, urls []string, name string) (bool, error) {
-	return s.cookiePresent(ctx, urls, name, false)
-}
-
-// LoginCookiePresent 只在判断扫码完成时检查非空，不返回、不保存 Cookie 值。
-func (s *Session) LoginCookiePresent(urls []string, name string) (bool, error) {
-	return s.LoginCookiePresentContext(s.ctx, urls, name)
-}
-
-func (s *Session) LoginCookiePresentContext(ctx context.Context, urls []string, name string) (bool, error) {
-	return s.cookiePresent(ctx, urls, name, true)
-}
-
-func (s *Session) cookiePresent(caller context.Context, urls []string, name string, requireValue bool) (present bool, err error) {
+func (s *Session) HasCookieContext(caller context.Context, urls []string, name string) (present bool, err error) {
 	ctx, cancel := s.readContext(caller)
 	defer cancel()
 	defer func() { err = operationError(ctx, err) }()
@@ -427,7 +414,7 @@ func (s *Session) cookiePresent(caller context.Context, urls []string, name stri
 	}
 	for _, c := range res.Cookies {
 		if c.Name == name {
-			return !requireValue || c.Value != "", nil
+			return true, nil
 		}
 	}
 	return false, nil

@@ -46,7 +46,7 @@ func TestBundledRulesAreVersionedData(t *testing.T) {
 	if !reflect.DeepEqual(rules.WebRules, xianyu.WebProtocol()) {
 		t.Fatal("网页层未使用统一规则")
 	}
-	if rules.Version != 2 || rules.API.UserItems != "mtop.idle.web.xyh.item.list" ||
+	if rules.Version != 3 || rules.API.UserItems != "mtop.idle.web.xyh.item.list" ||
 		rules.API.UserRatings != "mtop.idle.web.trade.rate.list" ||
 		rules.Selectors.SellerRatings != "//div[text()='信用及评价']/ancestor::li" {
 		t.Fatal("卖家规则缺失或版本错误")

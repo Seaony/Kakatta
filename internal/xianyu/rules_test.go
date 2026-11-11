@@ -18,7 +18,8 @@ func TestProtocolRulesRejectMalformedData(t *testing.T) {
 		value any
 	}{
 		{"old version", "version", 1},
-		{"unknown version", "version", 3},
+		{"prior version", "version", 2},
+		{"unknown version", "version", 4},
 		{"missing fields", "fields", nil},
 		{"missing search fields", "fields.search", nil},
 		{"missing item path", "fields.search.id", nil},
@@ -32,6 +33,8 @@ func TestProtocolRulesRejectMalformedData(t *testing.T) {
 		{"missing items API", "api.user_items", ""},
 		{"missing ratings API", "api.user_ratings", " "},
 		{"missing ratings selector", "selectors.seller_ratings", ""},
+		{"missing login header selector", "selectors.login_header", ""},
+		{"missing login entry text", "text.login_entry", ""},
 		{"empty verify selector", "selectors.verify_masks", []string{""}},
 		{"empty blocked text", "selectors.blocked_texts", []string{" "}},
 		{"bad submit pattern", "text.region_submit_pattern", "["},

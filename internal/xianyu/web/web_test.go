@@ -192,8 +192,7 @@ func TestSearchStopsOnRiskBeforeNavigation(t *testing.T) {
 	}
 }
 
-// 登录判断只看本地状态：没有登录 Cookie 时为假，有了以后为真。
-func TestLoggedInChecksCookieOnly(t *testing.T) {
+func TestLoggedInRequiresCurrentPageEvidence(t *testing.T) {
 	f := newFake(t)
 	r, _, ctx := startRunner(t, f)
 	if err := r.S.Navigate(f.Home(), 15*time.Second); err != nil {
@@ -205,8 +204,12 @@ func TestLoggedInChecksCookieOnly(t *testing.T) {
 	if err := r.S.Navigate(f.LoginURL(), 15*time.Second); err != nil {
 		t.Fatal(err)
 	}
-	if err := r.WaitForLogin(ctx, 5*time.Second); err != nil {
-		t.Fatal(err)
+	if ok, err := r.LoggedIn(ctx); err != nil || ok {
+		t.Fatalf("只有旧登录标记不能判断为已登录：%v %v", ok, err)
+	}
+	completeFakeLogin(t, r, ctx, f.Home())
+	if ok, err := r.LoggedIn(ctx); err != nil || !ok {
+		t.Fatalf("本次扫码有新页面证据后应为已登录：%v %v", ok, err)
 	}
 }
 
@@ -218,13 +221,7 @@ func TestLoginSuccessClearsHandledRiskBoundary(t *testing.T) {
 		t.Fatalf("应先出现验证：%v", err)
 	}
 	r.BeginVerification()
-	// 本地页面模拟用户完成验证和扫码后的浏览器状态。
-	if err := r.S.Navigate(f.LoginURL(), 15*time.Second); err != nil {
-		t.Fatal(err)
-	}
-	if err := r.WaitForLogin(ctx, 5*time.Second); err != nil {
-		t.Fatal(err)
-	}
+	completeFakeLogin(t, r, ctx, f.Home())
 	if head, err := r.OwnProfile(ctx); err != nil || head.Nick != "测试号" {
 		t.Fatalf("人工处理后不能重放旧风控：%+v %v", head, err)
 	}

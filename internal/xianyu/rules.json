@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "api": {
     "search": "/h5/mtop.taobao.idlemtopsearch.pc.search/1.0/",
     "detail": "/h5/mtop.taobao.idle.pc.detail",
@@ -20,11 +20,13 @@
     "price_container": "div[class*='search-price-input-container']",
     "price_input": "[placeholder*='¥']",
     "login_box": "#alibaba-login-box",
+    "login_header": "#header [class*='user-order-container--']",
     "verify_masks": ["div.baxia-dialog-mask", "div.J_MIDDLEWARE_FRAME_WIDGET"],
     "blocked_texts": ["非法访问", "请使用正常浏览器访问"],
     "seller_ratings": "//div[text()='信用及评价']/ancestor::li"
   },
   "text": {
+    "login_entry": "登录",
     "publish_menu": "新发布",
     "publish_latest": "最新",
     "personal": "个人闲置",
@@ -59,7 +61,7 @@
     "seller_items_response": 8000,
     "seller_ratings_response": 8000
   },
-  "unconfirmed": ["首页搜索框", "地区筛选中间请求", "登录框", "详情描述字段", "卖家商品总数含义", "卖家信用等级映射", "评价时间格式", "卖家评价标签"],
+  "unconfirmed": ["首页搜索框", "地区筛选中间请求", "登录框", "详情描述字段", "卖家商品总数含义", "卖家信用等级映射", "评价时间格式", "卖家评价标签", "已登录首页用户区正面信号"],
   "fields": {
     "search": {
       "list": ["data", "resultList"],

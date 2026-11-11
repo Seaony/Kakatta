@@ -19,6 +19,7 @@ import (
 )
 
 const fakeHome = `<!doctype html><meta charset="utf-8"><title>首页</title>
+<a href="/fixture/login-delayed?completion=mtop">模拟扫码登录</a>
 <div style="height:80px"><input placeholder="搜索闲鱼" value="PREFILL" style="width:420px;height:32px;margin:20px">
 <input type="text" style="width:60px"></div>
 <div style="height:3000px">首页内容</div>
@@ -86,6 +87,8 @@ type Xianyu struct {
 	riskWithoutNavigation bool
 	loginRequired         bool
 	automaticLogin        bool
+	loginGateNext         uint64
+	loginGates            map[uint64]chan struct{}
 	sellerProfile         bool
 	sellerHits            SellerVisitCounts
 	searchPages           *[2][]SearchItem
@@ -139,6 +142,10 @@ func Start() *Xianyu {
 		}
 		if automaticLogin {
 			http.SetCookie(w, &http.Cookie{Name: "unb", Value: "1", Path: "/", Expires: time.Now().Add(30 * 24 * time.Hour)})
+			if _, err := r.Cookie("fixture_login_completed"); err != nil {
+				page(f.automaticLoginPage())(w, r)
+				return
+			}
 		}
 		home(w, r)
 	})
@@ -262,13 +269,14 @@ func Start() *Xianyu {
 	})
 	mux.HandleFunc("/login-box", func(w http.ResponseWriter, r *http.Request) {
 		http.SetCookie(w, &http.Cookie{Name: "unb", Value: "1", Path: "/", Expires: time.Now().Add(30 * 24 * time.Hour)})
-		page(`<!doctype html><meta charset="utf-8"><iframe id="alibaba-login-box" style="width:220px;height:120px;border:0"></iframe><button id="finish-login" style="width:120px;height:40px">完成扫码</button><script>document.getElementById('finish-login').addEventListener('click', () => document.getElementById('alibaba-login-box').remove());</script>`)(w, r)
+		page(`<!doctype html><meta charset="utf-8"><iframe id="alibaba-login-box" style="width:220px;height:120px;border:0"></iframe><button id="finish-login" style="width:120px;height:40px">完成扫码</button><script>document.getElementById('finish-login').addEventListener('click', () => { document.getElementById('alibaba-login-box').style.display = 'none'; fetch('/h5/mtop.fake.login/1.0/?state=success&after_scan=1'); });</script>`)(w, r)
 	})
 	mux.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
 		// 带过期时间，浏览器重启后还在，和真实的登录状态一样。
 		http.SetCookie(w, &http.Cookie{Name: "unb", Value: "1", Path: "/", Expires: time.Now().Add(30 * 24 * time.Hour)})
 		fmt.Fprint(w, "ok")
 	})
+	f.registerLoginEvidence(mux, page)
 	mux.HandleFunc("/fixture/action", func(w http.ResponseWriter, r *http.Request) {
 		f.filters.Lock()
 		f.filters.actions = append(f.filters.actions, r.URL.RawQuery)
@@ -373,7 +381,12 @@ func Start() *Xianyu {
 }
 
 // Close 关闭假闲鱼。
-func (f *Xianyu) Close() { f.ReleaseLoginResponses(); f.releaseSearchFaults(); f.srv.Close() }
+func (f *Xianyu) Close() {
+	f.CompleteAutomaticLogin()
+	f.ReleaseLoginResponses()
+	f.releaseSearchFaults()
+	f.srv.Close()
+}
 
 // ReleaseLoginResponses 让测试控制在途登录响应何时返回。
 func (f *Xianyu) ReleaseLoginResponses() { f.loginRelease.Do(func() { close(f.loginHold) }) }
@@ -384,10 +397,10 @@ func (f *Xianyu) Home() string { return f.srv.URL + "/" }
 // APIHost 是接口所在的主机和端口。
 func (f *Xianyu) APIHost() string { return strings.TrimPrefix(f.srv.URL, "http://") }
 
-// LoginURL 打开后会写入登录 Cookie，模拟扫码登录成功。
+// LoginURL 只写入旧的登录标记，不代表本次已完成扫码。
 func (f *Xianyu) LoginURL() string { return f.srv.URL + "/login" }
 
-// EnableAutomaticLogin 模拟本地页面已完成扫码，登录判断仍走正式浏览器流程。
+// EnableAutomaticLogin 打开可控扫码框，等测试确认程序已看见后再放行。
 func (f *Xianyu) EnableAutomaticLogin() {
 	f.mu.Lock()
 	defer f.mu.Unlock()

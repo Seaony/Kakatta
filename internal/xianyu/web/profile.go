@@ -44,5 +44,6 @@ func (r *Runner) OwnProfile(ctx context.Context) (xianyu.SellerHead, error) {
 	if err := r.wait(ctx, "主页停留", r.Pace.Action); err != nil {
 		return h, err
 	}
+	r.observeLoginHeader(ctx, "after_own_profile")
 	return h, r.check(ctx, "自己的主页停留后")
 }

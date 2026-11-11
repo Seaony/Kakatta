@@ -7,7 +7,7 @@ import (
 
 func TestControllerCookieMetadataBeforeNavigationAndAfterLogin(t *testing.T) {
 	c := experimentController(t, 549)
-	login, err := observeExperiment(t, c, c.login)
+	login, err := observeExperimentLogin(t, c)
 	if err != nil {
 		t.Fatal(err)
 	}

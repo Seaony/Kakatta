@@ -41,7 +41,7 @@ func TestCoreFlowConcurrentTasksRespectAccountPagesAndModelSlots(t *testing.T) {
 	h.xianyu.SetSearchItems([]fake.SearchItem{{ID: "301", Title: "MacBook Pro 自用设备", Price: "8000", SellerID: "seller301"}}, nil)
 	var second service.AccountView
 	h.Request(http.MethodPost, "/api/v1/accounts", map[string]any{"name": "第二个本地扫码账号"}, &second, http.StatusCreated)
-	h.Request(http.MethodPost, fmt.Sprintf("/api/v1/accounts/%d/login", second.ID), nil, nil, http.StatusAccepted)
+	h.BeginLogin(second.ID)
 	coreWait(t, ctx, "第二个账号登录完成并满足实际运行间隔", func() bool {
 		h.Request(http.MethodGet, fmt.Sprintf("/api/v1/accounts/%d", second.ID), nil, &second, http.StatusOK)
 		return second.State == service.AccountActive && second.Session == nil && second.LastRunEndedAt != nil && second.NextGapSeconds != nil && time.Now().UnixMilli() >= *second.LastRunEndedAt+*second.NextGapSeconds*1000

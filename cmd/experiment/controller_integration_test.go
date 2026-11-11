@@ -36,7 +36,7 @@ func experimentController(t *testing.T, account int) *controller {
 
 func TestControllerLoginThenFreshSingleRun(t *testing.T) {
 	c := experimentController(t, 441)
-	login, err := observeExperiment(t, c, c.login)
+	login, err := observeExperimentLogin(t, c)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,7 +219,7 @@ func TestControllerExpiredVerificationReturnsToLogin(t *testing.T) {
 	}
 	advanceExperimentGap(t, c)
 	c.fixture.SetMaskOnSearch(false)
-	login, err := observeExperiment(t, c, c.login)
+	login, err := observeExperimentLogin(t, c)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -346,14 +346,43 @@ func TestControllerCloseCancelsRunningFlowAndReleasesResources(t *testing.T) {
 	c.Close()
 }
 
+func observeExperimentLogin(t *testing.T, c *controller) (*resources, error) {
+	t.Helper()
+	c.fixture.EnableAutomaticLogin()
+	return observeExperiment(t, c, c.login)
+}
+
 func observeExperiment(t *testing.T, c *controller, run func(context.Context) error) (*resources, error) {
 	t.Helper()
+	var previous uint64
+	for _, event := range c.snapshot().Events {
+		previous = max(previous, event.Sequence)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 	done := make(chan error, 1)
 	go func() { done <- run(ctx) }()
 	r := waitExperimentResource(t, c, done)
-	return r, <-done
+	tick := time.NewTicker(10 * time.Millisecond)
+	defer tick.Stop()
+	released := false
+	for {
+		select {
+		case err := <-done:
+			return r, err
+		case <-tick.C:
+			if released {
+				continue
+			}
+			for _, event := range c.snapshot().Events {
+				if event.Sequence > previous && event.Event == "登录框已出现" {
+					c.fixture.CompleteAutomaticLogin()
+					released = true
+					break
+				}
+			}
+		}
+	}
 }
 
 func waitExperimentResource(t *testing.T, c *controller, done <-chan error) *resources {

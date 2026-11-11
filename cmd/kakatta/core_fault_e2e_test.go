@@ -76,7 +76,7 @@ func coreFaultAccount(h *coreFlowHarness, name string) service.AccountView {
 	h.t.Helper()
 	var account service.AccountView
 	h.Request(http.MethodPost, "/api/v1/accounts", map[string]any{"name": name}, &account, http.StatusCreated)
-	h.Request(http.MethodPost, fmt.Sprintf("/api/v1/accounts/%d/login", account.ID), nil, nil, http.StatusAccepted)
+	h.BeginLogin(account.ID)
 	coreFaultAccountIdle(h, account.ID)
 	h.Request(http.MethodGet, fmt.Sprintf("/api/v1/accounts/%d", account.ID), nil, &account, http.StatusOK)
 	return account

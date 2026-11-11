@@ -84,6 +84,9 @@ type Runner struct {
 	observationMu    sync.Mutex
 	observed         map[string]string
 	observedFrameURL string
+	loginBoxSeen     bool
+	loginNavMark     uint64
+	loginRequestMark uint64
 
 	// SearchInput 是首页搜索框的选择器；为空时自动找（XIANYU.md 3.6 节：还没用真实页面确认）。
 	SearchInput string

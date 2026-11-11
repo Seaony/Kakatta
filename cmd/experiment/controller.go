@@ -297,7 +297,7 @@ func (c *controller) makeResources(ctx context.Context, manual bool) (r *resourc
 	}
 	r.runner = web.NewRunner(r.chrome, p, c.settings.TypingMS.pace(time.Millisecond), c.site, c.settings.pace(), diagnosticBudget{inner: budget, recorder: c.recorder}, c.log)
 	r.runner.Diagnose = func(ctx context.Context, d web.Diagnostic) error { return c.diagnose(ctx, r, d) }
-	if c.opts.Fixture {
+	if c.opts.Fixture && !manual {
 		if err = r.chrome.Navigate(c.fixture.LoginURL(), 5*time.Second); err != nil {
 			return r, err
 		}

@@ -11,7 +11,7 @@ import (
 	"github.com/Seaony/Kakatta/internal/remote"
 )
 
-// loginCookie 是表示已登录的 Cookie 名。Mekke 用它判断，上游里没有依据，待用真实页面确认（XIANYU.md 8.3 节）。
+// loginCookie 只作本地诊断；旧 Cookie 仍可能对应已经失效的会话。
 const loginCookie = "unb"
 
 // ErrVerificationRefresh 表示页面没有遮罩，但还有未恢复的验证响应。
@@ -25,6 +25,8 @@ func (r *Runner) OpenLogin(ctx context.Context) error {
 	if err := r.CheckVerification(ctx); err != nil {
 		return err
 	}
+	r.loginBoxSeen = false
+	r.loginNavMark, r.loginRequestMark = 0, 0
 	present, err := r.HasLoginCookieContext(ctx)
 	if err != nil {
 		return err
@@ -44,6 +46,7 @@ func (r *Runner) OpenLogin(ctx context.Context) error {
 		return fmt.Errorf("打开登录首页：%w", err)
 	}
 	r.observeLoginEntry(ctx)
+	r.observeLoginHeader(ctx, "after_home")
 	r.Log("登录首页已打开", map[string]any{"耗时毫秒": time.Since(start).Milliseconds()})
 	return nil
 }
@@ -145,8 +148,7 @@ func (r *Runner) VerificationPageNeedsRefresh(ctx context.Context) (bool, error)
 // ErrLoginTimeout 表示在规定时间内用户没有完成登录。
 var ErrLoginTimeout = errors.New("等待登录超时")
 
-// LoggedIn 只在本地检查登录状态，不访问闲鱼：主框架不在登录页、没有可见的登录框和验证遮罩、登录 Cookie 存在（XIANYU.md 8.3 节）。
-// 只返回是否存在非空登录 Cookie，不返回或保存值。
+// LoggedIn 只读本会话已观察到的登录框和页面变化，不把旧 Cookie 当作成功依据。
 func (r *Runner) LoggedIn(ctx context.Context) (bool, error) {
 	loggedIn, _, err := r.loginState(ctx)
 	return loggedIn, err
@@ -156,6 +158,7 @@ func (r *Runner) loginState(ctx context.Context) (bool, bool, error) {
 	if err := contextError(ctx); err != nil {
 		return false, false, err
 	}
+	navMark, requestMark := r.S.NavigationMark(), r.S.Capture.Mark()
 	boxes, err := r.H.FindNow(ctx, rules.Selectors.LoginBox)
 	if err != nil {
 		return false, false, err
@@ -168,6 +171,16 @@ func (r *Runner) loginState(ctx context.Context) (bool, bool, error) {
 		}
 		visibleBox = visibleBox || visible
 	}
+	r.observation("login_selectors", map[string]any{"selector": rules.Selectors.LoginBox, "matched_count": len(boxes), "visible": visibleBox})
+	if visibleBox {
+		first := !r.loginBoxSeen
+		r.loginBoxSeen = true
+		// 仍在等扫码时的旧活动不能借给之后的关框。
+		r.loginNavMark, r.loginRequestMark = navMark, requestMark
+		if first {
+			r.Log("登录框已出现", nil)
+		}
+	}
 	if err := r.checkPageState(ctx, "检查登录", true); err != nil {
 		if errors.Is(err, ErrDiagnostics) {
 			return false, visibleBox, err
@@ -177,15 +190,14 @@ func (r *Runner) loginState(ctx context.Context) (bool, bool, error) {
 		}
 		return false, visibleBox, err
 	}
-	r.observation("login_selectors", map[string]any{"selector": rules.Selectors.LoginBox, "matched_count": len(boxes), "visible": visibleBox})
 	if visibleBox {
 		if current, err := r.S.URLContext(ctx); err == nil {
 			r.observeIframes(ctx, current, true)
 		}
 		return false, true, nil
 	}
-	present, err := r.S.LoginCookiePresentContext(ctx, []string{r.Site.Home}, loginCookie)
-	return present, false, err
+	changed := r.S.NavigationMark() > r.loginNavMark || r.S.Capture.SentAfter(r.loginRequestMark, r.Site.mtop())
+	return r.loginBoxSeen && changed, false, nil
 }
 
 // HasLoginCookie 只查本地有没有这个名字，不读取 Cookie 的值。
@@ -209,24 +221,18 @@ func (r *Runner) WaitForLogin(ctx context.Context, timeout time.Duration) error 
 // WaitForLoginWithViewport 在原登录检查中附带发布可见验证框的位置。
 func (r *Runner) WaitForLoginWithViewport(ctx context.Context, timeout time.Duration, publish func(*remote.Viewport)) error {
 	deadline := time.Now().Add(timeout)
-	var latestExpired, latestSuccess uint64
-	sawLoginBox := false
-	var boxNavMark, boxRequestMark uint64
 	for {
 		if err := contextError(ctx); err != nil {
 			return err
 		}
-		signals, success, responseErr := r.loginSignals()
+		signals, _, responseErr := r.loginSignals()
 		if responseErr != nil {
 			return responseErr
 		}
-		latestSuccess = max(latestSuccess, success)
-		for _, signal := range signals {
-			if signal.expired {
-				latestExpired = max(latestExpired, signal.order)
-			}
+		ok, _, err := r.loginState(ctx)
+		if err == nil {
+			r.observeLoginHeader(ctx, "waiting")
 		}
-		ok, visibleBox, err := r.loginState(ctx)
 		if publish != nil && (err == nil || errors.Is(err, ErrNeedVerify)) {
 			var view *remote.Viewport
 			if errors.Is(err, ErrNeedVerify) {
@@ -234,23 +240,13 @@ func (r *Runner) WaitForLoginWithViewport(ctx context.Context, timeout time.Dura
 			}
 			publish(view)
 		}
-		if visibleBox && !sawLoginBox {
-			sawLoginBox = true
-			boxNavMark, boxRequestMark = r.S.NavigationMark(), r.S.Capture.Mark()
-			r.Log("登录框已出现", nil)
-		}
-		recovered := latestExpired == 0 || latestSuccess > latestExpired || sawLoginBox && !visibleBox
-		if err == nil && ok && recovered {
+		if err == nil && ok {
 			r.handleSignals(signals)
 			present, cookieErr := r.HasLoginCookieContext(ctx)
-			if cookieErr != nil {
-				return cookieErr
-			}
-			r.observation("login_cookie", map[string]any{"after_login_present": present, "logout_checked": false})
-			if sawLoginBox {
-				r.observation("login_refresh", map[string]any{"after_login_box_seen": true, "main_frame_navigation": r.S.NavigationMark() > boxNavMark, "mtop_sent": r.S.Capture.SentAfter(boxRequestMark, r.Site.mtop()), "mtop_completed": len(r.S.Capture.DoneAfter(boxRequestMark, r.Site.mtop())), "login_box_disappeared": !visibleBox})
-			}
-			return nil
+			r.observation("login_cookie", map[string]any{"after_login_available": cookieErr == nil, "after_login_present": cookieErr == nil && present, "used_as_login_evidence": false, "logout_checked": false})
+			r.observation("login_refresh", map[string]any{"after_login_box_seen": true, "main_frame_navigation": r.S.NavigationMark() > r.loginNavMark, "mtop_sent": r.S.Capture.SentAfter(r.loginRequestMark, r.Site.mtop()), "mtop_completed": len(r.S.Capture.DoneAfter(r.loginRequestMark, r.Site.mtop())), "login_box_disappeared": true})
+			r.observeLoginHeader(ctx, "after_login")
+			return contextError(ctx)
 		}
 		// 验证码留给用户在窗口里处理；环境异常和直接拒绝用户处理不了，立即结束。
 		if err != nil && (errors.Is(err, ErrDiagnostics) || !errors.Is(err, ErrNeedVerify)) {
@@ -268,7 +264,7 @@ func (r *Runner) WaitForLoginWithViewport(ctx context.Context, timeout time.Dura
 	}
 }
 
-// RequireLoginCookie 做本地预检。这个名字还没在真实页面确认，缺失只记警告，不判登录失效。
+// RequireLoginCookie 只作本地诊断，存在不证明登录，缺失也不直接判失效。
 func (r *Runner) RequireLoginCookie() error {
 	return r.RequireLoginCookieContext(r.S.Context())
 }

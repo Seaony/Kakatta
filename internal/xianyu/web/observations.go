@@ -241,7 +241,7 @@ func (r *Runner) observeResponseRisk(where string, response *browser.Response, k
 }
 
 func (r *Runner) observeLoginEntry(ctx context.Context) {
-	nodes, err := r.H.SearchText(ctx, "登录")
+	nodes, err := r.H.SearchText(ctx, rules.Text.LoginEntry)
 	if err != nil {
 		return
 	}

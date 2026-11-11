@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -179,7 +180,7 @@ func newCoreFlowHarnessWithPaths(t *testing.T, ctx context.Context, cfg config.C
 	var account service.AccountView
 	h.Request(http.MethodPost, "/api/v1/accounts", map[string]any{"name": "本地扫码账号"}, &account, http.StatusCreated)
 	h.accountID = account.ID
-	h.Request(http.MethodPost, fmt.Sprintf("/api/v1/accounts/%d/login", account.ID), nil, nil, http.StatusAccepted)
+	h.BeginLogin(account.ID)
 	coreWait(t, ctx, "本地模拟扫码登录完成", func() bool {
 		return graphScalar(t, h.g, "SELECT count(*) FROM accounts WHERE id=? AND state='active'", h.accountID) == 1 && graphScalar(t, h.g, "SELECT count(*) FROM meta WHERE key=?", fmt.Sprintf("runtime.session.%d", h.accountID)) == 0
 	})
@@ -190,6 +191,41 @@ func newCoreFlowHarnessWithPaths(t *testing.T, ctx context.Context, cfg config.C
 	h.Request(http.MethodPost, "/api/v1/channels", map[string]any{"name": "本地推送回执", "type": "webhook", "secrets": map[string]any{"url": h.push.URL}}, &channel, http.StatusCreated)
 	h.channelID = channel.ID
 	return h
+}
+
+func (h *coreFlowHarness) loginBoxSequence(accountID int64) uint64 {
+	h.t.Helper()
+	files, err := filepath.Glob(filepath.Join(h.cfg.DataDir, "diagnostics", "accounts", fmt.Sprint(accountID), "events-*.jsonl"))
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	var latest uint64
+	for _, name := range files {
+		data, err := os.ReadFile(name)
+		if err != nil {
+			h.t.Fatal(err)
+		}
+		for _, line := range bytes.Split(data, []byte{'\n'}) {
+			var event struct {
+				Sequence uint64 `json:"sequence"`
+				Event    string `json:"event"`
+			}
+			if json.Unmarshal(line, &event) == nil && event.Event == "登录框已出现" {
+				latest = max(latest, event.Sequence)
+			}
+		}
+	}
+	return latest
+}
+
+func (h *coreFlowHarness) BeginLogin(accountID int64) {
+	h.t.Helper()
+	previous := h.loginBoxSequence(accountID)
+	h.Request(http.MethodPost, fmt.Sprintf("/api/v1/accounts/%d/login", accountID), nil, nil, http.StatusAccepted)
+	coreWait(h.t, h.ctx, "正式登录流程看见本次扫码框", func() bool {
+		return h.loginBoxSequence(accountID) > previous
+	})
+	h.xianyu.CompleteAutomaticLogin()
 }
 
 func (h *coreFlowHarness) Request(method, path string, body, target any, status int) {

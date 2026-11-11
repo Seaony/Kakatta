@@ -51,11 +51,17 @@ func TestAPIRedirectRetainsRiskClassification(t *testing.T) {
 				"普通风控": r.check(ctx, "重定向后"),
 				"人工轮询": r.CheckVerification(ctx),
 				"人工确认": r.ConfirmVerification(ctx),
-				"登录检查": r.WaitForLogin(ctx, time.Second),
 			} {
 				if !errors.Is(err, want) {
 					t.Fatalf("%s的风险分类错误：得到%v，应为%v", name, err, want)
 				}
+			}
+			loginWant := want
+			if loginWant == nil {
+				loginWant = ErrLoginTimeout
+			}
+			if err := r.WaitForLogin(ctx, time.Second); !errors.Is(err, loginWant) {
+				t.Fatalf("普通接口成功不能代替扫码，拒绝仍须停手：得到%v，应为%v", err, loginWant)
 			}
 			if _, err := r.waitAPI(ctx, mark, original, "等待原POST接口", time.Second); !errors.Is(err, want) {
 				t.Fatalf("按原POST等待不能漏掉重定向响应或风险：%v", err)

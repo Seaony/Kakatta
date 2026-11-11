@@ -155,7 +155,7 @@ func TestCoreSoakAutomaticThirtyRounds(t *testing.T) {
 	}}, nil, http.StatusOK)
 	var second service.AccountView
 	h.Request(http.MethodPost, "/api/v1/accounts", map[string]any{"name": "长跑第二账号"}, &second, http.StatusCreated)
-	h.Request(http.MethodPost, fmt.Sprintf("/api/v1/accounts/%d/login", second.ID), nil, nil, http.StatusAccepted)
+	h.BeginLogin(second.ID)
 	coreWait(t, ctx, "两个账号完成真实模拟登录", func() bool {
 		h.Request(http.MethodGet, fmt.Sprintf("/api/v1/accounts/%d", second.ID), nil, &second, http.StatusOK)
 		return second.State == service.AccountActive && second.Session == nil

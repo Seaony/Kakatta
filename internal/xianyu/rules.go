@@ -41,6 +41,7 @@ type WebRules struct {
 		PriceContainer    string   `json:"price_container"`
 		PriceInput        string   `json:"price_input"`
 		LoginBox          string   `json:"login_box"`
+		LoginHeader       string   `json:"login_header"`
 		SellerRatings     string   `json:"seller_ratings"`
 		VerifyMasks       []string `json:"verify_masks"`
 		BlockedTexts      []string `json:"blocked_texts"`
@@ -54,6 +55,7 @@ type WebRules struct {
 		RegionRelocate      string `json:"region_relocate"`
 		RegionView          string `json:"region_view"`
 		RegionSubmitPattern string `json:"region_submit_pattern"`
+		LoginEntry          string `json:"login_entry"`
 	} `json:"text"`
 	Timeouts    map[string]int `json:"timeouts_ms"`
 	Unconfirmed []string       `json:"unconfirmed"`
@@ -159,7 +161,7 @@ func decodeRules(data []byte) (protocolRules, error) {
 	if err := decoder.Decode(new(any)); err != io.EOF {
 		return r, fmt.Errorf("闲鱼规则后有多余内容")
 	}
-	if r.Version != 2 {
+	if r.Version != 3 {
 		return r, fmt.Errorf("不支持的闲鱼规则版本：%d", r.Version)
 	}
 	for name, section := range map[string]any{"api": r.API, "selectors": r.Selectors, "text": r.Text, "fields": r.Fields, "unconfirmed": r.Unconfirmed} {

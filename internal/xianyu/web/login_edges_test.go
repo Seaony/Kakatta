@@ -108,7 +108,7 @@ func TestOpenLoginKeepsExpiredAndVerificationForUser(t *testing.T) {
 	}
 }
 
-func TestOpenLoginKeepsSideExpiryFreshnessEvidence(t *testing.T) {
+func TestOpenLoginCannotUseCookieOrOldSideSuccess(t *testing.T) {
 	f := newFake(t)
 	r, budget, ctx := startRunner(t, f)
 	if _, err := r.S.NavigateContext(ctx, f.LoginURL(), 15*time.Second); err != nil {
@@ -131,9 +131,13 @@ func TestOpenLoginKeepsSideExpiryFreshnessEvidence(t *testing.T) {
 		t.Fatalf("打开人工首页不能用旧Cookie确认已恢复：%v", err)
 	}
 	otherLoginSuccess(t, r, ctx, f.Home())
-	if err := r.WaitForLogin(ctx, 5*time.Second); err != nil {
-		t.Fatalf("仍按第67条允许失效后的任意接口成功恢复：%v", err)
+	limited, cancel = context.WithTimeout(ctx, 150*time.Millisecond)
+	err = r.WaitForLogin(limited, 5*time.Second)
+	cancel()
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("任意旧接口成功也不能代替本次扫码：%v", err)
 	}
+	completeFakeLogin(t, r, ctx, f.Home())
 }
 
 func TestOpenLoginStopsPriorDenialBeforeAccess(t *testing.T) {

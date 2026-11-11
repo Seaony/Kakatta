@@ -63,7 +63,7 @@ func otherLoginSuccess(t *testing.T, r *Runner, ctx context.Context, home string
 	}
 }
 
-func TestLoginExpiredNeedsRecoveryBeyondExistingCookie(t *testing.T) {
+func TestLoginRequiresCurrentBoxBeyondCookieAndSuccess(t *testing.T) {
 	f := newFake(t)
 	r, _, ctx := startRunner(t, f)
 	if err := r.S.Navigate(f.LoginURL(), 15*time.Second); err != nil {
@@ -79,15 +79,19 @@ func TestLoginExpiredNeedsRecoveryBeyondExistingCookie(t *testing.T) {
 		t.Fatalf("旧Cookie和失效前的成功不能证明恢复：%v", err)
 	}
 	otherLoginSuccess(t, r, ctx, f.Home())
-	if err := r.WaitForLogin(ctx, 5*time.Second); err != nil {
-		t.Fatalf("失效后的任意mtop成功即可证明恢复：%v", err)
+	limited, cancel = context.WithTimeout(ctx, 150*time.Millisecond)
+	err = r.WaitForLogin(limited, 5*time.Second)
+	cancel()
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("失效后的旁路成功仍不能代替本次扫码：%v", err)
 	}
+	completeFakeLogin(t, r, ctx, f.Home())
 	if _, err := r.OwnProfile(ctx); err != nil {
 		t.Fatalf("恢复后不能重放已处理失效：%v", err)
 	}
 }
 
-func TestLoginWithoutSessionExpiredNeedsNoSuccessResponse(t *testing.T) {
+func TestLoginWithoutSessionExpiredStillNeedsCurrentPageEvidence(t *testing.T) {
 	f := newFake(t)
 	r, _, ctx := startRunner(t, f)
 	if err := r.S.Navigate(f.LoginURL(), 15*time.Second); err != nil {
@@ -95,15 +99,19 @@ func TestLoginWithoutSessionExpiredNeedsNoSuccessResponse(t *testing.T) {
 	}
 	r.BeginVerification()
 	sendLoginSignal(t, r, ctx, f.Home(), "state=verify")
-	if err := r.WaitForLogin(ctx, 5*time.Second); err != nil {
-		t.Fatalf("没有登录失效且三个条件满足，不要求接口重发：%v", err)
+	limited, cancel := context.WithTimeout(ctx, 150*time.Millisecond)
+	err := r.WaitForLogin(limited, 5*time.Second)
+	cancel()
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("没有失效响应也不能把旧标记当作本次扫码：%v", err)
 	}
+	completeFakeLogin(t, r, ctx, f.Home())
 	if _, err := r.OwnProfile(ctx); err != nil {
 		t.Fatalf("已处理的验证码不应重放：%v", err)
 	}
 }
 
-func TestLoginFrameDisappearanceRecoversWithoutMtopRetry(t *testing.T) {
+func TestLoginFrameDisappearanceAndNewMtopRecover(t *testing.T) {
 	f := newFake(t)
 	r, _, ctx := startRunner(t, f)
 	if err := r.S.Navigate(f.Home()+"login-box", 15*time.Second); err != nil {
@@ -139,10 +147,10 @@ func TestLoginFrameDisappearanceRecoversWithoutMtopRetry(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := <-result; err != nil {
-		t.Fatalf("登录框出现后消失即可恢复，无需同接口重试：%v", err)
+		t.Fatalf("登录框出现后消失并有新请求应恢复：%v", err)
 	}
-	if after := r.S.Capture.Mark(); after != before {
-		t.Fatalf("假扫码过程不应发出mtop请求：%d→%d", before, after)
+	if after := r.S.Capture.Mark(); after <= before {
+		t.Fatalf("假扫码必须实际发出新mtop请求：%d→%d", before, after)
 	}
 	if _, err := r.OwnProfile(ctx); err != nil {
 		t.Fatalf("完成扫码后不能重放失效信号：%v", err)
@@ -211,16 +219,14 @@ func TestVerificationKeepsDenialFromRequestStartedBeforeTakeover(t *testing.T) {
 func TestLoginSuccessDoesNotDiscardInFlightDenial(t *testing.T) {
 	f := newFake(t)
 	r, _, ctx := startRunner(t, f)
-	if err := r.S.Navigate(f.LoginURL(), 15*time.Second); err != nil {
+	if err := r.S.Navigate(f.Home()+"login-box", 15*time.Second); err != nil {
 		t.Fatal(err)
 	}
 	r.BeginVerification()
 	mark := startLoginSignal(t, r, f.Home(), "state=denied&hold=1")
-	if err := r.WaitForLogin(ctx, 5*time.Second); err != nil {
-		t.Fatalf("此时尚未收到拒绝：%v", err)
-	}
+	finishFakeLogin(t, r, ctx)
 	f.ReleaseLoginResponses()
-	if _, err := r.S.Capture.WaitAfter(ctx, mark, browser.Match{URL: "/h5/mtop.fake.login/"}, 5*time.Second); err != nil {
+	if _, err := r.S.Capture.WaitAfter(ctx, mark, browser.Match{URL: "state=denied&hold=1"}, 5*time.Second); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := r.OwnProfile(ctx); !errors.Is(err, ErrDenied) {
@@ -228,12 +234,12 @@ func TestLoginSuccessDoesNotDiscardInFlightDenial(t *testing.T) {
 	}
 }
 
-func TestLoginRecoveryUsesResponseCompletionOrder(t *testing.T) {
+func TestLoginOldResponseCompletionCannotReplaceCurrentScan(t *testing.T) {
 	for _, late := range []string{"expired", "success"} {
 		t.Run(late, func(t *testing.T) {
 			f := newFake(t)
 			r, _, ctx := startRunner(t, f)
-			if err := r.S.Navigate(f.LoginURL(), 15*time.Second); err != nil {
+			if err := r.S.Navigate(f.Home()+"login-box", 15*time.Second); err != nil {
 				t.Fatal(err)
 			}
 			r.BeginVerification()
@@ -247,18 +253,13 @@ func TestLoginRecoveryUsesResponseCompletionOrder(t *testing.T) {
 			if _, err := r.S.Capture.WaitAfter(ctx, mark, browser.Match{URL: "state=" + late}, 5*time.Second); err != nil {
 				t.Fatal(err)
 			}
-			if late == "expired" {
-				limited, cancel := context.WithTimeout(ctx, 150*time.Millisecond)
-				err := r.WaitForLogin(limited, 5*time.Second)
-				cancel()
-				if !errors.Is(err, context.DeadlineExceeded) {
-					t.Fatalf("成功请求发出得晚、完成得早，不能恢复后到的失效：%v", err)
-				}
-				otherLoginSuccess(t, r, ctx, f.Home())
+			limited, cancel := context.WithTimeout(ctx, 150*time.Millisecond)
+			err := r.WaitForLogin(limited, 5*time.Second)
+			cancel()
+			if !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("旧响应无论谁先完成，都不能让仍可见的登录框算成功：%v", err)
 			}
-			if err := r.WaitForLogin(ctx, 5*time.Second); err != nil {
-				t.Fatalf("失效后的成功响应应允许恢复：%v", err)
-			}
+			finishFakeLogin(t, r, ctx)
 		})
 	}
 }

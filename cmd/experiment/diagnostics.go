@@ -24,7 +24,7 @@ import (
 
 var errBrowserDisconnected = errors.New("浏览器连接已中断")
 
-var experimentChecks = []string{"search_input", "search_prefill", "search_same_tab", "search_url", "search_suggestion", "chinese_input", "filter_container", "publish_container", "region_requests", "search_seller_id", "detail_sale_status", "detail_description_path", "seller_item_count", "seller_credit_mapping", "search_area_format", "rating_time_format", "login_cookie", "cookie_metadata", "login_selectors", "login_refresh", "own_profile", "iframe_urls", "rule_selectors"}
+var experimentChecks = []string{"search_input", "search_prefill", "search_same_tab", "search_url", "search_suggestion", "chinese_input", "filter_container", "publish_container", "region_requests", "search_seller_id", "detail_sale_status", "detail_description_path", "seller_item_count", "seller_credit_mapping", "search_area_format", "rating_time_format", "login_cookie", "cookie_metadata", "login_selectors", "login_header", "login_refresh", "own_profile", "iframe_urls", "rule_selectors"}
 
 type experimentStep struct {
 	Name       string `json:"name"`

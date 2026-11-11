@@ -87,8 +87,6 @@ func contextRead(h *Human, ctx context.Context, n *chromedp.Node, mode string) e
 		_, err = h.VisibleCheckedContext(ctx, n)
 	case "HasCookie":
 		_, err = h.s.HasCookieContext(ctx, []string{"http://127.0.0.1/"}, "unb")
-	case "LoginCookie":
-		_, err = h.s.LoginCookiePresentContext(ctx, []string{"http://127.0.0.1/"}, "unb")
 	case "LegacyBox":
 		_, _, _, _, err = h.Box(n)
 	case "LegacyValue":
@@ -97,8 +95,6 @@ func contextRead(h *Human, ctx context.Context, n *chromedp.Node, mode string) e
 		_, err = h.VisibleChecked(n)
 	case "LegacyHasCookie":
 		_, err = h.s.HasCookie([]string{"http://127.0.0.1/"}, "unb")
-	case "LegacyLoginCookie":
-		_, err = h.s.LoginCookiePresent([]string{"http://127.0.0.1/"}, "unb")
 	default:
 		panic("没有这个读取测试")
 	}
@@ -109,7 +105,7 @@ func TestContextReadsCancelPendingProtocolAndKeepCause(t *testing.T) {
 	for _, test := range []struct{ mode, method string }{
 		{"Box", "DOM.getBoxModel"}, {"Value", "Accessibility.getPartialAXTree"}, {"Visible", "DOM.getBoxModel"},
 		{"Visible", "DOM.pushNodesByBackendIdsToFrontend"}, {"Visible", "CSS.getComputedStyleForNode"},
-		{"HasCookie", "Network.getCookies"}, {"LoginCookie", "Network.getCookies"},
+		{"HasCookie", "Network.getCookies"},
 	} {
 		for _, source := range []string{"caller", "session"} {
 			t.Run(test.mode+"/"+test.method+"/"+source, func(t *testing.T) {
@@ -143,7 +139,7 @@ func TestContextReadsCancelPendingProtocolAndKeepCause(t *testing.T) {
 }
 
 func TestContextReadsPreCancellationSendsNoCommands(t *testing.T) {
-	for _, mode := range []string{"Box", "Value", "Visible", "HasCookie", "LoginCookie", "LegacyBox", "LegacyValue", "LegacyVisible", "LegacyHasCookie", "LegacyLoginCookie"} {
+	for _, mode := range []string{"Box", "Value", "Visible", "HasCookie", "LegacyBox", "LegacyValue", "LegacyVisible", "LegacyHasCookie"} {
 		t.Run(mode, func(t *testing.T) {
 			human, node, wire, stop := readProtocol(t)
 			before := len(wire.commands())
@@ -169,7 +165,7 @@ func TestContextReadsPreCancellationSendsNoCommands(t *testing.T) {
 func TestContextReadDeadlineAndProtocolErrorRemainDistinct(t *testing.T) {
 	for _, test := range []struct{ mode, method string }{
 		{"Box", "DOM.getBoxModel"}, {"Value", "Accessibility.getPartialAXTree"}, {"Visible", "DOM.getBoxModel"},
-		{"HasCookie", "Network.getCookies"}, {"LoginCookie", "Network.getCookies"},
+		{"HasCookie", "Network.getCookies"},
 	} {
 		for _, source := range []string{"deadline", "protocol"} {
 			t.Run(test.mode+"/"+source, func(t *testing.T) {
@@ -208,18 +204,17 @@ func TestContextReadsKeepValuesAndCookiePrivacyRules(t *testing.T) {
 		t.Fatalf("旧可见性读取结果有误：%v %v", visible, err)
 	}
 	urls := []string{"http://127.0.0.1/"}
-	if present, err := human.s.HasCookie(urls, "unb"); err != nil || !present {
-		t.Fatal("预检必须只按名字判断Cookie是否存在", err)
-	}
-	if present, err := human.s.LoginCookiePresent(urls, "unb"); err != nil || present {
-		t.Fatal("登录成功判断仍须拒绝空Cookie", err)
-	}
-	wire.cookieValue = "local-fixture"
-	if present, err := human.s.LoginCookiePresentContext(t.Context(), urls, "unb"); err != nil || !present {
-		t.Fatal("登录判断没有识别非空Cookie", err)
-	}
-	if present, err := human.s.HasCookieContext(t.Context(), urls, "absent"); err != nil || present {
-		t.Fatal("不存在的Cookie不能报为存在", err)
+	for _, value := range []string{"", "local-fixture"} {
+		wire.cookieValue = value
+		for _, name := range []string{"unb", "absent"} {
+			want := name == "unb"
+			if present, err := human.s.HasCookie(urls, name); err != nil || present != want {
+				t.Fatal("旧入口必须只按名字检查，空值同名也应存在", name, present, err)
+			}
+			if present, err := human.s.HasCookieContext(t.Context(), urls, name); err != nil || present != want {
+				t.Fatal("有上下文的入口必须只按名字检查，空值同名也应存在", name, present, err)
+			}
+		}
 	}
 	for _, command := range wire.commands() {
 		if command.Method == "Runtime.enable" || command.Method == "Runtime.evaluate" {
@@ -228,6 +223,19 @@ func TestContextReadsKeepValuesAndCookiePrivacyRules(t *testing.T) {
 		if strings.Contains(string(command.Params), "local-fixture") {
 			t.Fatal("读取命令不应传出Cookie值")
 		}
+	}
+}
+
+func TestCookieValueBasedPresenceEntrypointsAreNotExposed(t *testing.T) {
+	if _, exposed := any(&Session{}).(interface {
+		LoginCookiePresent([]string, string) (bool, error)
+	}); exposed {
+		t.Fatal("浏览器不能再暴露依赖 Cookie 值的登录判断入口")
+	}
+	if _, exposed := any(&Session{}).(interface {
+		LoginCookiePresentContext(context.Context, []string, string) (bool, error)
+	}); exposed {
+		t.Fatal("浏览器不能再暴露依赖 Cookie 值的带上下文登录判断入口")
 	}
 }
 
