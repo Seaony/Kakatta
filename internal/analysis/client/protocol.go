@@ -126,10 +126,11 @@ func requestParameters(kind Kind, purpose string, parseRetry bool) (int64, *floa
 }
 
 type decodedResponse struct {
-	text         string
-	usage        Usage
-	finishReason string
-	thinking     bool
+	text               string
+	usage              Usage
+	finishReason       string
+	thinking           bool
+	incompleteThinking bool
 }
 
 func decodeResponse(body []byte, probe bool) (decodedResponse, error) {
@@ -168,6 +169,7 @@ func decodeResponse(body []byte, probe bool) (decodedResponse, error) {
 		content, contentErr = reasoning, reasoningErr
 	}
 	decoded.text = strings.TrimSpace(stripThinking(content))
+	decoded.incompleteThinking = strings.Contains(decoded.text, "<think>") || decoded.text == "" && strings.Contains(content, "<think>")
 	if probe {
 		return decoded, nil
 	}

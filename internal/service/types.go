@@ -198,16 +198,23 @@ type Finding struct {
 
 type FindingView struct {
 	Finding
-	Listing          Listing                    `json:"listing"`
-	Task             TaskSummary                `json:"task"`
-	ItemSpecs        *TaskItemSpecs             `json:"item_specs"`
-	Seller           *SellerProfile             `json:"seller"`
-	Deliveries       []DeliverySummary          `json:"deliveries"`
-	Questions        []analysis.ContactQuestion `json:"questions"`
-	Checks           []analysis.EffectiveCheck  `json:"checks"`
-	MarketComparison *FindingMarketComparison   `json:"market_comparison"`
-	PreviousID       *int64                     `json:"previous_id"`
-	NextID           *int64                     `json:"next_id"`
+	Listing             Listing                    `json:"listing"`
+	Task                TaskSummary                `json:"task"`
+	ItemSpecs           *TaskItemSpecs             `json:"item_specs"`
+	Seller              *SellerProfile             `json:"seller"`
+	Deliveries          []DeliverySummary          `json:"deliveries"`
+	PriceDropDeliveries []DeliverySummary          `json:"price_drop_deliveries,omitempty"`
+	NotificationStatus  *FindingNotificationStatus `json:"notification_status,omitempty"`
+	Questions           []analysis.ContactQuestion `json:"questions"`
+	Checks              []analysis.EffectiveCheck  `json:"checks"`
+	MarketComparison    *FindingMarketComparison   `json:"market_comparison"`
+	PreviousID          *int64                     `json:"previous_id"`
+	NextID              *int64                     `json:"next_id"`
+}
+
+type FindingNotificationStatus struct {
+	State  string           `json:"state"`
+	Reason *locales.Message `json:"reason"`
 }
 
 type FindingMarketComparison struct {
@@ -540,17 +547,18 @@ const (
 )
 
 type SessionView struct {
-	ID         string           `json:"id"`
-	AccountID  int64            `json:"account_id"`
-	Kind       SessionKind      `json:"kind"`
-	Phase      SessionPhase     `json:"phase"`
-	RunID      *int64           `json:"run_id"`
-	TaskID     *int64           `json:"task_id"`
-	QueuedAt   *int64           `json:"queued_at"`
-	StartedAt  *int64           `json:"started_at"`
-	ExpiresAt  *int64           `json:"expires_at"`
-	RemotePath *string          `json:"remote_path"`
-	Viewport   *remote.Viewport `json:"viewport"`
+	ID                  string           `json:"id"`
+	AccountID           int64            `json:"account_id"`
+	Kind                SessionKind      `json:"kind"`
+	Phase               SessionPhase     `json:"phase"`
+	RunID               *int64           `json:"run_id"`
+	TaskID              *int64           `json:"task_id"`
+	QueuedAt            *int64           `json:"queued_at"`
+	StartedAt           *int64           `json:"started_at"`
+	ExpiresAt           *int64           `json:"expires_at"`
+	RemotePath          *string          `json:"remote_path"`
+	Viewport            *remote.Viewport `json:"viewport"`
+	RefreshVerification bool             `json:"refresh_verification,omitempty"`
 }
 
 type TaskPhase string
@@ -739,8 +747,11 @@ type SystemEvent struct {
 }
 
 type MarketView struct {
-	Market  analysis.MarketResult `json:"market"`
-	Insight *MarketInsight        `json:"insight"`
+	Market                analysis.MarketResult `json:"market"`
+	Insight               *MarketInsight        `json:"insight"`
+	TodayNewCount         int64                 `json:"today_new_count"`
+	TodayRecommendedCount int64                 `json:"today_recommended_count"`
+	PersonalSellerShare   *float64              `json:"personal_seller_share"`
 }
 
 type MarketInsight struct {

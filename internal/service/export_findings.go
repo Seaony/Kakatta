@@ -82,7 +82,7 @@ func (s *Service) ExportFindingsCSV(ctx context.Context, taskID int64, query Fin
 				return nil
 			}
 			for _, item := range batch {
-				view, err := getFindingViewTx(ctx, tx, item.ID)
+				view, err := s.getFindingViewTx(ctx, tx, item.ID)
 				if err != nil {
 					return err
 				}

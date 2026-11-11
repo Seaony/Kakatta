@@ -46,6 +46,7 @@ export function ManualSession({ account, session, timeZone, reveal, onReveal, on
   const current = state.data;
   const path = remotePath(current.remote_path, globalThis.location.origin);
   const showViewer = auth?.authenticated !== false && reveal && path !== null && current.phase !== 'queued' && current.phase !== 'closing';
+  const refreshAfterConfirm = operation.error instanceof ApiError && operation.error.reason.code === 'remote.verification_refresh_confirm';
   const x = current.viewport?.x ?? null;
   const y = current.viewport?.y ?? null;
   const width = current.viewport?.width ?? null;
@@ -72,12 +73,13 @@ export function ManualSession({ account, session, timeZone, reveal, onReveal, on
     {state.error && <InlineMessage tone="warning">{describe(state.error)} {t('remote.status_unknown')}</InlineMessage>}
     {showViewer ? <>
       <p className="max-w-prose text-body text-text-body">{t(current.kind === 'login' ? 'remote.login_help' : 'remote.verification_help')}</p>
+      {(refreshAfterConfirm || current.refresh_verification) && <InlineMessage tone="warning">{t(refreshAfterConfirm ? 'remote.verification_refresh_confirm' : 'remote.verification_refresh_page')}</InlineMessage>}
       <iframe ref={frame} src={path} title={t('remote.viewer_title', { name: account.name })}
         className="block h-[min(75vh,52rem)] min-h-[24rem] w-full rounded-control border border-border bg-inset supports-[height:100dvh]:h-[min(75dvh,52rem)]"
         referrerPolicy="same-origin" onLoad={() => frame.current?.contentWindow?.postMessage({ type: 'kakatta:viewport', region: current.viewport }, globalThis.location.origin)} />
     </> : current.remote_path !== null && !path ? <InlineMessage tone="danger">{t('remote.invalid_path')}</InlineMessage>
       : <p className="text-body text-text-secondary">{t('remote.no_viewer')}</p>}
-    {operation.errorText && <InlineMessage tone="danger">{operation.errorText}</InlineMessage>}
+    {operation.errorText && !(showViewer && refreshAfterConfirm) && <InlineMessage tone="danger">{operation.errorText}</InlineMessage>}
     <div className="flex flex-wrap gap-sm">
       {!reveal && current.phase !== 'queued' && current.phase !== 'closing' && path && <Button variant="primary" onClick={onReveal}>{t('remote.resume')}</Button>}
       {reveal && (current.phase === 'verifying' || current.phase === 'verify_hold') && <Button variant="primary" busy={operation.pending} onClick={() => {

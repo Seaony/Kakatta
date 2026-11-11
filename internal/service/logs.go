@@ -448,7 +448,7 @@ func (s *Service) GetRun(ctx context.Context, id int64) (RunDetail, error) {
 	if err != nil {
 		return RunDetail{}, storageFailure(err)
 	}
-	steps, err := listRunStepsTx(ctx, tx, id, ListQuery{Limit: 50})
+	steps, err := s.listRunStepsTx(ctx, tx, id, ListQuery{Limit: 50})
 	if err != nil {
 		return RunDetail{}, storageFailure(err)
 	}

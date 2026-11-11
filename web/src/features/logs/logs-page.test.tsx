@@ -6,6 +6,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { createMemoryHistory, createRootRoute, createRouter, RouterProvider } from '@tanstack/react-router';
 import { createApiClient, type ApiFetch } from '../../api/client';
 import { ApiProvider } from '../../api/hooks';
+import { apiKey } from '../../api/keys';
 import type { Schema } from '../../api/types';
 import { createAppQueryClient } from '../../app/query-client';
 import type { LogsSearch } from '../../app/search';
@@ -138,6 +139,41 @@ test('步骤持续分页，100步之后的全部失败仍可查看', async () =>
   expect(screen.getByRole('region', { name: '逐步日志' }).querySelectorAll('li')).toHaveLength(110);
   expect(screen.queryByRole('button', { name: '加载更多步骤' })).toBeNull();
   expect(requests.filter((request) => new URL(request.url).pathname.endsWith('/steps')).map((request) => new URL(request.url).searchParams.get('cursor'))).toEqual(['step-50', 'step-100']);
+});
+
+test('缩短保留期时重新读取已展开的步骤，切回旧保留期不会复用旧分页', async () => {
+  let days = 14;
+  let cleared = false;
+  const { client, requests } = setup((_request, url) => {
+    if (url.pathname === '/api/v1/runs/7') return Response.json({
+      run: run(),
+      steps: days === 14 && !cleared ? { items: steps(1, 50), next_cursor: 'step-50', total: 51 } : { items: [], next_cursor: null, total: 0 },
+    } satisfies Schema<'RunDetail'>);
+    if (url.pathname === '/api/v1/runs/7/steps') return Response.json({ items: steps(51, 51), next_cursor: null, total: 51 } satisfies Schema<'PageRunStep'>);
+    return undefined;
+  });
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole('button', { name: '展开运行 #7' }));
+  await user.click(await screen.findByRole('button', { name: '加载更多步骤' }));
+  await waitFor(() => expect(screen.getByRole('region', { name: '逐步日志' }).querySelectorAll('li')).toHaveLength(51));
+  const saveRetention = async (next: number) => {
+    days = next;
+    await act(async () => {
+      client.setQueryData<Schema<'SettingsSnapshot'>>(apiKey('settings'), (snapshot) => snapshot && {
+        ...snapshot, values: { ...snapshot.values, 'retention.run_steps_days': days },
+      });
+    });
+  };
+  await saveRetention(1);
+  expect(await screen.findByText(/这次运行暂无可用逐步日志/)).toBeTruthy();
+  expect(screen.getByRole('region', { name: '逐步日志' }).querySelectorAll('li')).toHaveLength(0);
+  expect(screen.getByText('历史代理')).toBeTruthy();
+  cleared = true;
+  await saveRetention(14);
+  await waitFor(() => expect(requests.filter((request) => new URL(request.url).pathname === '/api/v1/runs/7')).toHaveLength(3));
+  const reloaded = await screen.findByRole('region', { name: '逐步日志' });
+  expect(within(reloaded).getByText(/这次运行暂无可用逐步日志/)).toBeTruthy();
+  expect(reloaded.querySelectorAll('li')).toHaveLength(0);
 });
 
 for (const language of [

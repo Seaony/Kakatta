@@ -135,7 +135,11 @@ func (p *Preparer) Prepare(ctx context.Context, detailURLs []string, imageCount 
 				if ctx.Err() != nil {
 					return
 				}
-				image, issue := p.prepareOne(ctx, detailURLs[index], index)
+				prepared, issue := p.downloadJPEG(ctx, detailURLs[index], index)
+				var image *Image
+				if prepared != nil {
+					image = &Image{DetailIndex: index, DataURL: "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(prepared)}
+				}
 				outcomes[index] = outcome{image, issue}
 			}
 		}()
@@ -165,7 +169,16 @@ dispatch:
 	return result, nil
 }
 
-func (p *Preparer) prepareOne(ctx context.Context, address string, index int) (*Image, *Issue) {
+// DownloadJPEG 供本地缩略图使用，沿用详情图的下载和解码限制。
+func (p *Preparer) DownloadJPEG(ctx context.Context, address string) ([]byte, error) {
+	prepared, issue := p.downloadJPEG(ctx, address, 0)
+	if issue != nil {
+		return nil, preparationError(issue.Reason.Code)
+	}
+	return prepared, ctx.Err()
+}
+
+func (p *Preparer) downloadJPEG(ctx context.Context, address string, index int) ([]byte, *Issue) {
 	target, err := url.Parse(address)
 	if err != nil || !validTarget(target) {
 		return nil, skipped(index, "invalid_url", nil)
@@ -242,7 +255,7 @@ func (p *Preparer) prepareOne(ctx context.Context, address string, index int) (*
 		}
 		return nil, skipped(index, "invalid_image", nil)
 	}
-	return &Image{DetailIndex: index, DataURL: "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(prepared)}, nil
+	return prepared, nil
 }
 
 func timeoutError(err error) bool {

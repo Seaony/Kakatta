@@ -12,6 +12,7 @@ import { AppShell, PublicLayout } from './layout';
 import { LoginForm, LoginPage } from '../features/onboarding';
 import { Dialog } from '../components/ui/dialog';
 import { Button } from '../components/ui/button';
+import { InlineMessage } from '../components/ui/inline-message';
 import { StatePanel } from '../components/ui/state-panel';
 import { useLiveEvents } from './live-events';
 import { useUnsavedAction } from './unsaved-changes';
@@ -94,24 +95,31 @@ export function Gateway({ children }: { children: ReactNode }) {
   }
 
   const state = { authenticated, user: identity, complete, refresh };
-  if (setup.isPending || setup.data?.initialized && me.isPending && !identity) return <PublicLayout><StatePanel kind="pending" label={t('common.loading')} /></PublicLayout>;
-  if (setup.isError && !setup.data) return <PublicLayout><StatePanel kind="error" title={t('web.error.title')} description={describe(setup.error)} retry={{ label: t('common.retry'), run: () => { void setup.refetch(); } }} /></PublicLayout>;
+  const warning = document.documentElement.dataset.kakattaPublicHttp === 'true'
+    ? <InlineMessage tone="danger" title={t('shell.public_http_title')} className="mb-lg">{t('shell.public_http_description')}</InlineMessage>
+    : null;
+  const publicPage = (content: ReactNode) => <PublicLayout>{warning}{content}</PublicLayout>;
+  if (setup.isPending || setup.data?.initialized && me.isPending && !identity) return publicPage(<StatePanel kind="pending" label={t('common.loading')} />);
+  if (setup.isError && !setup.data) return publicPage(<StatePanel kind="error" title={t('web.error.title')} description={describe(setup.error)} retry={{ label: t('common.retry'), run: () => { void setup.refetch(); } }} />);
   if (!setup.data?.initialized && pathname !== '/setup') return <Navigate to="/setup" replace />;
   if (setup.data?.initialized && pathname === '/setup') return <Navigate to={authenticated ? '/' : '/login'} replace />;
-  if (me.isError && !unauthenticated(me.error) && !lost && !identity) return <PublicLayout><StatePanel kind="error" title={t('web.error.title')} description={describe(me.error)} retry={{ label: t('common.retry'), run: refresh }} /></PublicLayout>;
+  if (me.isError && !unauthenticated(me.error) && !lost && !identity) return publicPage(<StatePanel kind="error" title={t('web.error.title')} description={describe(me.error)} retry={{ label: t('common.retry'), run: refresh }} />);
   if (pathname === '/login' && authenticated) return <Navigate to="/" replace />;
-  if (publicEntry) return <AuthenticationContext.Provider value={state}><PublicLayout>{children}</PublicLayout></AuthenticationContext.Provider>;
-  if (!authenticated && !hadSession.current) return <AuthenticationContext.Provider value={state}><PublicLayout><LoginPage onAuthenticated={complete} /></PublicLayout></AuthenticationContext.Provider>;
-  if (!identity) return <PublicLayout><StatePanel kind="pending" label={t('common.loading')} /></PublicLayout>;
+  if (publicEntry) return <AuthenticationContext.Provider value={state}>{publicPage(children)}</AuthenticationContext.Provider>;
+  if (!authenticated && !hadSession.current) return <AuthenticationContext.Provider value={state}>{publicPage(<LoginPage onAuthenticated={complete} />)}</AuthenticationContext.Provider>;
+  if (!identity) return publicPage(<StatePanel kind="pending" label={t('common.loading')} />);
 
+  const showLogin = !authenticated && reopenLogin;
   return (
     <AuthenticationContext.Provider value={state}>
       <AppShell user={identity} onLogout={() => confirmAction(() => { void logout(); })} loggingOut={loggingOut} logoutError={logoutError}>
+        {!showLogin && warning}
         {me.isError && !unauthenticated(me.error) && !lost && <StatePanel kind="error" title={t('web.error.title')} description={describe(me.error)} retry={{ label: t('common.retry'), run: refresh }} />}
         <div hidden={!authenticated}>{children}</div>
         {!authenticated && <StatePanel kind="empty" title={t('shell.session_expired_title')} description={t('shell.session_expired_description')} action={<Button variant="primary" onClick={() => setReopenLogin(true)}>{t('shell.sign_in_again')}</Button>} />}
       </AppShell>
-      <Dialog open={!authenticated && reopenLogin} onOpenChange={setReopenLogin} title={t('shell.session_expired_title')} description={t('shell.session_expired_description')} closeLabel={t('common.close')}>
+      <Dialog open={showLogin} onOpenChange={setReopenLogin} title={t('shell.session_expired_title')} description={t('shell.session_expired_description')} closeLabel={t('common.close')}>
+        {showLogin && warning}
         <LoginForm sessionExpired onAuthenticated={complete} onCancel={() => setReopenLogin(false)} />
       </Dialog>
     </AuthenticationContext.Provider>

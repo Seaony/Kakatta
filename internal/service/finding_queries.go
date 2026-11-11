@@ -9,6 +9,7 @@ import (
 
 	"github.com/Seaony/Kakatta/internal/analysis"
 	"github.com/Seaony/Kakatta/internal/limits"
+	"github.com/Seaony/Kakatta/internal/locales"
 )
 
 const findingVisibleSQL = `l.is_dismissed=0 AND NOT EXISTS(SELECT 1 FROM blocked_sellers bs WHERE bs.seller_id=l.seller_id)`
@@ -198,7 +199,7 @@ func (s *Service) ListFindings(ctx context.Context, q FindingQuery) (Page[Findin
 		page.NextCursor = &token
 	}
 	for _, item := range anchors {
-		view, err := getFindingViewTx(ctx, tx, item.ID)
+		view, err := s.getFindingViewTx(ctx, tx, item.ID)
 		if err != nil {
 			return Page[FindingView]{Items: []FindingView{}}, storageFailure(err)
 		}
@@ -225,7 +226,7 @@ func (s *Service) GetFinding(ctx context.Context, id int64, q FindingQuery) (Fin
 		return FindingView{}, storageFailure(err)
 	}
 	defer tx.Rollback()
-	view, err := getFindingViewTx(ctx, tx, id)
+	view, err := s.getFindingViewTx(ctx, tx, id)
 	if err != nil {
 		return FindingView{}, storageFailure(err)
 	}
@@ -260,7 +261,7 @@ func (s *Service) GetFinding(ctx context.Context, id int64, q FindingQuery) (Fin
 	return view, nil
 }
 
-func getFindingViewTx(ctx context.Context, tx *sql.Tx, id int64) (FindingView, error) {
+func (s *Service) getFindingViewTx(ctx context.Context, tx *sql.Tx, id int64) (FindingView, error) {
 	finding, err := loadFindingTx(ctx, tx, id)
 	if err != nil {
 		return FindingView{}, err
@@ -301,8 +302,51 @@ func getFindingViewTx(ctx context.Context, tx *sql.Tx, id int64) (FindingView, e
 	if finding.Decision == DecisionPending || finding.Decision == DecisionFailed {
 		view.Score, view.Grade, view.ScoreBreakdown = nil, nil, nil
 	}
-	view.Deliveries, err = findingDeliveriesTx(ctx, tx, id)
+	view.Deliveries, view.PriceDropDeliveries, err = findingDeliveriesTx(ctx, tx, id)
+	if err != nil {
+		return view, err
+	}
+	s.initRuntime()
+	view.NotificationStatus, err = findingNotificationStatusTx(ctx, tx, id, s.now().UnixMilli())
 	return view, err
+}
+
+func findingNotificationStatusTx(ctx context.Context, tx *sql.Tx, id, nowMS int64) (*FindingNotificationStatus, error) {
+	var value FindingNotificationStatus
+	var failures int64
+	var firstFailedAt *int64
+	var reason sql.NullString
+	err := tx.QueryRowContext(ctx, `SELECT state,failure_count,first_failed_at,reason FROM notification_intents
+		WHERE finding_id=? AND kind IN ('recommended','new') ORDER BY id DESC LIMIT 1`, id).
+		Scan(&value.State, &failures, &firstFailedAt, &reason)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	switch value.State {
+	case "pending":
+		if NotificationRetryExpired(failures, firstFailedAt, nowMS) {
+			value.State = "abandoned"
+		} else if failures > 0 {
+			value.State = "retrying"
+		} else {
+			return nil, nil
+		}
+	case "cancelled", "abandoned":
+	default:
+		return nil, nil
+	}
+	if reason.Valid {
+		if err := decodeJSONNumber(reason.String, &value.Reason); err != nil {
+			return nil, err
+		}
+	}
+	if value.Reason == nil && value.State == "abandoned" {
+		value.Reason = &locales.Message{Code: "notify.retry_exhausted"}
+	}
+	return &value, nil
 }
 
 // 当前行情只用于详情对比，不冒充上一次算分时的采样快照。
@@ -345,42 +389,51 @@ func (s *Service) findingMarketComparisonTx(ctx context.Context, tx *sql.Tx, vie
 	return comparison, nil
 }
 
-func findingDeliveriesTx(ctx context.Context, tx *sql.Tx, id int64) ([]DeliverySummary, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT d.id,d.at,d.channel_id,c.name,d.task_id,d.kind,d.item_count,d.ok,d.error
+func findingDeliveriesTx(ctx context.Context, tx *sql.Tx, id int64) ([]DeliverySummary, []DeliverySummary, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT d.id,d.at,d.channel_id,c.name,d.task_id,d.kind,d.item_count,d.ok,d.error,
+		COALESCE(d.kind='price_drop' OR (d.kind='summary' AND EXISTS(
+			SELECT 1 FROM delivery_intents dii JOIN notification_intents ni ON ni.id=dii.intent_id
+			WHERE dii.delivery_id=d.id AND ni.finding_id=di.finding_id AND ni.kind='price_drop')),0)
 		FROM delivery_items di JOIN deliveries d ON d.id=di.delivery_id LEFT JOIN channels c ON c.id=d.channel_id
 		WHERE di.finding_id=? ORDER BY (d.at IS NULL),d.at DESC,d.id DESC`, id)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer rows.Close()
-	seen := map[struct {
+	type channelKey struct {
 		known bool
 		id    int64
-	}]bool{}
+	}
+	seen, seenDrop := map[channelKey]bool{}, map[channelKey]bool{}
 	deliveries := []DeliverySummary{}
+	var drops []DeliverySummary
 	for rows.Next() {
 		var row DeliverySummary
 		var failure sql.NullString
-		if err := rows.Scan(&row.ID, &row.At, &row.ChannelID, &row.ChannelName, &row.TaskID, &row.Kind, &row.ItemCount, &row.OK, &failure); err != nil {
-			return nil, err
+		var priceDrop bool
+		if err := rows.Scan(&row.ID, &row.At, &row.ChannelID, &row.ChannelName, &row.TaskID, &row.Kind, &row.ItemCount, &row.OK, &failure, &priceDrop); err != nil {
+			return nil, nil, err
 		}
-		key := struct {
-			known bool
-			id    int64
-		}{known: row.ChannelID != nil}
+		key := channelKey{known: row.ChannelID != nil}
 		if row.ChannelID != nil {
 			key.id = *row.ChannelID
 		}
-		if seen[key] {
+		if seen[key] && (!priceDrop || seenDrop[key]) {
 			continue
 		}
-		seen[key] = true
 		if failure.Valid {
 			if err := decodeJSONNumber(failure.String, &row.Error); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 		}
-		deliveries = append(deliveries, row)
+		if !seen[key] {
+			seen[key] = true
+			deliveries = append(deliveries, row)
+		}
+		if priceDrop && !seenDrop[key] {
+			seenDrop[key] = true
+			drops = append(drops, row)
+		}
 	}
-	return deliveries, rows.Err()
+	return deliveries, drops, rows.Err()
 }

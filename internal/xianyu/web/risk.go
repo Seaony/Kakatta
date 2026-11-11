@@ -53,13 +53,30 @@ func (r *Runner) checkPage(ctx context.Context, where string) error {
 		// 刚启动、还没打开过闲鱼页面，没有可查的；在空白页上查元素会一直等到超时。
 		return nil
 	}
-	var verification error
-	if err := pageURLRisk(current, where); err != nil {
-		if !errors.Is(err, ErrNeedVerify) {
-			return err
-		}
-		verification = err
+	urlRisk := pageURLRisk(current, where)
+	if errors.Is(urlRisk, ErrDenied) {
+		return urlRisk
 	}
+	// 人工会话会留在登录页等待用户，但页面上的环境拒绝仍要立即结束。
+	for _, text := range rules.Selectors.BlockedTexts {
+		nodes, err := r.H.SearchText(ctx, text)
+		if err != nil {
+			return fmt.Errorf("%s：检查环境提示失败：%w", where, err)
+		}
+		for _, n := range nodes {
+			visible, err := r.H.VisibleCheckedContext(ctx, n)
+			if err != nil {
+				return fmt.Errorf("%s：检查环境提示是否可见失败：%w", where, err)
+			}
+			if visible {
+				return &RiskError{Kind: ErrEnvBlocked, Where: where, Signal: "页面文字「" + text + "」"}
+			}
+		}
+	}
+	if errors.Is(urlRisk, ErrLoginExpired) {
+		return urlRisk
+	}
+	verification := urlRisk
 	for _, sel := range rules.Selectors.VerifyMasks {
 		nodes, err := r.H.FindNow(ctx, sel)
 		if err != nil {
@@ -76,33 +93,18 @@ func (r *Runner) checkPage(ctx context.Context, where string) error {
 			}
 		}
 	}
-	for _, text := range rules.Selectors.BlockedTexts {
-		nodes, err := r.H.SearchText(ctx, text)
-		if err != nil {
-			return fmt.Errorf("%s：检查环境提示失败：%w", where, err)
-		}
-		for _, n := range nodes {
-			visible, err := r.H.VisibleCheckedContext(ctx, n)
-			if err != nil {
-				return fmt.Errorf("%s：检查环境提示是否可见失败：%w", where, err)
-			}
-			if visible {
-				return &RiskError{Kind: ErrEnvBlocked, Where: where, Signal: "页面文字「" + text + "」"}
-			}
-		}
-	}
 	return verification
 }
 
 func pageURLRisk(current, where string) error {
 	low := strings.ToLower(current)
+	punish := strings.Contains(low, "punish") || strings.Contains(low, "_____tmd_____")
 	switch {
+	case punish && strings.Contains(low, "action=deny"):
+		return &RiskError{Kind: ErrDenied, Where: where, Signal: "主框架拒绝访问"}
 	case strings.Contains(low, "passport.goofish.com"), strings.Contains(low, "mini_login"):
 		return &RiskError{Kind: ErrLoginExpired, Where: where, Signal: "跳到了登录页"}
-	case strings.Contains(low, "punish"), strings.Contains(low, "_____tmd_____"):
-		if strings.Contains(low, "action=deny") {
-			return &RiskError{Kind: ErrDenied, Where: where, Signal: "主框架拒绝访问"}
-		}
+	case punish:
 		return &RiskError{Kind: ErrNeedVerify, Where: where, Signal: "主框架需要验证"}
 	}
 	return nil

@@ -3,7 +3,9 @@ package service
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"time"
 )
 
 // appendRunStepTx 超过前一百条以后只保存失败，序号只由本入口分配。
@@ -38,7 +40,7 @@ type runStepCursor struct {
 	Seq int64 `json:"seq"`
 }
 
-func listRunStepsTx(ctx context.Context, tx *sql.Tx, runID int64, q ListQuery) (Page[RunStep], error) {
+func (s *Service) listRunStepsTx(ctx context.Context, tx *sql.Tx, runID int64, q ListQuery) (Page[RunStep], error) {
 	binding := struct {
 		RunID int64 `json:"run_id"`
 	}{RunID: runID}
@@ -49,19 +51,27 @@ func listRunStepsTx(ctx context.Context, tx *sql.Tx, runID int64, q ListQuery) (
 	if q.Cursor != "" && anchor.Seq <= 0 {
 		return Page[RunStep]{}, queryError()
 	}
-	result := Page[RunStep]{Items: []RunStep{}}
-	if err := tx.QueryRowContext(ctx, "SELECT count(*) FROM run_steps WHERE run_id=?", runID).Scan(&result.Total); err != nil {
+	snapshot, _, now, err := s.observeNowTx(ctx, tx)
+	if err != nil {
 		return Page[RunStep]{}, err
 	}
-	args := []any{runID}
-	query := "SELECT run_id,seq,at,status,message,detail FROM run_steps WHERE run_id=?"
+	var days int64
+	if err := json.Unmarshal(snapshot.Values["retention.run_steps_days"], &days); err != nil || days < 1 {
+		return Page[RunStep]{}, errors.New("逐步日志保留期无效")
+	}
+	cutoff := cleanupBefore(now.UnixMilli(), days*24*time.Hour.Milliseconds())
+	where := " WHERE run_id=? AND (at IS NULL OR at>=?)"
+	args := []any{runID, cutoff}
+	result := Page[RunStep]{Items: []RunStep{}}
+	if err := tx.QueryRowContext(ctx, "SELECT count(*) FROM run_steps"+where, args...).Scan(&result.Total); err != nil {
+		return Page[RunStep]{}, err
+	}
 	if q.Cursor != "" {
-		query += " AND seq>?"
+		where += " AND seq>?"
 		args = append(args, anchor.Seq)
 	}
-	query += " ORDER BY seq ASC LIMIT ?"
 	args = append(args, q.Limit+1)
-	rows, err := tx.QueryContext(ctx, query, args...)
+	rows, err := tx.QueryContext(ctx, "SELECT run_id,seq,at,status,message,detail FROM run_steps"+where+" ORDER BY seq ASC LIMIT ?", args...)
 	if err != nil {
 		return Page[RunStep]{}, err
 	}
@@ -117,7 +127,7 @@ func (s *Service) ListRunSteps(ctx context.Context, runID int64, q ListQuery) (P
 		}
 		return Page[RunStep]{}, storageFailure(err)
 	}
-	result, err := listRunStepsTx(ctx, tx, runID, q)
+	result, err := s.listRunStepsTx(ctx, tx, runID, q)
 	if err != nil {
 		return Page[RunStep]{}, storageFailure(err)
 	}

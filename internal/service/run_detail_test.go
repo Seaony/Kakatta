@@ -18,6 +18,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -82,6 +83,85 @@ func detailAI(t *testing.T, s *Service, run *runExecution, now int64) {
 }
 
 const detailFactsJSON = `{"checks":[],"musts":[{"id":"m1","status":"met","source":"text","evidence":"国行"}],"adjust":{"value":0,"reason":""},"summary":"符合要求"}`
+
+func TestRunDetailKeepsTheSameMarketReferenceThroughoutTheRun(t *testing.T) {
+	s, run, now := detailTestRun(t, 5)
+	detailAI(t, s, run, now)
+	run.P = run.P[:2]
+	detailExec(t, s.db, `UPDATE tasks SET profile_json=json_set(profile_json,'$.specs',json('[{"name":"存储","options":["128G"],"values":["128G"],"source":"user"}]')) WHERE id=1`)
+	detailExec(t, s.db, `UPDATE listings SET price=10000 WHERE 1`)
+	detailExec(t, s.db, `UPDATE listings SET description='不是国行' WHERE item_id='1'`)
+	detailExec(t, s.db, `INSERT INTO task_sightings(task_id,item_id,day,price,last_seen_at)
+		SELECT 1,item_id,?,10000,? FROM listings`, time.UnixMilli(now).UTC().Format(time.DateOnly), now)
+	detailExec(t, s.db, `INSERT INTO task_item_specs(task_id,item_id,kind,specs_json,brand_new,config_key,excluded,source,updated_at)
+		SELECT 1,item_id,'sale','[{"name":"存储","value":"128G"}]',0,'128G',0,'title',? FROM listings`, now)
+	var samples []int
+	s.models = detailModelsFunc(func(_ context.Context, request client.Request) (client.Result, error) {
+		_, user, ok := strings.Cut(request.User, "```json\n")
+		profile, _, closed := strings.Cut(user, "\n```")
+		var payload struct {
+			Fair *struct{ Sample int } `json:"fair_price"`
+		}
+		if !ok || !closed || json.Unmarshal([]byte(profile), &payload) != nil {
+			t.Fatalf("无法读出分析请求的行情：%s", request.User)
+		}
+		sample := 0
+		if payload.Fair != nil {
+			sample = payload.Fair.Sample
+		}
+		samples = append(samples, sample)
+		status, evidence := "met", "国行"
+		if len(samples) == 1 {
+			status, evidence = "unmet", "不是国行"
+		}
+		return client.Result{Text: fmt.Sprintf(`{"specs":[{"name":"存储","value":"128G"}],"checks":[],"musts":[{"id":"m1","status":%q,"source":"text","evidence":%q}],"adjust":{"value":0},"summary":"本地测试"}`, status, evidence)}, nil
+	})
+	if err := s.runDetail(t.Context(), run); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(samples, []int{5, 5}) {
+		t.Errorf("同轮分析必须复用五条样本的行情，实际为 %v", samples)
+	}
+	market, err := s.GetMarket(t.Context(), run.Ref.TaskID)
+	if err != nil || len(market.Market.Groups) != 1 || market.Market.Groups[0].Fair.Cents != nil {
+		t.Fatalf("之后的行情必须按排除后的四条样本重新计算：%+v %v", market.Market.Groups, err)
+	}
+}
+
+func TestRunDetailRecordsDowngradesWhenTheNextRequestHitsQuota(t *testing.T) {
+	s, run, now := detailTestRun(t, 1)
+	detailAI(t, s, run, now)
+	detailExec(t, s.db, `INSERT INTO run_records(id,task_id,task_name,trigger,outcome) VALUES(1,1,'相机','manual','success')`)
+	detailExec(t, s.db, `WITH RECURSIVE steps(seq) AS (VALUES(1) UNION ALL SELECT seq+1 FROM steps WHERE seq<100)
+		INSERT INTO run_steps(run_id,seq,at,status,message) SELECT 1,seq,?,'ok','{"code":"fixture.step","args":{}}' FROM steps`, now)
+	s.models = detailModelsFunc(func(context.Context, client.Request) (client.Result, error) {
+		return client.Result{JSONDowngrades: []client.JSONDowngrade{{From: client.JSONSchema, To: client.JSONObject, Provider: "本地服务商", Model: "local-model"}}}, client.ErrDailyLimit
+	})
+	if err := s.runDetail(t.Context(), run); err != nil {
+		t.Fatal(err)
+	}
+	var raw string
+	var status StepStatus
+	if err := s.db.QueryRowContext(t.Context(), `SELECT status,message FROM run_steps WHERE run_id=1 AND seq=101`).Scan(&status, &raw); err != nil {
+		t.Fatal("达到 100 步后仍应保留模型拒绝的步骤", err)
+	}
+	var got locales.Message
+	if err := json.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatal(err)
+	}
+	want := locales.Message{Code: "run.model_json_downgraded", Args: map[string]any{"from": "schema", "to": "object", "provider": "本地服务商", "model": "local-model"}}
+	if status != StepFail || !reflect.DeepEqual(got, want) {
+		t.Fatalf("降级步骤错误：%s %s", status, raw)
+	}
+	for _, language := range []locales.Language{locales.ZhCN, locales.En} {
+		if rendered, err := locales.Format(language, got); err != nil || !strings.Contains(rendered, "local-model") {
+			t.Fatalf("%s 运行日志未正确翻译：%s %v", language, rendered, err)
+		}
+	}
+	if finding := detailFinding(t, s, 1); finding.Decision != DecisionPending || finding.Stage != StageDetail || finding.Attempts != 0 || finding.Reason == nil || finding.Reason.Code != "await_ai" {
+		t.Fatalf("额度阻断应等待且不消耗单件判断次数：%+v", finding)
+	}
+}
 
 func TestRunDetailModelUsesRequestProfileAndPartialSeller(t *testing.T) {
 	s, run, now := detailTestRun(t, 1)
@@ -528,8 +608,9 @@ func TestRunDetailCacheExpiresAtTwentyFourHours(t *testing.T) {
 			s, run, now := detailTestRun(t, 1)
 			detailExec(t, s.db, `UPDATE listings SET detail_fetched_at=? WHERE item_id='1'`, now-int64(age/time.Millisecond))
 			calls := 0
-			err := s.runDetailWith(t.Context(), run, func(context.Context, string) (xianyu.Detail, error) {
+			err := s.runDetailWith(t.Context(), run, func(_ context.Context, _ string, started func()) (xianyu.Detail, error) {
 				calls++
+				started()
 				return xianyu.Detail{Description: "成色好"}, nil
 			})
 			want := 0
@@ -552,7 +633,7 @@ func TestRunDetailQuotaAndPageLimitKeepPending(t *testing.T) {
 				run.SellerPageCount = 1
 			}
 			calls := 0
-			err := s.runDetailWith(t.Context(), run, func(context.Context, string) (xianyu.Detail, error) {
+			err := s.runDetailWith(t.Context(), run, func(context.Context, string, func()) (xianyu.Detail, error) {
 				calls++
 				return xianyu.Detail{}, web.ErrQuota
 			})
@@ -572,20 +653,22 @@ func TestRunDetailQuotaAndPageLimitKeepPending(t *testing.T) {
 func TestRunDetailOrdinaryFailureContinuesAndThirdFailureStopsRetry(t *testing.T) {
 	s, run, _ := detailTestRun(t, 2)
 	calls := 0
-	err := s.runDetailWith(t.Context(), run, func(context.Context, string) (xianyu.Detail, error) {
+	err := s.runDetailWith(t.Context(), run, func(_ context.Context, _ string, started func()) (xianyu.Detail, error) {
 		calls++
+		started()
 		if calls == 1 {
 			return xianyu.Detail{}, context.DeadlineExceeded
 		}
 		return xianyu.Detail{Description: "成色好"}, nil
 	})
 	first, second := detailFinding(t, s, 1), detailFinding(t, s, 2)
-	if err != nil || calls != 2 || first.Decision != DecisionFailed || !first.Retryable || first.Attempts != 1 || second.Decision != analysis.DecisionMatched {
+	if err != nil || calls != 2 || run.DetailCount != 2 || first.Decision != DecisionFailed || !first.Retryable || first.Attempts != 1 || second.Decision != analysis.DecisionMatched {
 		t.Fatalf("普通详情超时被当整次取消：%+v，%+v，%v", first, second, err)
 	}
 	run.P = run.P[:1]
 	for range 2 {
-		if err := s.runDetailWith(t.Context(), run, func(context.Context, string) (xianyu.Detail, error) {
+		if err := s.runDetailWith(t.Context(), run, func(_ context.Context, _ string, started func()) (xianyu.Detail, error) {
+			started()
 			return xianyu.Detail{}, errors.New("页面解析失败")
 		}); err != nil {
 			t.Fatal(err)
@@ -602,12 +685,12 @@ func TestRunDetailStopErrorsNeverBecomeFindingFailures(t *testing.T) {
 		t.Run(stop.Error(), func(t *testing.T) {
 			s, run, _ := detailTestRun(t, 2)
 			calls := 0
-			err := s.runDetailWith(t.Context(), run, func(context.Context, string) (xianyu.Detail, error) {
+			err := s.runDetailWith(t.Context(), run, func(context.Context, string, func()) (xianyu.Detail, error) {
 				calls++
 				return xianyu.Detail{}, stop
 			})
-			if !errors.Is(err, stop) || calls != 1 {
-				t.Fatalf("停止错误被吞：calls=%d，err=%v", calls, err)
+			if !errors.Is(err, stop) || calls != 1 || run.DetailCount != 0 {
+				t.Fatalf("导航前停止处理错误：calls=%d，detail_count=%d，err=%v", calls, run.DetailCount, err)
 			}
 			for _, id := range []int64{1, 2} {
 				finding := detailFinding(t, s, id)
@@ -623,12 +706,16 @@ func TestRunDetailRecognizedRiskWinsConcurrentCancellation(t *testing.T) {
 	s, run, _ := detailTestRun(t, 2)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	err := s.runDetailWith(ctx, run, func(context.Context, string) (xianyu.Detail, error) {
+	err := s.runDetailWith(ctx, run, func(_ context.Context, _ string, started func()) (xianyu.Detail, error) {
+		started()
 		cancel()
 		return xianyu.Detail{}, web.ErrDenied
 	})
 	if !errors.Is(err, web.ErrDenied) {
 		t.Fatalf("已识别的拒绝被取消吞掉：%v", err)
+	}
+	if run.DetailCount != 1 {
+		t.Fatalf("已打开的详情页在风控中断时没有计数：%d", run.DetailCount)
 	}
 }
 
@@ -637,7 +724,7 @@ func TestRunDetailCachedOnlyNeverOpensExpiredPage(t *testing.T) {
 	run.CachedOnly = true
 	detailExec(t, s.db, `UPDATE listings SET detail_fetched_at=? WHERE item_id='1'`, now-int64(24*time.Hour/time.Millisecond))
 	calls := 0
-	err := s.runDetailWith(t.Context(), run, func(context.Context, string) (xianyu.Detail, error) {
+	err := s.runDetailWith(t.Context(), run, func(context.Context, string, func()) (xianyu.Detail, error) {
 		calls++
 		return xianyu.Detail{}, nil
 	})
@@ -653,7 +740,8 @@ func TestRunDetailRechecksBlockedSellerAndCurrentExcludes(t *testing.T) {
 	for _, blocked := range []bool{false, true} {
 		t.Run(fmt.Sprint(blocked), func(t *testing.T) {
 			s, run, _ := detailTestRun(t, 1)
-			err := s.runDetailWith(t.Context(), run, func(context.Context, string) (xianyu.Detail, error) {
+			err := s.runDetailWith(t.Context(), run, func(_ context.Context, _ string, started func()) (xianyu.Detail, error) {
+				started()
 				if blocked {
 					detailExec(t, s.db, `INSERT INTO blocked_sellers(seller_id) VALUES('seller')`)
 				} else {
@@ -680,7 +768,8 @@ func TestRunDetailLateWorkCannotReplaceNewRevisionOrGeneration(t *testing.T) {
 	for _, generation := range []bool{false, true} {
 		t.Run(fmt.Sprint(generation), func(t *testing.T) {
 			s, run, _ := detailTestRun(t, 1)
-			err := s.runDetailWith(t.Context(), run, func(context.Context, string) (xianyu.Detail, error) {
+			err := s.runDetailWith(t.Context(), run, func(_ context.Context, _ string, started func()) (xianyu.Detail, error) {
+				started()
 				if generation {
 					detailExec(t, s.db, `UPDATE tasks SET search_generation=2 WHERE id=1`)
 				} else {
@@ -702,7 +791,8 @@ func TestRunDetailLateWorkCannotReplaceNewRevisionOrGeneration(t *testing.T) {
 func TestRunDetailStorageFailureStopsBeforeNextItem(t *testing.T) {
 	s, run, _ := detailTestRun(t, 2)
 	calls := 0
-	err := s.runDetailWith(t.Context(), run, func(context.Context, string) (xianyu.Detail, error) {
+	err := s.runDetailWith(t.Context(), run, func(_ context.Context, _ string, started func()) (xianyu.Detail, error) {
+		started()
 		calls++
 		detailExec(t, s.db, `CREATE TRIGGER fail_detail BEFORE UPDATE ON listings BEGIN SELECT RAISE(FAIL,'blocked'); END`)
 		return xianyu.Detail{Description: "成色好"}, nil

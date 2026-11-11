@@ -358,6 +358,7 @@ func requestDialer(dial func(context.Context, string, string) (net.Conn, error))
 }
 
 func logCompatibility(ctx context.Context, key client.CompatKey, before, after client.Compat) error {
-	slog.InfoContext(ctx, "模型兼容参数已更新", "provider_id", key.Provider.ID, "before", before, "after", after)
+	slog.InfoContext(ctx, "模型兼容参数已更新", "provider_id", key.Provider.ID, "model", key.Model,
+		"from", before.JSONMode, "to", after.JSONMode, "before", before, "after", after)
 	return nil
 }

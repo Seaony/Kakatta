@@ -148,6 +148,7 @@ func TestClearBusinessRollbackKeepsDataAndStats(t *testing.T) {
 }
 
 type maintenanceCache struct {
+	cacheCleanupStub
 	prune func(context.Context, int64) (int64, error)
 	clear func(context.Context) (int64, error)
 }

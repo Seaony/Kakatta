@@ -29,8 +29,16 @@ type Response struct {
 	Body          []byte
 	Err           error
 	MainDocument  bool
+	redirectRisk  redirectPunishment
 	done          bool
 	updatedAt     time.Time
+}
+
+type redirectPunishment struct {
+	order  uint64
+	url    string
+	method string
+	status int64
 }
 
 type Match struct {
@@ -112,7 +120,7 @@ func (c *Capture) listen() error {
 			}
 		case *network.EventRequestWillBeSent:
 			if e.Request != nil {
-				c.sentRequest(e.RequestID, e.Request, e.Type, e.FrameID, e.RedirectResponse != nil)
+				c.sentRequest(e.RequestID, e.Request, e.Type, e.FrameID, e.RedirectResponse)
 			}
 		case *network.EventResponseReceived:
 			if e.Response != nil {
@@ -133,38 +141,43 @@ func (c *Capture) listen() error {
 }
 
 func (c *Capture) sent(id network.RequestID, req *network.Request) {
-	c.sentRequest(id, req, "", "", false)
+	c.sentRequest(id, req, "", "", nil)
 }
 
-func (c *Capture) sentRequest(id network.RequestID, req *network.Request, typ network.ResourceType, frame cdp.FrameID, redirected bool) {
+func (c *Capture) sentRequest(id network.RequestID, req *network.Request, typ network.ResourceType, frame cdp.FrameID, redirect *network.Response) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	start, known := c.requests[id]
 	if !known {
-		if redirected || len(c.requests) >= maxKept {
+		if redirect != nil || len(c.requests) >= maxKept {
 			c.err = ErrCaptureOverflow
 			c.changed()
 			return
 		}
 		c.seq++
-		start = requestStart{seq: c.seq, main: typ == network.ResourceTypeDocument && frame == c.mainFrame, url: req.URL, method: req.Method}
+		start = requestStart{seq: c.seq, main: typ == network.ResourceTypeDocument && frame != "" && frame == c.mainFrame, url: req.URL, method: req.Method}
 		c.requests[id] = start
 	}
 	// 跳转仍是同一次请求，不能把操作前发出的请求变成新请求。
 	if r := c.byID[id]; r != nil {
+		if redirect != nil && (r.MainDocument || c.watches(r.RequestURL) || c.watches(r.URL)) {
+			for name, value := range redirect.Headers {
+				if strings.EqualFold(name, "bxpunish") && value == "1" {
+					// 保留最新的处罚头，正常跳转和最终响应都不能盖掉它。
+					c.arrival++
+					r.redirectRisk = redirectPunishment{order: c.arrival, url: r.URL, method: r.Method, status: redirect.Status}
+					break
+				}
+			}
+		}
 		r.URL, r.Method, r.updatedAt = req.URL, req.Method, time.Now()
 		c.changed()
 		return
 	}
-	main := start.main
-	watched := main
-	for _, f := range c.watch {
-		watched = watched || strings.Contains(req.URL, f)
-	}
-	if !watched {
+	if !start.main && !c.watches(req.URL) {
 		return
 	}
-	r := &Response{Seq: start.seq, Method: req.Method, URL: req.URL, RequestURL: start.url, RequestMethod: start.method, MainDocument: main, updatedAt: time.Now()}
+	r := &Response{Seq: start.seq, Method: req.Method, URL: req.URL, RequestURL: start.url, RequestMethod: start.method, MainDocument: start.main, updatedAt: time.Now()}
 	c.byID[id] = r
 	c.all = append(c.all, r)
 	slices.SortFunc(c.all, func(a, b *Response) int {
@@ -189,6 +202,15 @@ func (c *Capture) sentRequest(id network.RequestID, req *network.Request, typ ne
 		c.all = c.all[:maxKept]
 	}
 	c.changed()
+}
+
+func (c *Capture) watches(url string) bool {
+	for _, f := range c.watch {
+		if strings.Contains(url, f) {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *Capture) received(id network.RequestID, resp *network.Response) {
@@ -368,13 +390,26 @@ func (c *Capture) LastAfter(mark uint64, m Match) *Response {
 	return nil
 }
 
-// HeadersAfter 包括正文还没收完的响应，处罚头一到就能停止操作。
+// HeadersAfter 包括正文还没收完的响应，以及每条请求最近一次重定向的处罚头。
 func (c *Capture) HeadersAfter(mark uint64, m Match) []*Response {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	var out []*Response
 	for _, r := range c.all {
-		if r.Seq > mark && r.Headers != nil && m.matches(r) {
+		if r.Seq <= mark {
+			continue
+		}
+		if hop := r.redirectRisk; hop.order != 0 {
+			header := &Response{
+				Seq: r.Seq, HeaderOrder: hop.order, URL: hop.url, Method: hop.method, Status: hop.status,
+				RequestURL: r.RequestURL, RequestMethod: r.RequestMethod, MainDocument: r.MainDocument,
+				Headers: map[string]string{"bxpunish": "1"},
+			}
+			if m.matches(header) {
+				out = append(out, header)
+			}
+		}
+		if r.Headers != nil && m.matches(r) {
 			out = append(out, responseCopy(r))
 		}
 	}

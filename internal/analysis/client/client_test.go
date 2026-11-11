@@ -446,6 +446,10 @@ func TestContractCompatibilityAndParseAttemptsAreSeparate(t *testing.T) {
 	if len(requests) != 7 || len(result.Calls) != 7 {
 		t.Fatalf("兼容调整不能消耗解析重试：请求%d，Call%d", len(requests), len(result.Calls))
 	}
+	wantDowngrades := []JSONDowngrade{{JSONSchema, JSONObject, "provider-1", "vision-1"}, {JSONObject, JSONText, "provider-1", "vision-1"}}
+	if !slices.Equal(result.JSONDowngrades, wantDowngrades) {
+		t.Fatalf("应只记录两个结构化输出降级：%+v", result.JSONDowngrades)
+	}
 	if _, ok := requests[2].body["response_format"]; ok {
 		t.Fatal("text级别不发response_format")
 	}

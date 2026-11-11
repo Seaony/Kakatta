@@ -8,10 +8,14 @@ import (
 
 	"github.com/Seaony/Kakatta/internal/pacer"
 	"github.com/Seaony/Kakatta/internal/quota"
+	"github.com/Seaony/Kakatta/internal/remote"
 )
 
 // loginCookie 是表示已登录的 Cookie 名。Mekke 用它判断，上游里没有依据，待用真实页面确认（XIANYU.md 8.3 节）。
 const loginCookie = "unb"
+
+// ErrVerificationRefresh 表示页面没有遮罩，但还有未恢复的验证响应。
+var ErrVerificationRefresh = errors.New("页面可能还没刷新，请在画面里刷新一下页面，再点我已完成验证")
 
 // OpenLogin 只打开一次首页，失效和验证码留给用户，拒绝或环境异常立即结束。
 func (r *Runner) OpenLogin(ctx context.Context) error {
@@ -36,6 +40,23 @@ func (r *Runner) OpenLogin(ctx context.Context) error {
 	}
 	r.Log("登录首页已打开", map[string]any{"耗时毫秒": time.Since(start).Milliseconds()})
 	return nil
+}
+
+// ReopenVerification 等待恢复网址时也检查已经到达的拒绝信号。
+func (r *Runner) ReopenVerification(ctx context.Context, target string) (bool, error) {
+	var refresh bool
+	err := r.watchChecked(ctx, func(checkCtx context.Context) error {
+		var err error
+		refresh, err = r.VerificationPageNeedsRefresh(checkCtx)
+		return err
+	}, func(navCtx context.Context) error {
+		_, err := r.S.NavigateContext(navCtx, target, 30*time.Second)
+		return err
+	})
+	if err != nil {
+		return false, fmt.Errorf("重新打开验证网址：%w", err)
+	}
+	return refresh, nil
 }
 
 // BeginVerification 只确认用户已接手的具体响应，在途请求后来返回的拒绝不能被跳过。
@@ -87,7 +108,7 @@ func (r *Runner) ConfirmVerification(ctx context.Context) error {
 		}
 	}
 	if pending != nil {
-		return fmt.Errorf("%w；页面可能还没刷新，请在画面里刷新一下页面，再点我已完成验证", pending)
+		return fmt.Errorf("%w；%w", pending, ErrVerificationRefresh)
 	}
 	r.handleSignals(recovered)
 	return nil
@@ -95,18 +116,24 @@ func (r *Runner) ConfirmVerification(ctx context.Context) error {
 
 // CheckVerification 检查人工窗口是否还能继续；验证码和待登录留给用户，直接拒绝不能继续。
 func (r *Runner) CheckVerification(ctx context.Context) error {
+	_, err := r.VerificationPageNeedsRefresh(ctx)
+	return err
+}
+
+// VerificationPageNeedsRefresh 检查当前画面是否缺少验证框，不发出访问请求。
+func (r *Runner) VerificationPageNeedsRefresh(ctx context.Context) (bool, error) {
 	if err := contextError(ctx); err != nil {
-		return err
+		return false, err
 	}
 	_, _, responseErr := r.loginSignals()
 	if errors.Is(responseErr, ErrDenied) {
-		return responseErr
+		return false, responseErr
 	}
 	pageErr := r.checkPage(ctx, "检查人工验证窗口")
 	if pageErr != nil && !errors.Is(pageErr, ErrNeedVerify) && !errors.Is(pageErr, ErrLoginExpired) {
-		return pageErr
+		return false, pageErr
 	}
-	return responseErr
+	return pageErr == nil && responseErr == nil, responseErr
 }
 
 // ErrLoginTimeout 表示在规定时间内用户没有完成登录。
@@ -163,6 +190,11 @@ func (r *Runner) HasLoginCookieContext(ctx context.Context) (bool, error) {
 // WaitForLogin 等用户在这个浏览器窗口里自己点登录、扫码（XIANYU.md 8.2 节）。程序不点登录框里的任何东西。
 // 每秒在本地检查一次，不访问闲鱼。登录过程中出现的验证码也由用户在这个窗口里处理，所以这里不把验证遮罩当成错误。
 func (r *Runner) WaitForLogin(ctx context.Context, timeout time.Duration) error {
+	return r.WaitForLoginWithViewport(ctx, timeout, nil)
+}
+
+// WaitForLoginWithViewport 在原登录检查中附带发布可见验证框的位置。
+func (r *Runner) WaitForLoginWithViewport(ctx context.Context, timeout time.Duration, publish func(*remote.Viewport)) error {
 	deadline := time.Now().Add(timeout)
 	var latestExpired, latestSuccess uint64
 	sawLoginBox := false
@@ -181,6 +213,13 @@ func (r *Runner) WaitForLogin(ctx context.Context, timeout time.Duration) error 
 			}
 		}
 		ok, visibleBox, err := r.loginState(ctx)
+		if publish != nil && (err == nil || errors.Is(err, ErrNeedVerify)) {
+			var view *remote.Viewport
+			if errors.Is(err, ErrNeedVerify) {
+				view, _ = r.VerificationViewport(ctx)
+			}
+			publish(view)
+		}
 		if visibleBox && !sawLoginBox {
 			sawLoginBox = true
 			r.Log("登录框已出现", nil)

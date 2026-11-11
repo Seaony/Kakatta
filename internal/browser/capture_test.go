@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/network"
 )
 
@@ -47,7 +48,7 @@ func TestCaptureUsesOriginalSequenceAcrossUnwatchedRedirect(t *testing.T) {
 	c.sent("old", &network.Request{URL: "http://local/before", Method: "GET"})
 	mark := c.Mark()
 	c.sent("new", &network.Request{URL: "http://local/api/new", Method: "POST"})
-	c.sentRequest("old", &network.Request{URL: "http://local/api/old", Method: "GET"}, "", "", true)
+	c.sentRequest("old", &network.Request{URL: "http://local/api/old", Method: "GET"}, "", "", &network.Response{URL: "http://local/before", Status: 302})
 	finishForTest(c, "old", "old")
 	finishForTest(c, "new", "new")
 	resp, err := c.WaitAfter(context.Background(), mark, Match{}, time.Second)
@@ -109,7 +110,7 @@ func TestCaptureHeadersAvailableBeforeBody(t *testing.T) {
 func TestCaptureMainDocumentHeaderNeedsNoBody(t *testing.T) {
 	c := captureForTest()
 	c.setMainFrame("main")
-	c.sentRequest("1", &network.Request{URL: "http://local/home", Method: "GET"}, network.ResourceTypeDocument, "main", false)
+	c.sentRequest("1", &network.Request{URL: "http://local/home", Method: "GET"}, network.ResourceTypeDocument, "main", nil)
 	c.received("1", &network.Response{URL: "http://local/home", Headers: network.Headers{"bxpunish": "1"}})
 	r := c.DoneAfter(0, Match{})
 	if len(r) != 1 || !r[0].MainDocument || r[0].Headers["bxpunish"] != "1" {
@@ -151,7 +152,7 @@ func TestCaptureArrivalOrderIncludesLatestHeaderAndFailure(t *testing.T) {
 	c.sent("first", &network.Request{URL: "http://local/api/first", Method: "POST"})
 	c.received("first", &network.Response{URL: "http://local/api/redirect", Status: 302})
 	initial := c.HeadersAfter(0, Match{})[0]
-	c.sentRequest("first", &network.Request{URL: "http://local/api/final", Method: "POST"}, "", "", true)
+	c.sentRequest("first", &network.Request{URL: "http://local/api/final", Method: "POST"}, "", "", &network.Response{URL: "http://local/api/redirect", Status: 302})
 	c.sent("second", &network.Request{URL: "http://local/api/second", Method: "POST"})
 	finishForTest(c, "second", "ok")
 	c.received("first", &network.Response{URL: "http://local/api/final", Status: 200})
@@ -232,7 +233,7 @@ func TestCaptureKeepsAPIMatchesAfterRedirect(t *testing.T) {
 	c.Watch("/h5/mtop.")
 	c.sent("redirect", &network.Request{URL: "http://local/h5/mtop.fake/1.0/", Method: "POST"})
 	beforeRedirect := c.Mark()
-	c.sentRequest("redirect", &network.Request{URL: "http://local/punish?action=deny", Method: "GET"}, "", "", true)
+	c.sentRequest("redirect", &network.Request{URL: "http://local/punish?action=deny", Method: "GET"}, "", "", &network.Response{URL: "http://local/h5/mtop.fake/1.0/", Status: 302})
 	c.received("redirect", &network.Response{URL: "http://local/punish?action=deny", Status: 200, Headers: network.Headers{"bxpunish": "1"}})
 	c.finish("redirect", c.unfinished("redirect"), []byte(`{"ret":["SUCCESS::OK"],"data":{"url":"http://local/punish?action=deny"}}`), nil)
 	api := Match{URL: "/h5/mtop.fake/", Method: "POST"}
@@ -251,6 +252,106 @@ func TestCaptureKeepsAPIMatchesAfterRedirect(t *testing.T) {
 	}
 }
 
+func TestCaptureRedirectPunishmentBeforeFinalResponse(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		path  string
+		kind  network.ResourceType
+		frame cdp.FrameID
+	}{
+		{"主文档", "/home", network.ResourceTypeDocument, "main"},
+		{"接口", "/h5/mtop.fake/1.0/", network.ResourceTypeXHR, "main"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			c := newCapture(context.Background())
+			c.Watch("/h5/mtop.")
+			c.setMainFrame("main")
+			const landing, onward, final = "http://local/landing", "http://local/onward", "http://local/final"
+			first := "http://local" + test.path
+			c.sentRequest("redirect", &network.Request{URL: first, Method: "POST"}, test.kind, test.frame, nil)
+			seq := c.Mark()
+			changed := c.Changes()
+			c.sentRequest("redirect", &network.Request{URL: landing, Method: "GET"}, test.kind, test.frame,
+				&network.Response{URL: first, Status: 302, Headers: network.Headers{"BxPunish": "1"}})
+			select {
+			case <-changed:
+			default:
+				t.Fatal("处罚头没有唤醒等待者")
+			}
+			original := Match{URL: first, Method: "POST"}
+			headers := c.HeadersAfter(0, original)
+			if len(headers) != 1 || headers[0].Headers["bxpunish"] != "1" || headers[0].HeaderOrder == 0 {
+				t.Fatalf("最终响应前没有读到处罚头：%+v", headers)
+			}
+			previous := headers[0]
+			if previous.URL != first || previous.Method != "POST" || previous.Status != 302 || previous.Seq != seq ||
+				previous.MainDocument != (test.kind == network.ResourceTypeDocument) || len(c.DoneAfter(0, original)) != 0 {
+				t.Fatalf("处罚快照的请求信息错误或提前完成请求：%+v", previous)
+			}
+			previous.Headers["bxpunish"] = "改动副本"
+			if c.HeadersAfter(0, original)[0].Headers["bxpunish"] != "1" {
+				t.Fatal("改动处罚头副本影响了捕获记录")
+			}
+
+			c.sent("second", &network.Request{URL: "http://local/h5/mtop.second/1.0/", Method: "GET"})
+			c.received("second", &network.Response{URL: "http://local/h5/mtop.second/1.0/", Status: 200})
+			c.finish("second", c.unfinished("second"), []byte("其他接口响应"), nil)
+			other := c.LastAfter(0, Match{URL: "mtop.second"})
+			c.sentRequest("redirect", &network.Request{URL: onward, Method: "GET"}, test.kind, test.frame,
+				&network.Response{URL: landing, Status: 307, Headers: network.Headers{"bxpunish": "1"}})
+			headers = c.HeadersAfter(0, original)
+			if len(headers) != 1 || headers[0].URL != landing || headers[0].Method != "GET" || headers[0].Seq != seq ||
+				!(previous.HeaderOrder < other.BodyOrder && other.BodyOrder < headers[0].HeaderOrder) {
+				t.Fatalf("同一请求后续处罚必须按到达顺序刷新，先前处罚=%+v，其他响应=%+v，后续头=%+v", previous, other, headers)
+			}
+			riskOrder := headers[0].HeaderOrder
+
+			c.sentRequest("redirect", &network.Request{URL: final, Method: "GET"}, test.kind, test.frame,
+				&network.Response{URL: onward, Status: 302})
+			c.received("redirect", &network.Response{URL: final, Status: 200, Headers: network.Headers{"X-Test": "final"}})
+			if test.kind != network.ResourceTypeDocument {
+				c.finish("redirect", c.unfinished("redirect"), []byte("最终正文"), nil)
+			}
+			resp, err := c.WaitAfter(context.Background(), 0, original, time.Second)
+			if err != nil || resp.Seq != seq || resp.HeaderOrder <= riskOrder || resp.Headers["x-test"] != "final" ||
+				resp.Headers["bxpunish"] != "" || resp.URL != final || resp.Method != "GET" ||
+				resp.RequestURL != first || resp.RequestMethod != "POST" {
+				t.Fatalf("请求等待没有返回独立的最终响应：%+v %v", resp, err)
+			}
+			if test.kind != network.ResourceTypeDocument && (string(resp.Body) != "最终正文" || resp.BodyOrder <= resp.HeaderOrder) {
+				t.Fatalf("最终接口正文或到达顺序错误：%+v", resp)
+			}
+			headers = c.HeadersAfter(0, original)
+			if len(headers) != 2 || headers[0].HeaderOrder != riskOrder || headers[0].Headers["bxpunish"] != "1" ||
+				headers[1].HeaderOrder != resp.HeaderOrder || len(c.DoneAfter(0, original)) != 1 {
+				t.Fatalf("最终响应覆盖了处罚头或产生了额外的完成响应：%+v", headers)
+			}
+		})
+	}
+}
+
+func TestCaptureRedirectPunishmentOnlyOnRelevantHop(t *testing.T) {
+	c := newCapture(context.Background())
+	c.Watch("/h5/mtop.")
+	c.setMainFrame("main")
+	const image, child, api, final = "http://local/image", "http://local/child", "http://local/h5/mtop.fake/1.0/", "http://local/final"
+	punishment := func(url string) *network.Response {
+		return &network.Response{URL: url, Status: 302, Headers: network.Headers{"BxPunish": "1"}}
+	}
+	c.sentRequest("child", &network.Request{URL: child, Method: "GET"}, network.ResourceTypeDocument, "subframe", nil)
+	c.sentRequest("child", &network.Request{URL: final, Method: "GET"}, network.ResourceTypeDocument, "subframe", punishment(child))
+	c.sentRequest("image", &network.Request{URL: image, Method: "GET"}, network.ResourceTypeImage, "main", nil)
+	c.sentRequest("image", &network.Request{URL: api, Method: "GET"}, network.ResourceTypeImage, "main", punishment(image))
+	if got := c.HeadersAfter(0, Match{}); len(got) != 0 {
+		t.Fatalf("子框架和跳向接口的普通图片头不应当作风控：%+v", got)
+	}
+	c.sentRequest("image", &network.Request{URL: final, Method: "GET"}, network.ResourceTypeImage, "main", punishment(api))
+	got := c.HeadersAfter(0, Match{URL: api})
+	if len(got) != 1 || got[0].MainDocument || got[0].RequestURL != image || got[0].URL != api {
+		t.Fatalf("请求已经到了接口，这一跳的处罚应当可见：%+v", got)
+	}
+}
+
 func TestCaptureLocalAPIRedirectRetainsOriginalRequest(t *testing.T) {
 	requireBrowser(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -259,13 +360,13 @@ func TestCaptureLocalAPIRedirectRetainsOriginalRequest(t *testing.T) {
 			if r.Method != "POST" {
 				t.Errorf("原始请求方法错误：%s", r.Method)
 			}
+			w.Header().Set("bxpunish", "1")
 			http.Redirect(w, r, "/punish?action=deny", http.StatusFound)
 		case "/punish":
 			if r.Method != "GET" {
 				t.Errorf("302后请求方法错误：%s", r.Method)
 			}
 			w.Header().Set("Content-Type", "application/json")
-			w.Header().Set("bxpunish", "1")
 			fmt.Fprint(w, `{"ret":["SUCCESS::OK"],"data":{"url":"http://local/punish?action=deny"}}`)
 		default:
 			w.Header().Set("Content-Type", "text/html;charset=utf-8")
@@ -294,8 +395,10 @@ func TestCaptureLocalAPIRedirectRetainsOriginalRequest(t *testing.T) {
 		t.Fatalf("真实重定向的原始/最终请求或页面类型错误：%+v", r)
 	}
 	headers := s.Capture.HeadersAfter(mark, api)
-	if len(headers) != 1 || headers[0].Headers["bxpunish"] != "1" || !strings.Contains(string(r.Body), "action=deny") {
-		t.Fatal("真实重定向后的风控头或正文被漏掉")
+	if len(headers) != 2 || headers[0].Status != 302 || headers[0].Headers["bxpunish"] != "1" ||
+		headers[0].Seq != r.Seq || headers[0].HeaderOrder >= r.HeaderOrder || r.Headers["bxpunish"] != "" ||
+		!strings.Contains(string(r.Body), "action=deny") {
+		t.Fatalf("浏览器的重定向处罚头和正常最终正文应同时保留：%+v %+v", headers, r)
 	}
 	pageURL, err := s.URL()
 	if err != nil || strings.TrimSuffix(pageURL, "/") != srv.URL {

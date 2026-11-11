@@ -6,7 +6,7 @@ import { apiKey } from '../../api/keys';
 import { ApiError } from '../../api/errors';
 import { Button, Dialog, InlineMessage, Popover, Skeleton, StatePanel, StatusBadge } from '../../components/ui';
 import { useTranslation } from '../../i18n';
-import { formatDateTime, formatMoney } from '../../i18n/format';
+import { formatDateTime, formatInteger, formatMoney } from '../../i18n/format';
 import { ListingPanel } from '../results/listing-panel';
 import { DailyPrices } from './daily-prices';
 import { formatMarketPercent, formatStatisticMoney } from './format';
@@ -65,6 +65,11 @@ export function MarketContent({ taskId, data, mode, timezone, refreshing = false
     {error ? <InlineMessage tone="warning" action={<Button onClick={onRefresh}>{t('common.retry')}</Button>}><p>{t('web.market.refresh_failed')}</p><p>{errorText(error)}</p>{error instanceof ApiError && error.requestID && <p>{t('web.request_id', { request_id: error.requestID })}</p>}</InlineMessage> : null}
     {settingsError ? <InlineMessage tone="warning">{errorText(settingsError)}</InlineMessage> : null}
     {data.market.warnings.map((warning, index) => <InlineMessage key={index} tone="warning">{messageText(warning)}</InlineMessage>)}
+    <dl className="flex flex-wrap gap-x-xl gap-y-md tabular-nums">
+      <div><dt className="text-caption text-text-secondary">{t('web.market.today_new')}</dt><dd>{formatInteger(data.today_new_count, locale)}</dd></div>
+      <div><dt className="text-caption text-text-secondary">{t('web.market.today_recommended')}</dt><dd>{formatInteger(data.today_recommended_count, locale)}</dd></div>
+      <div><dt className="text-caption text-text-secondary">{t('web.market.personal_seller_share')}</dt><dd>{data.personal_seller_share === null ? <span title={t('web.market.no_classified_sellers')}>—</span> : new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 1 }).format(data.personal_seller_share)}</dd></div>
+    </dl>
     <div className="flex flex-wrap items-center gap-sm">
       <p className="text-body text-text-secondary">{t('web.market.listing_price_note')}</p>
       <Popover open={basisOpen} onOpenChange={setBasisOpen} label={t('web.market.statistics_basis')} trigger={<Button variant="plain">{t('web.market.statistics_basis')}</Button>}>

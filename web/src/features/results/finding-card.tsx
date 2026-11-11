@@ -2,9 +2,9 @@ import { useState } from 'react';
 import { useMessageText } from '../../api/hooks';
 import { ActionMenu, Button, Checkbox, CopyButton, StatusBadge } from '../../components/ui';
 import { useTranslation, type TranslationKey } from '../../i18n';
-import { formatMoney } from '../../i18n/format';
+import { formatMoney, formatSellerRegistration } from '../../i18n/format';
 import { StoredMessage } from '../../i18n/stored-message';
-import { effectiveRisks, isOverBudget, registrationAge, resultTime, safeExternalURL, type Finding, type Listing } from './model';
+import { effectiveRisks, isOverBudget, listingThumbnailURL, resultTime, safeExternalURL, type Finding, type Listing } from './model';
 import { NotificationStatus } from './notification-status';
 
 export type FindingAction = 'favorite' | 'dismiss' | 'restore' | 'block' | 'delete' | 'reanalyze' | 'unread';
@@ -14,13 +14,14 @@ const gradeKeys = {
   pricey: 'analysis.grade.pricey', avoid: 'analysis.grade.avoid',
 } satisfies Record<NonNullable<Finding['grade']>, TranslationKey>;
 
-export function ItemImage({ listing }: { listing: Listing }) {
+export function ItemImage({ listing, findingId }: { listing: Listing; findingId?: number }) {
   const { t } = useTranslation();
-  const [failedURL, setFailedURL] = useState<string | null>(null);
-  const imageURL = safeExternalURL(listing.thumbnail_url);
-  return imageURL && imageURL !== failedURL
-    ? <img src={imageURL} alt="" width={120} height={120} loading="lazy" crossOrigin="anonymous" referrerPolicy="no-referrer"
-      onError={() => setFailedURL(imageURL)} className="aspect-square w-full rounded-thumb object-cover" />
+  const [failedImage, setFailedImage] = useState<string | null>(null);
+  const imageURL = listingThumbnailURL(listing, findingId);
+  const imageKey = `${imageURL}|${listing.thumbnail_url}`;
+  return imageURL && imageKey !== failedImage
+    ? <img key={imageKey} src={imageURL} alt="" width={120} height={120} loading="lazy" referrerPolicy="no-referrer"
+      onError={() => setFailedImage(imageKey)} className="aspect-square w-full rounded-thumb object-cover" />
     : <div className="flex aspect-square items-center justify-center rounded-thumb bg-inset p-sm text-center text-caption text-text-secondary">{t('results.card.no_image')}</div>;
 }
 
@@ -51,12 +52,26 @@ export function FindingCard({ finding, selected, selectionFull, onSelect, onOpen
     ? Math.round((finding.fair_price - listing.price) / finding.fair_price * 100) : null;
   const risks = effectiveRisks(finding);
   const sellerKind = finding.seller_type;
-  const age = listing.seller_registration_days !== null && listing.seller_registration_days > 0 ? registrationAge(listing.seller_registration_days) : null;
-  const ageDuration = age === null ? '' : [age.years > 0 ? t('results.age.years', { count: age.years }) : '', age.months > 0 ? t('results.age.months', { count: age.months }) : ''].filter(Boolean).join(' ') || t('results.age.less_month');
+  const registrationDays = listing.seller_registration_days;
+  const registrationTitle = registrationDays !== null && registrationDays > 0 ? t('results.card.registration', { count: registrationDays }) : undefined;
+  let sellerReviewSummary: string | undefined;
+  if (finding.seller) {
+    const recentReviews = finding.seller.recent_rates?.slice(0, 10);
+    const sellerReviews = recentReviews?.filter((review) => review.role === 'seller') ?? [];
+    if (!recentReviews || recentReviews.some((review) => review.role !== 'seller' && review.role !== 'buyer') ||
+      sellerReviews.some((review) => review.kind !== 'good' && review.kind !== 'neutral' && review.kind !== 'bad')) {
+      sellerReviewSummary = t('results.card.reviews_unknown');
+    } else if (sellerReviews.length === 0) {
+      sellerReviewSummary = t('results.card.no_seller_reviews');
+    } else {
+      const bad = sellerReviews.filter((review) => review.kind === 'bad').length;
+      sellerReviewSummary = t(bad > 0 ? 'results.card.bad_reviews' : 'results.card.no_bad_reviews', { count: recentReviews.length, bad });
+    }
+  }
   return (
     <article className="min-w-0 border-b border-border py-xl" aria-labelledby={`result-${finding.id}-title`}>
       <div className="grid min-w-0 grid-cols-[4.5rem_minmax(0,1fr)] gap-md sm:grid-cols-[7.5rem_minmax(0,1fr)] sm:gap-lg">
-        <div><ItemImage listing={listing} /></div>
+        <div><ItemImage listing={listing} findingId={finding.id} /></div>
         <div className="min-w-0 space-y-md">
           <div className="flex min-w-0 flex-wrap items-start justify-between gap-sm">
             <Button variant="plain" onClick={onOpen} className="min-w-0 justify-start px-0 text-left text-section font-semibold" id={`result-${finding.id}-title`}>
@@ -101,10 +116,9 @@ export function FindingCard({ finding, selected, selectionFull, onSelect, onOpen
           </div>
           <p className="break-words text-body text-text-label">
             {sellerKind === 'personal' ? t('results.card.seller_personal') : sellerKind === 'dealer_suspect' ? t('results.card.seller_suspect') : t('results.card.seller_unknown')}
-            {age !== null && <> · <span title={t('results.card.registration', { count: listing.seller_registration_days })}>{t('results.age.prefix', { duration: ageDuration })}</span></>}
+            {' · '}<span title={registrationTitle}>{formatSellerRegistration(registrationDays, locale)}</span>
             {finding.seller?.seller_credit && <> · {finding.seller.seller_credit}</>}
-            {finding.seller && finding.seller.seller_rate_count !== null && finding.seller.seller_rate_count > 0 &&
-              finding.seller.seller_good_count === finding.seller.seller_rate_count && <> · {t('results.card.no_bad_reviews', { count: finding.seller.seller_rate_count })}</>}
+            {sellerReviewSummary && <> · {sellerReviewSummary}</>}
           </p>
           <div className="flex flex-wrap gap-x-lg gap-y-sm text-caption text-text-secondary">
             <span>{t('results.card.published', { time: listing.published_at === null ? t('results.published_unknown') : resultTime(listing.published_at, locale, timeZone) })}</span>

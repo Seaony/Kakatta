@@ -115,6 +115,7 @@ func (c *Client) Complete(ctx context.Context, req Request) (result Result, err 
 	for _, provider := range candidates {
 		part, callErr := c.runProvider(ctx, provider, req, string(req.Kind), secrets)
 		result.Calls = append(result.Calls, part.Calls...)
+		result.JSONDowngrades = append(result.JSONDowngrades, part.JSONDowngrades...)
 		result.Thinking = result.Thinking || part.Thinking
 		result.ProviderID, result.Model, result.JSONMode = part.ProviderID, part.Model, part.JSONMode
 		if callErr == nil {
@@ -304,7 +305,7 @@ func (c *Client) runProvider(ctx context.Context, provider Provider, req Request
 			}
 		default:
 			_, decodeErr := decodeResponse(body, false)
-			if req.Kind == Profile && strings.Contains(decoded.text, "<think>") {
+			if req.Kind == Profile && decoded.incompleteThinking {
 				failureReason = reason("profile_thinking", end.HTTPStatus, string(body))
 			} else if decodeErr != nil || structured && req.Validate(decoded.text) != nil {
 				failureReason = reason("parse", end.HTTPStatus, string(body))
@@ -330,9 +331,16 @@ func (c *Client) runProvider(ctx context.Context, provider Provider, req Request
 			return result, context.Canceled
 		}
 		if changed {
-			compat, err = c.saveCompat(ctx, key, compat, next, secrets)
+			old := compat
+			compat, err = c.saveCompat(ctx, key, old, next, secrets)
 			if err != nil {
 				return result, err
+			}
+			if old.JSONMode != compat.JSONMode {
+				result.JSONDowngrades = append(result.JSONDowngrades, JSONDowngrade{
+					From: old.JSONMode, To: compat.JSONMode,
+					Provider: redactPlain(provider.Name, secrets), Model: redactPlain(model, secrets),
+				})
 			}
 			continue
 		}
@@ -442,6 +450,7 @@ func (c *Client) saveCompat(ctx context.Context, key CompatKey, old, requested C
 	if !includesCompat(saved, requested) || !includesCompat(saved, old) || reflect.DeepEqual(old, saved) {
 		return Compat{}, infrastructure(fmt.Errorf("compatibility did not advance"), secrets)
 	}
+	key.Model = redactPlain(key.Model, secrets)
 	if err := c.deps.CompatLog(ctx, key, old, saved); err != nil {
 		return Compat{}, c.storeError(ctx, err, secrets)
 	}

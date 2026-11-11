@@ -236,6 +236,145 @@ func TestQueuedRunRechecksQuotaBeforeStarting(t *testing.T) {
 	}
 }
 
+func TestQueuedRunRebindsAccountAndPreservesItsReservation(t *testing.T) {
+	for _, change := range []string{"重试前改绑", "两次检查之间改绑"} {
+		t.Run(change, func(t *testing.T) {
+			s, now, taskID := runStartFixture(t)
+			runStartExec(t, s.db, `INSERT INTO accounts(id,name,state) VALUES(2,'新账号','active')`)
+			if _, err := s.RunNow(t.Context(), taskID); err != nil {
+				t.Fatal(err)
+			}
+			request := s.queuedStarts()[0]
+			defer s.releaseReservation(request.SessionID)
+			if change == "重试前改绑" {
+				session, ok, err := s.reserveStart(request, 2, *now)
+				if err != nil || !ok {
+					t.Fatalf("无法准备原账号的预留：%t %v", ok, err)
+				}
+				s.restoreQueuedReservation(session, request.AccountID)
+				if _, err := s.UpdateTask(t.Context(), taskID, taskPatch(map[string]any{"account_id": 2, "account_pinned": true})); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				firstCheck, releaseCheck := make(chan struct{}), make(chan struct{})
+				var checks atomic.Int64
+				ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+				defer cancel()
+				s.now = func() time.Time {
+					if checks.Add(1) == 1 {
+						close(firstCheck)
+						select {
+						case <-releaseCheck:
+						case <-ctx.Done():
+						}
+					}
+					return *now
+				}
+				finished := make(chan error, 1)
+				go func() {
+					started, blocked, err := s.tryStartRun(ctx, request)
+					if started || blocked != nil {
+						err = errors.Join(err, errors.New("绑定变化后未重新排队"))
+					}
+					finished <- err
+				}()
+				runStartWait(t, firstCheck)
+				s.mu.Lock()
+				close(releaseCheck)
+				// 唯一数据库连接归还时首个检查已结束，锁让预留等到改绑提交。
+				_, err := s.db.ExecContext(ctx, `UPDATE tasks SET account_id=2 WHERE id=?`, taskID)
+				s.mu.Unlock()
+				if err != nil {
+					t.Fatal(err)
+				}
+				select {
+				case err := <-finished:
+					if err != nil {
+						t.Fatal(err)
+					}
+				case <-ctx.Done():
+					t.Fatal(ctx.Err())
+				}
+				if queue := s.queuedStarts(); len(queue) != 1 || queue[0].SessionID != request.SessionID || queue[0].AccountID != 2 {
+					t.Fatalf("改绑丢失了排队请求或没更新账号：%+v", queue)
+				}
+			}
+			occupied, ok, err := s.reserveStart(startRequest{AccountID: 2, Kind: SessionLogin}, 2, *now)
+			if err != nil || !ok {
+				t.Fatalf("无法准备新账号的页面占用：%t %v", ok, err)
+			}
+			defer s.releaseReservation(occupied.View.ID)
+			if started, blocked, err := s.tryStartRun(t.Context(), request); err != nil || started || blocked != nil {
+				t.Fatalf("新账号忙时没有继续排队：%t %+v %v", started, blocked, err)
+			}
+			if queue := s.queuedStarts(); len(queue) != 1 || queue[0].SessionID != request.SessionID || !queue[0].QueuedAt.Equal(request.QueuedAt) || queue[0].AccountID != 2 {
+				t.Fatalf("排队身份或账号错误：%+v", queue)
+			}
+			if s.sessionSnapshot(1) != nil || runStartCount(t, s.db, `SELECT count(*) FROM meta WHERE key LIKE 'runtime.session.%'`) != 0 ||
+				runStartCount(t, s.db, `SELECT count(*) FROM run_records`) != 0 {
+				t.Fatal("等待页面时仍占用旧账号，或写了运行记录和恢复标记")
+			}
+			s.releaseReservation(occupied.View.ID)
+			factory := &scheduleFactory{opened: make(chan int64, 1), release: make(chan struct{})}
+			s.resources = factory
+			if _, err := s.scheduleOnce(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case account := <-factory.opened:
+				if account != 2 {
+					t.Fatalf("资源使用了旧账号：%d", account)
+				}
+			case <-time.After(3 * time.Second):
+				t.Fatal("新账号资源未启动")
+			}
+			s.mu.Lock()
+			run := s.runs[taskID]
+			s.mu.Unlock()
+			view := s.sessionSnapshot(2)
+			if run == nil || run.Account.ID != 2 || view == nil || view.ID != request.SessionID || s.sessionSnapshot(1) != nil ||
+				runStartCount(t, s.db, `SELECT count(*) FROM run_records WHERE account_id=2 AND ended_at IS NULL`) != 1 ||
+				runStartCount(t, s.db, `SELECT count(*) FROM meta WHERE key='runtime.session.2' AND json_extract(value,'$.session_id')=?`, request.SessionID) != 1 {
+				t.Fatalf("会话、运行记录和恢复标记没有对应同一个账号：%+v", view)
+			}
+			close(factory.release)
+			runStartWait(t, run.Done)
+			if runStartCount(t, s.db, `SELECT count(*) FROM meta WHERE key LIKE 'runtime.session.%'`) != 0 ||
+				runStartCount(t, s.db, `SELECT count(*) FROM accounts WHERE id=2 AND last_run_ended_at=? AND next_gap_seconds=180`, now.UnixMilli()) != 1 ||
+				runStartCount(t, s.db, `SELECT count(*) FROM accounts WHERE id=1 AND (last_used_at IS NOT NULL OR last_run_ended_at IS NOT NULL)`) != 0 {
+				t.Fatal("收尾改了旧账号，或没有为新账号结算间隔和清理标记")
+			}
+		})
+	}
+}
+
+func TestQueuedRunDropsReservationWhenReboundAccountIsBlocked(t *testing.T) {
+	s, now, taskID := runStartFixture(t)
+	runStartExec(t, s.db, `INSERT INTO accounts(id,name,state) VALUES(2,'未登录账号','signed_out')`)
+	if _, err := s.RunNow(t.Context(), taskID); err != nil {
+		t.Fatal(err)
+	}
+	request := s.queuedStarts()[0]
+	session, ok, err := s.reserveStart(request, 1, *now)
+	if err != nil || !ok {
+		t.Fatalf("无法准备排队会话：%t %v", ok, err)
+	}
+	s.restoreQueuedReservation(session, request.AccountID)
+	defer s.releaseReservation(request.SessionID)
+	if _, err := s.UpdateTask(t.Context(), taskID, taskPatch(map[string]any{"account_id": 2, "account_pinned": true})); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.scheduleOnce(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	_, browsers := s.runtimeStatusSnapshot()
+	if len(s.queuedStarts()) != 0 || len(browsers.Sessions) != 0 ||
+		runStartCount(t, s.db, `SELECT count(*) FROM run_records WHERE account_id=2 AND outcome='skipped'`) != 1 ||
+		runStartCount(t, s.db, `SELECT count(*) FROM meta WHERE key LIKE 'runtime.session.%'`) != 0 || s.resources.(*runStartFactory).calls.Load() != 0 {
+		t.Fatalf("跳过后仍留下预留，或没有按新账号记日志：%+v", browsers)
+	}
+}
+
 func TestRunStartRechecksPageLimitBeforeCreatingRun(t *testing.T) {
 	for _, trigger := range []RunTrigger{TriggerManual, TriggerAuto} {
 		t.Run(string(trigger), func(t *testing.T) {

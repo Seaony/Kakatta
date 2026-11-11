@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"database/sql"
+	"time"
 )
 
 // NotificationFinding 复用现有读取结果，只补通知需要的当前状态。
@@ -17,6 +18,10 @@ type NotificationFinding struct {
 
 func NotificationTaskTx(ctx context.Context, tx *sql.Tx, taskID int64) (Task, error) {
 	return loadTaskTx(ctx, tx, taskID)
+}
+
+func NotificationRetryExpired(failures int64, firstFailedAt *int64, nowMS int64) bool {
+	return failures >= 3 || firstFailedAt != nil && nowMS > *firstFailedAt && uint64(nowMS)-uint64(*firstFailedAt) > uint64((24*time.Hour).Milliseconds())
 }
 
 func NotificationFindingTx(ctx context.Context, tx *sql.Tx, findingID int64) (NotificationFinding, error) {

@@ -12,12 +12,13 @@ import type { Schema } from '../../api/types';
 import type { ResultsSearch } from '../../app/search';
 import { createAppQueryClient } from '../../app/query-client';
 import { createI18n, I18nProvider, type Locale } from '../../i18n';
+import { registrationAge } from '../../i18n/format';
 import { ResultsPage } from './page';
 import { ResultsFilters } from './filters';
 import { NotificationStatus } from './notification-status';
 import { ListingPanel } from './listing-panel';
 import { FindingCard } from './finding-card';
-import { detailQuery, effectiveRisks, findingQuery, isOverBudget, latestDeliveries, listingQuery, registrationAge, resultTime, safeExternalURL, selectableIDs, type Finding } from './model';
+import { detailQuery, effectiveRisks, findingQuery, isOverBudget, latestDeliveries, listingQuery, resultTime, safeExternalURL, selectableIDs, type Finding } from './model';
 
 const clients: ReturnType<typeof createAppQueryClient>[] = [];
 const restoreDownloadSpies: Array<() => void> = [];
@@ -80,7 +81,7 @@ function base(request: Request): Response | undefined {
   const url = new URL(request.url);
   if (url.pathname === '/api/v1/tasks') return json({ items: [task()], next_cursor: null, total: 1 } satisfies Schema<'PageTaskView'>);
   if (url.pathname === '/api/v1/tasks/7') return json(task());
-  if (url.pathname === '/api/v1/tasks/7/market') return json({ market: { snapshot_at: null, groups: [], task_trend: [], warnings: [] }, insight: null } satisfies Schema<'MarketView'>);
+  if (url.pathname === '/api/v1/tasks/7/market') return json({ market: { snapshot_at: null, groups: [], task_trend: [], warnings: [] }, insight: null, today_new_count: 0, today_recommended_count: 0, personal_seller_share: null } satisfies Schema<'MarketView'>);
   if (url.pathname === '/api/v1/settings') return json({ values: { 'general.timezone': 'Asia/Singapore' }, sources: {}, warnings: [] } satisfies Schema<'SettingsSnapshot'>);
   return undefined;
 }
@@ -262,7 +263,7 @@ describe('结果契约映射', () => {
     view.rerender(<I18nProvider instance={createI18n()}><FindingCard {...props} finding={finding({ listing: listing({ thumbnail_url: 'https://example.invalid/image.jpg' }) })} /></I18nProvider>);
     expect(screen.getByRole('link', { name: '在闲鱼打开' }).getAttribute('href')).toBe('https://example.invalid/item/8001');
     expect(screen.getByRole('button', { name: '复制链接' }).hasAttribute('disabled')).toBe(false);
-    expect(view.container.querySelector('img')?.getAttribute('src')).toBe('https://example.invalid/image.jpg');
+    expect(view.container.querySelector('img')?.getAttribute('src')).toBe('/api/v1/listings/8001/thumbnail?finding_id=31');
   });
 
   test.each(['zh-CN', 'en'] as const)('固定风险按ID取%s译名，自定义同名风险保留原文', (locale) => {
@@ -304,6 +305,23 @@ describe('结果契约映射', () => {
 });
 
 describe('推送事实展示', () => {
+  test('全败可重试、已取消和放弃按真实意图显示，发送前失败不伪造投递', () => {
+    const invalid = { code: 'notification.delivery.invalid_message', args: { channel: '本地渠道' } };
+    const item = finding({ notify_kind: 'recommended', notification_status: { state: 'retrying', reason: invalid } });
+    const content = (current: Finding) => <I18nProvider instance={createI18n()}><NotificationStatus finding={current} /></I18nProvider>;
+    const mounted = render(content(item));
+    expect(screen.getByText(/推送状态: 下次运行会再发/)).toBeTruthy();
+    expect(screen.getByText('本地渠道 发送失败：通知内容超过限制或格式无效')).toBeTruthy();
+    expect(screen.queryByText('本地渠道')).toBeNull();
+    mounted.rerender(content({ ...item, notification_status: { state: 'cancelled', reason: { code: 'notify.cancelled_dismissed', args: {} } } }));
+    expect(screen.getByText(/没有推送：商品已标为不感兴趣，取消待发提醒/)).toBeTruthy();
+    expect(screen.queryByText(/下次运行会再发|等待推送/)).toBeNull();
+    mounted.rerender(content({ ...item, notification_status: { state: 'abandoned', reason: invalid } }));
+    expect(screen.getByText(/没有推送：发送失败：所有渠道都没发出去，不再重发/)).toBeTruthy();
+    expect(screen.getByText('本地渠道 发送失败：通知内容超过限制或格式无效')).toBeTruthy();
+    expect(screen.queryByText(/下次运行会再发|等待推送/)).toBeNull();
+  });
+
   test('部分渠道成功仍显示失败细节，不承诺自动补发', () => {
     const delivery: Schema<'DeliverySummary'> = { id: 1, at: 1794355200000, channel_id: 1, channel_name: 'Bark', task_id: 7, kind: 'recommended', item_count: 1, ok: true, error: null };
     const item = finding({ notified_at: 1794355200000, deliveries: [delivery, { ...delivery, id: 2, channel_id: 2, channel_name: 'Telegram', ok: false, error: { code: 'notify.error.http_status', args: { status: 401 } } }] });
@@ -320,6 +338,39 @@ describe('推送事实展示', () => {
     expect(screen.getByText('降价')).toBeTruthy();
     expect(screen.getAllByText('已推送').length).toBeGreaterThan(0);
     expect(screen.queryByText(/^没有推送：/)).toBeNull();
+  });
+});
+
+describe('结果卡近期卖家评价', () => {
+  test.each(['zh-CN', 'en'] as const)('%s 只统计最近十条内的卖家差评，并区分中评、无样本和未知', (locale) => {
+    const good = { role: 'seller', kind: 'good', text: null };
+    const bad = { ...good, kind: 'bad' };
+    const neutral = { ...good, kind: 'neutral' };
+    const buyerBad = { ...bad, role: 'buyer' };
+    const profile: Schema<'SellerProfile'> = {
+      seller_id: 'seller', nick: null, avatar_url: null, introduction: null, seller_credit: null, buyer_credit: null,
+      seller_credit_level: null, buyer_credit_level: null, item_count: null, rate_count: null, on_sale_count: null,
+      sold_count: null, seller_good_rate: 75, buyer_good_rate: null, seller_good_count: 15, seller_rate_count: 20,
+      buyer_good_count: null, buyer_rate_count: null, recent_items: null, recent_rates: null, fetched_at: 0,
+    };
+    const cases: Array<{ reviews: Schema<'SellerProfile'>['recent_rates']; zh: string; en: string }> = [
+      { reviews: [bad, buyerBad, neutral, ...Array(7).fill(good), bad], zh: '最近 10 条评价中有 1 条卖家差评', en: 'Negative ratings as a seller in the latest 10 reviews: 1' },
+      { reviews: [neutral, buyerBad], zh: '最近 2 条评价中无卖家差评', en: 'No negative ratings as a seller in the latest 2 reviews' },
+      { reviews: [], zh: '暂无近期卖家评价', en: 'No recent seller reviews' },
+      { reviews: [buyerBad], zh: '暂无近期卖家评价', en: 'No recent seller reviews' },
+      { reviews: null, zh: '近期卖家评价未知', en: 'Recent seller reviews unknown' },
+      { reviews: [{ ...good, kind: null }], zh: '近期卖家评价未知', en: 'Recent seller reviews unknown' },
+      { reviews: [{ ...bad, role: null }], zh: '近期卖家评价未知', en: 'Recent seller reviews unknown' },
+    ];
+    render(<I18nProvider instance={createI18n(locale)}>{cases.map(({ reviews }, index) => {
+      const item = finding({ id: 31 + index, seller: { ...profile, recent_rates: reviews } });
+      return <FindingCard key={item.id} finding={item} selected={false} selectionFull={false} busy={false}
+        onSelect={() => {}} onOpen={() => {}} onAction={() => {}} />;
+    })}</I18nProvider>);
+    const articles = screen.getAllByRole('article');
+    for (const [index, testCase] of cases.entries()) {
+      expect(articles[index]?.textContent).toContain(locale === 'zh-CN' ? testCase.zh : testCase.en);
+    }
   });
 });
 
@@ -395,6 +446,50 @@ describe('结果历史消息', () => {
 });
 
 describe('结果页面实际请求与恢复', () => {
+  test('全任务第二页跨任务切换相邻商品后返回原页', async () => {
+    const first = finding({ id: 30, item_id: '8000', listing: listing({ item_id: '8000', title: '第一页相机' }) });
+    const current = finding({ is_read: true, next_id: 32 });
+    const neighbor = finding({ id: 32, task_id: 8, item_id: '8002', listing: listing({ item_id: '8002', title: '另一任务的镜头' }),
+      task: { ...current.task, id: 8, name: '镜头' }, is_read: true, previous_id: 31 });
+    const detailRequests: Array<{ path: string; query: Record<string, string> }> = [];
+    await page(async (request) => {
+      const url = new URL(request.url);
+      if (url.pathname === '/api/v1/findings') {
+        if (url.searchParams.get('cursor') === 'page-two') {
+          if (url.searchParams.has('task_id')) return json({ error: { code: 'web.invalid_response', args: {} }, fields: [], request_id: 'wrong-cursor' } satisfies Schema<'ErrorEnvelope'>, 400);
+          return json({ items: [current], next_cursor: 'page-three', total: 3 } satisfies Schema<'PageFindingView'>);
+        }
+        return json({ items: [first], next_cursor: 'page-two', total: 3 } satisfies Schema<'PageFindingView'>);
+      }
+      if (url.pathname === '/api/v1/findings/31' || url.pathname === '/api/v1/findings/32') {
+        detailRequests.push({ path: url.pathname, query: Object.fromEntries(url.searchParams) });
+        return json(url.pathname.endsWith('/31') ? current : neighbor);
+      }
+      if (url.pathname === '/api/v1/risk-dictionary') return json([]);
+      if (url.pathname.endsWith('/prices')) return json({ items: [], next_cursor: null, total: 0 });
+      return base(request) ?? new Response(null, { status: 404 });
+    }, { limit: 1 });
+
+    const user = userEvent.setup();
+    await screen.findByRole('button', { name: first.listing.title });
+    await user.click(screen.getByRole('button', { name: '下一页' }));
+    await user.click(await screen.findByRole('button', { name: current.listing.title }));
+    await user.click(await screen.findByRole('button', { name: '下一个商品' }));
+    await screen.findByRole('heading', { name: neighbor.listing.title });
+    expect((screen.getByRole('button', { name: '上一个商品' }) as HTMLButtonElement).disabled).toBe(false);
+    await user.click(screen.getByRole('button', { name: '返回结果' }));
+
+    expect(detailRequests).toEqual([
+      { path: '/api/v1/findings/31', query: { view: 'default' } },
+      { path: '/api/v1/findings/32', query: { view: 'default' } },
+    ]);
+    await screen.findByRole('button', { name: current.listing.title });
+    expect((screen.getByRole('combobox', { name: '任务' }) as HTMLSelectElement).value).toBe('');
+    await waitFor(() => expect((screen.getByRole('button', { name: '上一页' }) as HTMLButtonElement).disabled).toBe(false));
+    await user.click(screen.getByRole('button', { name: '上一页' }));
+    await screen.findByRole('button', { name: first.listing.title });
+  });
+
   test('单条删除失败保留商品和确认框，204后才删除并刷新', async () => {
     let deleted = false;
     let attempts = 0;

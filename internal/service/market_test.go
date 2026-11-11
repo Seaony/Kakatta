@@ -182,6 +182,80 @@ func TestMarketKeepsLatestUnknownPriceAndKeywordSamples(t *testing.T) {
 	}
 }
 
+func TestMarketFindingStatsUseLocalDayAndRecommendationRules(t *testing.T) {
+	s, db, task, now := marketTestService(t)
+	if _, err := s.settings.Apply(t.Context(), settings.Values{"general.timezone": json.RawMessage(`"America/New_York"`)}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(t.Context(), `UPDATE tasks SET budget_max=100 WHERE id=?`, task.ID); err != nil {
+		t.Fatal(err)
+	}
+	today := time.Date(2026, 11, 11, 5, 0, 0, 0, time.UTC).UnixMilli()
+	first := time.Date(2026, 10, 29, 4, 0, 0, 0, time.UTC).UnixMilli()
+	for _, row := range []struct {
+		id, decision     string
+		at               int64
+		price, grade     any
+		seller           any
+		baseline, hidden bool
+	}{
+		{"baseline", "scored", today, 100, "good", "personal", true, false},
+		{"unpriced", "scored", now, 99, nil, "personal", false, false},
+		{"over-budget", "scored", today, 101, "steal", "unknown", false, false},
+		{"unknown-price", "scored", today, nil, "good", nil, false, false},
+		{"hidden", "scored", today, 99, "good", nil, false, true},
+		{"blocked", "scored", today, 99, "good", nil, false, false},
+		{"pending", "pending", today, 99, nil, nil, false, false},
+		{"yesterday", "scored", today - 1, 99, "good", nil, false, false},
+		{"oldest-in-window", "scored", first, 99, "good", "dealer_suspect", false, false},
+		{"too-old", "scored", first - 1, 99, "good", "personal", false, false},
+		{"future", "scored", now + 1, 99, "good", "personal", false, false},
+	} {
+		if _, err := db.ExecContext(t.Context(), `INSERT INTO listings(item_id,title,desktop_url,price,seller_id,is_dismissed,first_seen_at,last_seen_at)
+			VALUES(?,?,?,?,?,?,?,?)`, row.id, row.id, "https://example.invalid/item/"+row.id, row.price, row.id, row.hidden, row.at, row.at); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.ExecContext(t.Context(), `INSERT INTO findings(task_id,item_id,search_generation,found_at,is_baseline,decision,stage,grade,seller_type,is_read)
+			VALUES(?,?,1,?,?,?,'done',?,?,0)`, task.ID, row.id, row.at, row.baseline, row.decision, row.grade, row.seller); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.ExecContext(t.Context(), `INSERT INTO blocked_sellers(seller_id) VALUES('blocked')`); err != nil {
+		t.Fatal(err)
+	}
+	// 用回拨后的系统时钟读取，统计仍以已观察到的本地今天为准。
+	s.now = func() time.Time { return time.UnixMilli(today - 1) }
+	view, err := s.GetMarket(t.Context(), task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wire struct {
+		New         int64    `json:"today_new_count"`
+		Recommended int64    `json:"today_recommended_count"`
+		Personal    *float64 `json:"personal_seller_share"`
+	}
+	if err := json.Unmarshal([]byte(marketTestJSON(t, view)), &wire); err != nil {
+		t.Fatal(err)
+	}
+	if wire.New != 7 || wire.Recommended != 2 || wire.Personal == nil || *wire.Personal != 2.0/3 {
+		t.Fatalf("统计未使用本地日界、推荐口径或已分类卖家的分母：%s", marketTestJSON(t, wire))
+	}
+	if _, err := db.ExecContext(t.Context(), `UPDATE findings SET seller_type='unknown' WHERE seller_type IS NOT NULL`); err != nil {
+		t.Fatal(err)
+	}
+	view, err = s.GetMarket(t.Context(), task.ID)
+	if err != nil || view.PersonalSellerShare != nil {
+		t.Fatalf("未分类的卖家误计为非个人：%+v %v", view, err)
+	}
+	if _, err := db.ExecContext(t.Context(), `UPDATE findings SET seller_type='dealer' WHERE item_id='oldest-in-window'`); err != nil {
+		t.Fatal(err)
+	}
+	view, err = s.GetMarket(t.Context(), task.ID)
+	if err != nil || view.PersonalSellerShare == nil || *view.PersonalSellerShare != 0 {
+		t.Fatalf("已分类但没有个人卖家时应该显示 0：%+v %v", view, err)
+	}
+}
+
 func TestMarketPublicPaginationInsightsAndFailurePaths(t *testing.T) {
 	s, db, task, now := marketTestService(t)
 	for i := 0; i < 6; i++ {

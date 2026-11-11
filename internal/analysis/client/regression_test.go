@@ -74,17 +74,51 @@ func TestHTTPTimeoutAccountsThenRotatesWithoutRetryingProvider(t *testing.T) {
 }
 
 func TestProfileUnclosedThinkingIsUnavailableWithoutParseRetry(t *testing.T) {
-	f, _, accounting, _, deps := newContractFixture(t, 2, func(w http.ResponseWriter, _ *http.Request, _ int, _ map[string]any) {
-		fmt.Fprint(w, contractSuccess("<think>unfinished", "stop", contractUsage()))
-	})
-	_, err := newContractClient(t, deps).Complete(context.Background(), contractJob(Profile))
-	var failure *Failure
-	if !errors.As(err, &failure) || failure.Last.Code != "analysis.client.profile_thinking" || len(f.snapshot()) != 1 {
-		t.Fatalf("未闭合思考要给生成提示，不重试或轮换：%v", err)
+	for _, test := range []struct{ name, body, code string }{
+		{"unclosed", "<think>unfinished", "profile_thinking"},
+		{"closed_only", " <think>只有思考</think> \n <think>第二段</think> ", "profile_thinking"},
+		{"empty_without_tags", " ", "parse"},
+		{"closed_then_answer", `<think>草稿</think>{"ok":true}`, ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			f, _, accounting, _, deps := newContractFixture(t, 2, func(w http.ResponseWriter, _ *http.Request, _ int, _ map[string]any) {
+				fmt.Fprint(w, contractSuccess(test.body, "stop", contractUsage()))
+			})
+			result, err := newContractClient(t, deps).Complete(context.Background(), contractJob(Profile))
+			var failure *Failure
+			if test.code == "" {
+				if err != nil || result.Text != `{"ok":true}` {
+					t.Fatalf("应保留思考之后的正文：%+v %v", result, err)
+				}
+			} else if !errors.As(err, &failure) || failure.Last.Code != "analysis.client."+test.code {
+				t.Fatalf("思考与空正文的提示不正确：%v", err)
+			}
+			_, ends, _ := accounting.snapshot()
+			if len(f.snapshot()) != 1 || len(ends) != 1 || ends[0].OK != (test.code == "") {
+				t.Fatalf("清单生成不能重试或轮换，不可用响应不能记成功：%+v", ends)
+			}
+		})
 	}
-	_, ends, _ := accounting.snapshot()
-	if len(ends) != 1 || ends[0].OK {
-		t.Fatalf("不可用生成不能记成功：%+v", ends)
+}
+
+func TestDowngradeEventSurvivesQuotaAndRedactsProviderFields(t *testing.T) {
+	f, repo, accounting, _, deps := newContractFixture(t, 1, func(w http.ResponseWriter, _ *http.Request, _ int, _ map[string]any) {
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprint(w, `{"error":"response_format unsupported","usage":{"prompt_tokens":2,"completion_tokens":3}}`)
+	})
+	secret := repo.providers[0].APIKey
+	repo.providers[0].Name += " " + secret
+	repo.providers[0].VisionModel += " " + secret
+	accounting.limit = 5
+	var loggedModel string
+	deps.CompatLog = func(_ context.Context, key CompatKey, _, _ Compat) error { loggedModel = key.Model; return nil }
+	result, err := newContractClient(t, deps).Complete(t.Context(), contractJob(Analysis))
+	if !errors.Is(err, ErrDailyLimit) || len(f.snapshot()) != 1 || len(result.JSONDowngrades) != 1 {
+		t.Fatalf("次次请求被额度挡住时应保留实际发生的降级：%+v %v", result.JSONDowngrades, err)
+	}
+	want := JSONDowngrade{JSONSchema, JSONObject, "provider-1 [REDACTED]", "vision-1 [REDACTED]"}
+	if result.JSONDowngrades[0] != want || loggedModel != want.Model {
+		t.Fatalf("降级日志的服务商或模型没有遮密：%+v %s", result.JSONDowngrades, loggedModel)
 	}
 }
 

@@ -4747,6 +4747,82 @@
         ]
       }
     },
+    "/api/v1/listings/{item_id}/thumbnail": {
+      "get": {
+        "operationId": "getListingThumbnail",
+        "summary": "读取商品缩略图",
+        "description": "从本地缓存读取或通过任务账号代理下载已保存的缩略图。",
+        "tags": [
+          "结果"
+        ],
+        "security": [
+          {
+            "CookieSession": []
+          },
+          {
+            "SecureCookieSession": []
+          },
+          {
+            "BearerToken": []
+          }
+        ],
+        "x-authentication": "session_or_api_token",
+        "responses": {
+          "200": {
+            "description": "返回 JPEG 缩略图。",
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "商品暂时没有可用的缩略图。"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "finding_id",
+            "in": "query",
+            "required": false,
+            "description": "使用这条发现对应的任务账号；省略时取商品最近一条发现。",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          }
+        ]
+      }
+    },
     "/api/v1/blocked-sellers": {
       "get": {
         "operationId": "listBlockedSellers",
@@ -11539,6 +11615,28 @@
         "type": "string",
         "x-go-type": "service.FindingStage"
       },
+      "FindingNotificationStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "state": {
+            "enum": ["retrying", "cancelled", "abandoned"],
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LocalizedMessage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": ["state", "reason"],
+        "type": "object",
+        "x-go-type": "service.FindingNotificationStatus"
+      },
       "FindingView": {
         "additionalProperties": false,
         "properties": {
@@ -11616,6 +11714,24 @@
               "$ref": "#/components/schemas/DeliverySummary"
             },
             "type": "array"
+          },
+          "notification_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FindingNotificationStatus"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "首次推荐或新商品提醒的重试和终止状态。"
+          },
+          "price_drop_deliveries": {
+            "items": {
+              "$ref": "#/components/schemas/DeliverySummary"
+            },
+            "type": "array",
+            "description": "每个渠道最近的降价投递，包含发在合并提醒里的降价。"
           },
           "drop_notified_at": {
             "anyOf": [
@@ -12861,11 +12977,39 @@
           },
           "market": {
             "$ref": "#/components/schemas/AnalysisMarketResult"
+          },
+          "personal_seller_share": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "近 14 个自然日的个人卖家占比，无可分类卖家时为 null。"
+          },
+          "today_new_count": {
+            "format": "int64",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "today_recommended_count": {
+            "format": "int64",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
           }
         },
         "required": [
           "market",
-          "insight"
+          "insight",
+          "personal_seller_share",
+          "today_new_count",
+          "today_recommended_count"
         ],
         "type": "object",
         "x-go-type": "service.MarketView"
@@ -14873,6 +15017,10 @@
               }
             ],
             "description": "UTC Unix 整数毫秒；未知时为 null。"
+          },
+          "refresh_verification": {
+            "type": "boolean",
+            "description": "重开验证网址后当前画面没有验证框，用户可以在远程画面里手动刷新。"
           },
           "remote_path": {
             "anyOf": [

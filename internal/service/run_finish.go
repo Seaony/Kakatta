@@ -202,7 +202,10 @@ func countRunRecommendationsTx(ctx context.Context, tx *sql.Tx, run *runExecutio
 func finishRecord(run *runExecution, cause error) RunRecord {
 	record := run.Record
 	record.ID = run.Ref.RunID
-	record.PageCount, record.ScannedCount = &run.PageCount, &run.SearchSaved.ScannedCount
+	record.PageCount = &run.PageCount
+	if record.ScannedCount == nil {
+		record.ScannedCount = &run.SearchSaved.ScannedCount
+	}
 	record.NewCount, record.Layer1Rejected = &run.SearchSaved.NewCount, &run.SearchSaved.Layer1Rejected
 	record.Layer2Count, record.Layer2Rejected = &run.Layer2Count, &run.Layer2Rejected
 	record.DetailCount, record.SellerPageCount = &run.DetailCount, &run.SellerPageCount
@@ -352,9 +355,10 @@ func (s *Service) finishLayoutEventTx(ctx context.Context, tx *sql.Tx, run *runE
 		}
 		if hadItems {
 			var emptyRuns int
+			// 旧失败记录的扫描数可能未保存，只有本次首屏已知或旧次成功才能确认空页。
 			if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM
-				(SELECT page_count,scanned_count FROM run_records WHERE task_id=? AND ended_at IS NOT NULL ORDER BY started_at DESC,id DESC LIMIT 3)
-				WHERE page_count>0 AND scanned_count=0`, run.Ref.TaskID).Scan(&emptyRuns); err != nil {
+				(SELECT id,outcome,page_count,scanned_count FROM run_records WHERE task_id=? AND ended_at IS NOT NULL ORDER BY started_at DESC,id DESC LIMIT 3)
+				WHERE page_count=1 AND scanned_count=0 AND (id=? OR outcome='success')`, run.Ref.TaskID, run.Ref.RunID).Scan(&emptyRuns); err != nil {
 				return 0, false, err
 			}
 			layout = emptyRuns == 3

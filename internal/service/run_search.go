@@ -71,6 +71,17 @@ func (s *Service) runSearch(ctx context.Context, run *runExecution) (err error) 
 		return err
 	}
 	var items []xianyu.SearchItem
+	defer func() {
+		if err != nil && len(items) > 0 {
+			// 后页中断时搜索结果没有入库，日志仍要保留实际看到的商品数。
+			seen := make(map[string]struct{}, len(items))
+			for _, item := range items {
+				seen[item.ID] = struct{}{}
+			}
+			count := int64(len(seen))
+			run.Record.ScannedCount = &count
+		}
+	}()
 	err = collectSearchPages(ctx, response, run.Task.MaxPages, runner.NextPage,
 		func(page int64, found []xianyu.SearchItem) {
 			run.PageCount = page

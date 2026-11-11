@@ -33,22 +33,28 @@ type detailInput struct {
 	Snapshot settings.Snapshot
 }
 
+type detailMarketSnapshot struct {
+	profile analysis.Profile
+	result  *analysis.MarketResult
+}
+
 var errDetailWorkChanged = errors.New("详情工作已变化")
 
 func (s *Service) runDetail(ctx context.Context, run *runExecution) error {
-	return s.runDetailWith(ctx, run, func(ctx context.Context, target string) (xianyu.Detail, error) {
+	return s.runDetailWith(ctx, run, func(ctx context.Context, target string, started func()) (xianyu.Detail, error) {
 		if run.Resource == nil || run.Resource.Runner() == nil {
 			return xianyu.Detail{}, storageFailure(errors.New("详情浏览器未就绪"))
 		}
-		return run.Resource.Runner().OpenDetail(ctx, target)
+		return run.Resource.Runner().OpenDetailWithStart(ctx, target, started)
 	})
 }
 
-func (s *Service) runDetailWith(ctx context.Context, run *runExecution, open func(context.Context, string) (xianyu.Detail, error)) error {
+func (s *Service) runDetailWith(ctx context.Context, run *runExecution, open func(context.Context, string, func()) (xianyu.Detail, error)) error {
 	limit, err := accountSetting(run.Config, "max_details_per_run")
 	if err != nil {
 		return storageFailure(err)
 	}
+	var market detailMarketSnapshot
 	for index, work := range run.P {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -79,14 +85,17 @@ func (s *Service) runDetailWith(ctx context.Context, run *runExecution, open fun
 				return nil
 			}
 			// Runner 自己申请额度并等待，编排层只限制本次打开数量。
-			result, openErr := open(ctx, input.Item.DesktopURL)
+			opened := false
+			result, openErr := open(ctx, input.Item.DesktopURL, func() { opened = true })
+			if opened {
+				run.DetailCount++
+			}
 			if err := detailStop(ctx, openErr); err != nil {
 				return err
 			}
 			if errors.Is(openErr, web.ErrQuota) {
 				return nil
 			}
-			run.DetailCount++
 			if openErr != nil {
 				if err := s.detailFailure(ctx, work, findingMessage("run.detail_failed", nil), true, false); err != nil {
 					return err
@@ -122,7 +131,7 @@ func (s *Service) runDetailWith(ctx context.Context, run *runExecution, open fun
 			}
 			continue
 		}
-		if err := s.detailModel(ctx, run, work, input, limit, run.Spec.Proxy); err != nil {
+		if err := s.detailModel(ctx, run, work, input, limit, &market); err != nil {
 			if errors.Is(err, client.ErrNoProvider) || errors.Is(err, client.ErrDailyLimit) {
 				cause := "no_provider"
 				if errors.Is(err, client.ErrDailyLimit) {
@@ -307,7 +316,7 @@ func (s *Service) detailAwait(ctx context.Context, works []WorkRef, cause string
 	return nil
 }
 
-func (s *Service) detailModel(ctx context.Context, run *runExecution, work WorkRef, input detailInput, limit int64, fixedProxy *url.URL) error {
+func (s *Service) detailModel(ctx context.Context, run *runExecution, work WorkRef, input detailInput, limit int64, market *detailMarketSnapshot) error {
 	if s.models == nil {
 		return fmt.Errorf("%w：商品判断服务未配置", client.ErrInfrastructure)
 	}
@@ -319,7 +328,7 @@ func (s *Service) detailModel(ctx context.Context, run *runExecution, work WorkR
 	if err != nil {
 		return storageFailure(err)
 	}
-	transport, err := detailImageTransport(fixedProxy)
+	transport, err := detailImageTransport(run.Spec.Proxy)
 	if err != nil {
 		return storageFailure(err)
 	}
@@ -340,7 +349,7 @@ func (s *Service) detailModel(ctx context.Context, run *runExecution, work WorkR
 	for _, skipped := range pictures.Skipped {
 		run.Warnings = append(run.Warnings, skipped.Reason)
 	}
-	fair, err := s.detailFair(ctx, work, input.Item)
+	fair, err := s.detailFair(ctx, work, input.Item, market)
 	if errors.Is(err, errDetailWorkChanged) {
 		return nil
 	}
@@ -355,7 +364,7 @@ func (s *Service) detailModel(ctx context.Context, run *runExecution, work WorkR
 	var result client.Result
 	err = s.guardedWork(ctx, run, "商品判断", func(workCtx context.Context) error {
 		var modelErr error
-		result, modelErr = s.models.Complete(workCtx, request)
+		result, modelErr = s.completeRunModel(workCtx, run.Ref.RunID, request)
 		return modelErr
 	})
 	if stopped := detailStop(ctx, err); stopped != nil {
@@ -408,7 +417,7 @@ func detailImageTransport(fixed *url.URL) (*http.Transport, error) {
 	return transport, nil
 }
 
-func (s *Service) detailFair(ctx context.Context, work WorkRef, item Listing) (*analysis.FairPrice, error) {
+func (s *Service) detailFair(ctx context.Context, work WorkRef, item Listing, market *detailMarketSnapshot) (*analysis.FairPrice, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, storageFailure(err)
@@ -425,27 +434,33 @@ func (s *Service) detailFair(ctx context.Context, work WorkRef, item Listing) (*
 	if err != nil {
 		return nil, storageFailure(err)
 	}
+	if market.result == nil {
+		snapshot, clock, now, err := s.observeNowTx(ctx, tx)
+		if err != nil {
+			return nil, err
+		}
+		var timezone string
+		if err := json.Unmarshal(snapshot.Values["general.timezone"], &timezone); err != nil {
+			return nil, storageFailure(err)
+		}
+		result, err := loadMarketTx(ctx, tx, task, now.UnixMilli(), timezone)
+		if err != nil {
+			return nil, storageFailure(err)
+		}
+		if err := appsettings.SaveClock(ctx, tx, clock); err != nil {
+			return nil, storageFailure(err)
+		}
+		market.profile, market.result = task.Profile, &result
+	}
 	specs, err := loadItemSpecsTx(ctx, tx, task.ID, item.ItemID)
-	if err != nil || specs == nil || specs.ConfigKey == nil {
-		return nil, storageFailure(err)
-	}
-	snapshot, clock, now, err := s.observeNowTx(ctx, tx)
-	if err != nil {
-		return nil, err
-	}
-	var timezone string
-	if err := json.Unmarshal(snapshot.Values["general.timezone"], &timezone); err != nil {
-		return nil, storageFailure(err)
-	}
-	market, err := loadMarketTx(ctx, tx, task, now.UnixMilli(), timezone)
 	if err != nil {
 		return nil, storageFailure(err)
 	}
-	result := fairForItem(task.Profile, specs.ItemSpecs, market)
-	if err := appsettings.SaveClock(ctx, tx, clock); err != nil {
-		return nil, storageFailure(err)
+	var fair *analysis.FairPrice
+	if specs != nil && specs.ConfigKey != nil {
+		fair = fairForItem(market.profile, specs.ItemSpecs, *market.result)
 	}
-	return result, storageFailure(tx.Commit())
+	return fair, storageFailure(tx.Commit())
 }
 
 func detailProductSource(item Listing, seller *SellerProfile) prompts.ProductSource {

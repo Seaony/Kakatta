@@ -103,7 +103,7 @@ function DetailContent({ finding, onClose, onNavigate, refreshing, onRefresh, ti
     <section className="min-w-0 space-y-lg" aria-label={t('web.detail.price')}>
       <h1 className="break-words text-page font-semibold leading-tight">{finding.listing.title}</h1>
       <div className="grid min-w-0 gap-xl lg:grid-cols-2">
-        <Images listing={finding.listing} />
+        <Images listing={finding.listing} findingId={finding.id} />
         <div className="min-w-0 space-y-lg">
           <p className="text-page font-semibold"><Money value={finding.listing.price} /></p>
           {finding.listing.price === null && finding.listing.price_text && <p className="break-words text-body">{finding.listing.price_text}</p>}

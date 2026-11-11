@@ -296,6 +296,9 @@ func TestFlushRunFormattingFailureIsBoundedWithoutFakeDelivery(t *testing.T) {
 		if err != nil || len(result.Warnings) != 1 || result.Warnings[0].Code != "notification.delivery.invalid_message" {
 			t.Fatalf("未返回安全格式失败：%+v %v", result, err)
 		}
+		if deliveryCount(t, db, `SELECT count(*) FROM notification_intents WHERE json_extract(reason,'$.code')='notification.delivery.invalid_message' AND json_extract(reason,'$.args.channel')='本地格式失败'`) != 1 {
+			t.Fatal("无真实回执时丢失了安全的格式错误")
+		}
 	}
 	if calls.Load() != 0 || deliveryCount(t, db, `SELECT count(*) FROM deliveries`) != 0 || deliveryCount(t, db, `SELECT count(*) FROM notification_intents WHERE state='abandoned' AND failure_count=3`) != 1 {
 		t.Fatal("格式失败伪造投递或没有有限重试")

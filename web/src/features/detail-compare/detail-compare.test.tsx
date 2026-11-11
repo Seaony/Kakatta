@@ -10,7 +10,7 @@ import type { Schema } from '../../api/types';
 import { createI18n, I18nProvider } from '../../i18n';
 import { ComparePage } from './compare-page';
 import { FindingDetail } from './finding-detail';
-import { AnalysisWarnings, ContactQuestions, ScoreBreakdown, Seller } from './presentation';
+import { AnalysisWarnings, ContactQuestions, Images, ScoreBreakdown, Seller } from './presentation';
 import { Risks } from './editors';
 import { profileFields } from './data';
 
@@ -86,6 +86,31 @@ function mount(content: ReactNode, api = fakeAPI().api) {
 }
 
 describe('商品详情的接口与状态', () => {
+  test('没有详情原图时使用同源缩略图，有原图时仍展示原图', () => {
+    const listing = { ...fixture().listing, thumbnail_url: 'https://example.invalid/thumbnail.jpg' };
+    const view = render(<I18nProvider instance={createI18n()}><Images listing={listing} findingId={1} /></I18nProvider>);
+    expect(screen.getByRole('img').getAttribute('src')).toBe('/api/v1/listings/item-1/thumbnail?finding_id=1');
+    view.rerender(<I18nProvider instance={createI18n()}><Images listing={{ ...listing, image_urls: ['https://example.invalid/original.jpg'] }} findingId={1} /></I18nProvider>);
+    expect(screen.getByRole('img').getAttribute('src')).toBe('https://example.invalid/original.jpg');
+  });
+
+  test('价格走势展示成功和失败的合并降价投递', async () => {
+    const initial = fixture();
+    const drop: Schema<'DeliverySummary'> = { id: 1, at: timestamp, channel_id: 1, channel_name: 'Bark', task_id: 5, kind: 'summary', item_count: 3, ok: true, error: null };
+    initial.price_drop_deliveries = [drop, { ...drop, id: 2, channel_id: 2, channel_name: 'Telegram', ok: false, error: { code: 'notify.error.http_status', args: { status: 401 } } }];
+    initial.deliveries = [{ ...drop, id: 3, kind: 'recommended', channel_name: '只发推荐的渠道' }];
+    mount(<FindingDetail findingId={1} onClose={() => {}} onNavigate={() => {}} timeZone="UTC" />, fakeAPI(initial).api);
+    await screen.findByRole('heading', { name: '本地商品 1' });
+    const history = within(screen.getByRole('heading', { name: '价格走势' }).closest('section')!);
+    expect(history.getByText('Bark')).toBeTruthy();
+    expect(history.getByText('Telegram')).toBeTruthy();
+    expect(history.getByText('已推送')).toBeTruthy();
+    expect(history.getByText('发送失败')).toBeTruthy();
+    expect(history.getByText('推送服务返回 HTTP 401')).toBeTruthy();
+    expect(history.getAllByText('合并在「还有 3 个推荐」里')).toHaveLength(2);
+    expect(history.queryByText('只发推荐的渠道')).toBeNull();
+  });
+
   test('详情保留旧版消息的条目与证据链接，复制问句沿用显示原文', async () => {
     const initial = fixture();
     initial.reason = { code: 'legacy.detail.reason', args: {} };
@@ -305,6 +330,7 @@ describe('比较和局部阅读', () => {
   test('并排对比在各自列保留旧版原因和评分依据，也保留正常翻译', async () => {
     const first = fixture();
     first.reason = { code: 'legacy.compare.reason', args: {} };
+    first.listing.seller_registration_days = 364;
     first.fair_basis = { code: 'analysis.fair_same_config', args: { days: 14 } };
     first.seller_assessment = { type: 'unknown', bonus_eligible: false, checks: [], reasons: [{ code: 'legacy.compare.seller', args: {} }] };
     const second = fixture(2);
@@ -321,6 +347,7 @@ describe('比较和局部阅读', () => {
     for (const basis of historicalBases) expect(basis.parentElement?.textContent).toContain('旧版本消息');
     expect(table.getAllByText('同配置 · 近 14 天')).toHaveLength(2);
     expect(table.getByText('legacy.compare.seller').parentElement?.textContent).toContain('旧版本消息');
+    expect(table.getByText('来闲鱼 1 年整').closest('td')?.cellIndex).toBe(1);
   });
 
   test('越过2–4件边界不给后台偷偷截断或发请求', async () => {
@@ -331,12 +358,18 @@ describe('比较和局部阅读', () => {
   });
 
   test('两件比较保留null、上下文和局部横滑，不标已读、不重新计算得分', async () => {
+    const first = fixture();
+    first.listing.thumbnail_url = 'https://example.invalid/first.jpg';
     const second = { ...fixture(2), score: null, grade: null, fair_price: null, score_breakdown: null } satisfies Schema<'FindingView'>;
     second.listing.price = null;
-    const backend = fakeAPI(fixture(), async (request) => new URL(request.url).pathname === '/api/v1/findings/2' ? json(second) : undefined);
+    second.listing.thumbnail_url = 'https://example.invalid/second.jpg';
+    const backend = fakeAPI(first, async (request) => new URL(request.url).pathname === '/api/v1/findings/2' ? json(second) : undefined);
     mount(<ComparePage ids={[1, 2]} timeZone="UTC" />, backend.api);
     await screen.findByRole('heading', { name: '本地商品 2' });
     const region = screen.getByRole('region', { name: '并排对比' });
+    expect(Array.from(region.querySelectorAll('img'), (image) => image.getAttribute('src'))).toEqual([
+      '/api/v1/listings/item-1/thumbnail?finding_id=1', '/api/v1/listings/item-2/thumbnail?finding_id=2',
+    ]);
     expect(region.className).toContain('overflow-x-auto');
     expect(within(region).getAllByText('价格未知').length).toBeGreaterThan(0);
     expect(within(region).getAllByText('无法比价').length).toBeGreaterThan(0);
@@ -384,6 +417,7 @@ describe('比较和局部阅读', () => {
 
   test('只取得部分卖家资料时，详情保留已取得的字段并把评价显示为未知', async () => {
     const finding = fixture();
+    finding.listing.seller_registration_days = 426;
     finding.seller = {
       seller_id: 'seller-1', nick: '部分资料的卖家', avatar_url: null, introduction: '保留卖家介绍', seller_credit: null, buyer_credit: null,
       seller_credit_level: null, buyer_credit_level: null, item_count: null, rate_count: null, on_sale_count: null, sold_count: null,
@@ -394,6 +428,7 @@ describe('比较和局部阅读', () => {
     await screen.findByRole('heading', { name: '本地商品 1' });
     expect(screen.getByText('部分资料的卖家')).toBeTruthy();
     expect(screen.getByText('保留卖家介绍')).toBeTruthy();
+    expect(screen.getByText('来闲鱼 1 年 2 个月')).toBeTruthy();
     const reviews = screen.getByRole('heading', { name: '最近评价' }).parentElement!;
     expect(within(reviews).getByText('未知')).toBeTruthy();
   });

@@ -24,13 +24,16 @@ export function RunOutcomeBadge({ run }: { run: Schema<'RunView'> }) {
   return <StatusBadge tone={tone}>{t(`logs.outcome.${outcome}`)}</StatusBadge>;
 }
 
-export function RunDetail({ runID, timezone }: { runID: number; timezone: string | null }) {
+type RunDetailProps = { runID: number; timezone: string | null; detailDays: number | null };
+
+export function RunDetail({ runID, timezone, detailDays }: RunDetailProps) {
   const api = useApi();
   const { t } = useTranslation();
   const errorText = useLogError();
   const format = useLogFormat(timezone);
   const detail = useQuery({
-    queryKey: apiKey('runs', 'detail', runID),
+    queryKey: apiKey('runs', 'detail', runID, detailDays),
+    gcTime: 0,
     queryFn: async ({ signal }) => apiData(await api.GET('/api/v1/runs/{run_id}', { params: { path: { run_id: runID } }, signal })),
   });
   if (detail.isPending) return <StatePanel kind="pending" label={t('common.loading')}><Skeleton /><Skeleton /></StatePanel>;
@@ -52,20 +55,21 @@ export function RunDetail({ runID, timezone }: { runID: number; timezone: string
       {metrics.map(([field, label]) => <div key={field} className="flex min-w-0 justify-between gap-md"><dt className="text-text-secondary">{t(label)}</dt><dd className="tabular-nums">{format.number(run[field])}</dd></div>)}
     </dl>
     {run.warnings.length > 0 && <section className="space-y-sm"><h4 className="text-body font-medium">{t('logs.warnings')}</h4><ul className="space-y-sm">{run.warnings.map((warning, index) => <li key={`${warning.code}:${index}`} className="break-words text-body text-warning"><StoredMessage message={warning} /></li>)}</ul></section>}
-    <RunSteps runID={runID} initial={detail.data.steps} timezone={timezone} />
+    <RunSteps runID={runID} initial={detail.data.steps} timezone={timezone} detailDays={detailDays} />
   </div>;
 }
 
-function RunSteps({ runID, initial, timezone }: { runID: number; initial: Schema<'PageRunStep'>; timezone: string | null }) {
+function RunSteps({ runID, initial, timezone, detailDays }: RunDetailProps & { initial: Schema<'PageRunStep'> }) {
   const api = useApi();
   const { t } = useTranslation();
   const format = useLogFormat(timezone);
   const errorText = useLogError();
   const steps = useInfiniteQuery({
-    queryKey: apiKey('runs', 'steps', runID),
+    queryKey: apiKey('runs', 'steps', runID, detailDays),
     initialPageParam: '',
     initialData: { pages: [initial], pageParams: [''] },
     staleTime: Infinity,
+    gcTime: 0,
     queryFn: async ({ pageParam, signal }) => apiData(await api.GET('/api/v1/runs/{run_id}/steps', {
       params: { path: { run_id: runID }, query: { limit: 50, ...(pageParam ? { cursor: pageParam } : {}) } }, signal,
     })),

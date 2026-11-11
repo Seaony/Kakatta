@@ -34,7 +34,7 @@ function group(): Group {
 }
 
 function data(groups: Group[] = [group()]): Market {
-  return { market: { groups, snapshot_at: 1794297600000, task_trend: [], warnings: [] }, insight: null };
+  return { market: { groups, snapshot_at: 1794297600000, task_trend: [], warnings: [] }, insight: null, today_new_count: 0, today_recommended_count: 0, personal_seller_share: null };
 }
 
 function taskView(): components['schemas']['TaskView'] {
@@ -113,6 +113,19 @@ test('无法比价保留样本、已放宽范围和每日数据，不把缺日�
   const table = screen.getByRole('table');
   expect(within(table).getByText('当天无样本')).toBeDefined();
   expect(within(table).getByText('¥1,100.055')).toBeDefined();
+});
+
+test('行情汇总显示当天发现和推荐数，个人卖家未知不显示为零', () => {
+  for (const [share, label] of [[null, '—'], [0, '0%'], [2 / 3, '66.7%']] as const) {
+    const market = { ...data([]), today_new_count: 12, today_recommended_count: 7, personal_seller_share: share };
+    const { unmount } = wrapper(<MarketContent taskId={7} data={market} mode="ai" timezone="UTC" onRefresh={() => {}} />);
+    const stat = (name: string) => screen.getByText(name, { selector: 'dt' }).nextElementSibling?.textContent;
+    expect(stat('今日新增')).toBe('12');
+    expect(stat('今日推荐')).toBe('7');
+    expect(stat('近 14 天个人卖家占比')).toBe(label);
+    if (share === null) expect(screen.getByTitle('暂无样本').textContent).toBe('—');
+    unmount();
+  }
 });
 
 test('日图缺口处分段，数据表提供同一组完整数值', () => {

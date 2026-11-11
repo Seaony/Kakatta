@@ -72,9 +72,10 @@ export function LogsPage({ search, onSearchChange }: LogsPageProps = {}) {
   };
   const filtered = current.task_id !== undefined || Boolean(current.outcome || current.failure_kind || current.q || current.from_at !== undefined || current.to_at !== undefined);
   const rows = runs.data?.items ?? [];
-  const detailDays = settings.data?.values['retention.run_steps_days'];
+  const stepRetention = settings.data?.values['retention.run_steps_days'];
+  const detailDays = typeof stepRetention === 'number' ? stepRetention : null;
   const statsDays = settings.data?.values['retention.stats_days'];
-  const retention = typeof detailDays === 'number' && typeof statsDays === 'number'
+  const retention = detailDays !== null && typeof statsDays === 'number'
     ? `${t('logs.retention.steps', { count: detailDays })} ${t('logs.retention.records', { count: statsDays })}` : null;
   return <div className="min-w-0 space-y-xxl text-text-primary">
     <PageHeader title={t('logs.title')} description={t('logs.description')} actions={<><Button busy={overview.isFetching || runs.isFetching} busyLabel={t('common.loading')} onClick={refresh}>{t('logs.refresh')}</Button><Button onClick={() => setExportScope(filters)}>{t('logs.export')}</Button></>} />
@@ -113,10 +114,10 @@ export function LogsPage({ search, onSearchChange }: LogsPageProps = {}) {
               <div className="min-w-0 space-y-sm"><div className="flex flex-wrap items-center gap-sm"><h3 className="break-words text-body font-medium">{run.task_name}</h3><RunOutcomeBadge run={run} /><span className="text-caption text-text-secondary">{t(`logs.trigger.${run.trigger}`)}</span></div><p className="break-words text-caption text-text-secondary tabular-nums">{format.time(run.started_at)} · {format.duration(runDuration(run))}</p>{run.ended_at !== null && run.message && <p className="break-words text-body text-text-body"><StoredMessage message={run.message} /></p>}{run.repeat_count > 1 && <p className="text-caption text-text-secondary">{t('logs.repeat', { count: run.repeat_count })}</p>}</div>
               <Button variant="plain" aria-expanded={open} aria-controls={`log-run-${run.id}`} onClick={() => setExpanded((previous) => { const next = new Set(previous); if (next.has(run.id)) next.delete(run.id); else next.add(run.id); return next; })}>{t(open ? 'logs.collapse' : 'logs.expand', { id: run.id })}</Button>
             </div>
-            {open && <div id={`log-run-${run.id}`}><RunDetail runID={run.id} timezone={timezone} /></div>}
+            {open && <div id={`log-run-${run.id}`}><RunDetail runID={run.id} timezone={timezone} detailDays={detailDays} /></div>}
           </li>;
         })}</ul>
-        {current.run_id !== undefined && !rows.some((run) => run.id === current.run_id) && <section className="border-t border-border pt-lg" aria-label={t('logs.expand', { id: current.run_id })}><RunDetail runID={current.run_id} timezone={timezone} /></section>}
+        {current.run_id !== undefined && !rows.some((run) => run.id === current.run_id) && <section className="border-t border-border pt-lg" aria-label={t('logs.expand', { id: current.run_id })}><RunDetail runID={current.run_id} timezone={timezone} detailDays={detailDays} /></section>}
         <Pagination page={page} hasNextPage={runs.data.next_cursor !== null} onPageChange={movePage} previousLabel={t('logs.previous')} nextLabel={t('logs.next')} pageLabel={t('logs.page', { page })} disabled={runs.isFetching} />
       </div>}
     </section>

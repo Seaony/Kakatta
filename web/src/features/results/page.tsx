@@ -276,7 +276,7 @@ export function ResultsPage({ search, onSearchChange }: ResultsPageProps) {
 
   if (search.finding_id !== undefined) return <FindingDetail findingId={search.finding_id} query={detailQuery(search)} {...(timeZone === undefined ? {} : { timeZone })}
     onClose={() => onSearchChange({ ...search, finding_id: undefined })}
-    onNavigate={(findingId, nextTaskId) => onSearchChange({ ...search, finding_id: findingId, task_id: search.task_id ?? nextTaskId })} />;
+    onNavigate={(findingId) => onSearchChange({ ...search, finding_id: findingId })} />;
 
   const current = search.collection === undefined ? findings : listings;
   const page = current.data;

@@ -12,6 +12,11 @@ import (
 // OpenDetail 在同一个标签页里打开商品详情，读取详情接口并解析（XIANYU.md 第六节）。
 // 风控和登录失效返回 IsStop 为真的错误，调用方必须立即结束整次运行；其他错误只算这个商品失败。
 func (r *Runner) OpenDetail(ctx context.Context, webURL string) (xianyu.Detail, error) {
+	return r.OpenDetailWithStart(ctx, webURL, nil)
+}
+
+// OpenDetailWithStart 在开始导航时调用 started。预检查或额度拦住时不会调用。
+func (r *Runner) OpenDetailWithStart(ctx context.Context, webURL string, started func()) (xianyu.Detail, error) {
 	var d xianyu.Detail
 	target, err := r.Site.itemURL(webURL)
 	if err != nil {
@@ -29,7 +34,10 @@ func (r *Runner) OpenDetail(ctx context.Context, webURL string) (xianyu.Detail, 
 	}
 	mark := r.S.Capture.Mark()
 	start := time.Now()
-	if err := r.navigate(ctx, target, "打开详情页", rules.timeout("detail")); err != nil {
+	if err := r.watch(ctx, "打开详情页", func(navCtx context.Context) error {
+		_, err := r.S.NavigateContextWithStart(navCtx, target, rules.timeout("detail"), started)
+		return err
+	}); err != nil {
 		if cerr := r.check(ctx, "打开详情页"); cerr != nil {
 			return d, cerr
 		}

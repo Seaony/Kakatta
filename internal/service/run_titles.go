@@ -7,10 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"time"
 
 	"github.com/Seaony/Kakatta/internal/analysis"
 	"github.com/Seaony/Kakatta/internal/analysis/client"
 	"github.com/Seaony/Kakatta/internal/analysis/prompts"
+	"github.com/Seaony/Kakatta/internal/appsettings"
 	"github.com/Seaony/Kakatta/internal/locales"
 	"github.com/Seaony/Kakatta/internal/xianyu/web"
 )
@@ -72,7 +74,7 @@ func (s *Service) runTitles(ctx context.Context, run *runExecution) (err error) 
 				return client.ErrNoProvider
 			}
 			var modelErr error
-			result, modelErr = s.models.Complete(workCtx, request)
+			result, modelErr = s.completeRunModel(workCtx, run.Ref.RunID, request)
 			return modelErr
 		})
 		if web.IsStop(callErr) || errors.Is(callErr, web.ErrQuota) {
@@ -127,6 +129,41 @@ func (s *Service) runTitles(ctx context.Context, run *runExecution) (err error) 
 		run.Warnings = append(run.Warnings, titleWarnings...)
 	}
 	return s.loadTitleProcessing(ctx, run)
+}
+
+func (s *Service) completeRunModel(ctx context.Context, runID int64, request client.Request) (client.Result, error) {
+	result, modelErr := s.models.Complete(ctx, request)
+	if len(result.JSONDowngrades) == 0 {
+		return result, modelErr
+	}
+	// 降级已经写入模型兼容设置，运行取消后仍要记下发生过的步骤。
+	logCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
+	tx, err := s.db.BeginTx(logCtx, nil)
+	if err != nil {
+		return result, storageFailure(err)
+	}
+	defer tx.Rollback()
+	_, clock, now, err := s.observeNowTx(logCtx, tx)
+	if err != nil {
+		return result, err
+	}
+	at, status := now.UnixMilli(), StepFail
+	for _, downgrade := range result.JSONDowngrades {
+		message := findingMessage("run.model_json_downgraded", map[string]any{
+			"from": string(downgrade.From), "to": string(downgrade.To), "provider": downgrade.Provider, "model": downgrade.Model,
+		})
+		if _, err := appendRunStepTx(logCtx, tx, RunStep{RunID: runID, At: &at, Status: &status, Message: &message}); err != nil {
+			return result, storageFailure(err)
+		}
+	}
+	if err := appsettings.SaveClock(logCtx, tx, clock); err != nil {
+		return result, storageFailure(err)
+	}
+	if err := tx.Commit(); err != nil {
+		return result, storageFailure(err)
+	}
+	return result, modelErr
 }
 
 func (s *Service) titleInputs(ctx context.Context, run *runExecution) ([]Finding, map[int64]int64, error) {

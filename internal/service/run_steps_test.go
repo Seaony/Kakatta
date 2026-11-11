@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Seaony/Kakatta/internal/locales"
+	"github.com/Seaony/Kakatta/internal/settings"
 )
 
 func TestRunLogStepsRetainAllFailuresAfterFirstHundred(t *testing.T) {
@@ -145,5 +146,40 @@ func TestRunLogStepsPreserveNullableLegacyFields(t *testing.T) {
 	if err := json.Unmarshal(raw, &object); err != nil || string(object["at"]) != "null" ||
 		string(object["status"]) != "null" || string(object["message"]) != "null" || string(object["detail"]) != "null" {
 		t.Fatalf("旧的未知字段被伪造成默认值：%s %v", raw, err)
+	}
+}
+
+func TestRunLogStepsApplyCurrentRetentionBeforeCleanup(t *testing.T) {
+	s, now := logTestService(t)
+	taskID := logTestTask(t, s, "步骤保留期")
+	cutoff := now.Add(-24 * time.Hour).UnixMilli()
+	run := logTestFinished(t, s, taskID, "步骤保留期", cutoff-1, 10, RunSuccess)
+	if _, err := s.db.ExecContext(t.Context(), `INSERT INTO run_steps(run_id,seq,at) VALUES
+		(?,1,?), (?,2,?), (?,3,?), (?,4,NULL)`, run.ID, cutoff-1, run.ID, cutoff, run.ID, cutoff+1, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	initial, err := s.ListRunSteps(t.Context(), run.ID, ListQuery{Limit: 1})
+	if err != nil || initial.Total != 4 || initial.NextCursor == nil || initial.Items[0].Seq != 1 {
+		t.Fatalf("默认保留期的第一页：%+v %v", initial, err)
+	}
+	if _, err := s.settings.Apply(t.Context(), settings.Values{"retention.run_steps_days": json.RawMessage(`1`)}); err != nil {
+		t.Fatal(err)
+	}
+	*now = now.Add(-2 * time.Hour)
+	detail, err := s.GetRun(t.Context(), run.ID)
+	if err != nil || detail.Run.ID != run.ID || detail.Steps.Total != 3 || len(detail.Steps.Items) != 3 || detail.Steps.Items[0].Seq != 2 || detail.Steps.Items[2].At != nil {
+		t.Fatalf("缩短保留期后只显示有效步骤和未知时间的旧步骤：%+v %v", detail, err)
+	}
+	page, err := s.ListRunSteps(t.Context(), run.ID, ListQuery{Limit: 1})
+	if err != nil || page.Total != 3 || len(page.Items) != 1 || page.Items[0].Seq != 2 || page.NextCursor == nil {
+		t.Fatalf("首屏数量、边界或游标错误：%+v %v", page, err)
+	}
+	continued, err := s.ListRunSteps(t.Context(), run.ID, ListQuery{Limit: 2, Cursor: *initial.NextCursor})
+	if err != nil || continued.Total != 3 || len(continued.Items) != 2 || continued.Items[0].Seq != 2 || continued.Items[1].Seq != 3 || continued.NextCursor == nil {
+		t.Fatalf("调整前的游标没有继续执行新保留期：%+v %v", continued, err)
+	}
+	var count int
+	if err := s.db.QueryRowContext(t.Context(), `SELECT count(*) FROM run_steps WHERE run_id=?`, run.ID).Scan(&count); err != nil || count != 4 {
+		t.Fatalf("只读查询物理删除了步骤：%d %v", count, err)
 	}
 }

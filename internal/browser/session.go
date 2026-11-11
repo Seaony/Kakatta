@@ -269,6 +269,11 @@ func (s *Session) Navigate(url string, timeout time.Duration) error {
 
 // NavigateContext 只等本次主框架加载，取消本次操作不会关掉浏览器。
 func (s *Session) NavigateContext(caller context.Context, url string, timeout time.Duration) (string, error) {
+	return s.NavigateContextWithStart(caller, url, timeout, nil)
+}
+
+// NavigateContextWithStart 在开始提交主框架导航命令时调用 started。
+func (s *Session) NavigateContextWithStart(caller context.Context, url string, timeout time.Duration, started func()) (string, error) {
 	lifetime, cancelLifetime := s.operationContext(caller)
 	defer cancelLifetime()
 	ctx, cancelTimeout := context.WithTimeout(lifetime, timeout)
@@ -279,6 +284,12 @@ func (s *Session) NavigateContext(caller context.Context, url string, timeout ti
 	result, err := chromedp.Run(ctx, func(ctx context.Context, t *chromedp.Target) (string, error) {
 		events, stop := t.Subscribe(page.LifecycleEvent.Method)
 		defer stop()
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		if started != nil {
+			started()
+		}
 		res, err := cdp.Call(ctx, t, page.Navigate, page.NavigateParams{URL: url})
 		if err != nil {
 			return "", err

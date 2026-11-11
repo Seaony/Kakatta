@@ -117,7 +117,7 @@ func (s *Service) UpdateListing(ctx context.Context, itemID string, patch Listin
 			return ListingView{}, storageFailure(err)
 		}
 	}
-	view, err := getListingViewTx(ctx, tx, itemID)
+	view, err := s.getListingViewTx(ctx, tx, itemID)
 	if err != nil {
 		return ListingView{}, storageFailure(err)
 	}

@@ -431,6 +431,41 @@ func TestFinishLayoutEmptyRunsRequirePriorItems(t *testing.T) {
 	}
 }
 
+func TestFinishLayoutIgnoresLegacyInterruptedSearches(t *testing.T) {
+	s, run, _, now := finishFixture(t)
+	run.FirstPageCount, run.SearchSaved.ScannedCount, run.SearchSaved.NewCount = 0, 0, 0
+	for index := 0; index < 2; index++ {
+		at := now.Add(-time.Duration(index+2) * time.Minute).UnixMilli()
+		finishExec(t, s.db, `INSERT INTO run_records(task_id,task_name,trigger,started_at,ended_at,outcome,failure_kind,page_count,scanned_count)
+			VALUES(1,'任务','auto',?,?,'failed','risk_deny',1,0)`, at, at)
+	}
+	at := now.Add(-10 * time.Minute).UnixMilli()
+	finishExec(t, s.db, `INSERT INTO run_records(task_id,task_name,trigger,started_at,ended_at,outcome,page_count,scanned_count)
+		VALUES(1,'任务','auto',?,?,'success',1,2)`, at, at)
+	if err := s.finishRun(t.Context(), run, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := finishScalar[int](t, s.db, `SELECT count(*) FROM system_events WHERE kind='xianyu_layout'`); got != 0 {
+		t.Fatalf("两条不能确认首屏为空的旧记录触发了告警：%d", got)
+	}
+}
+
+func TestFinishRecordRetainsParsedItemsWithoutSavedSearch(t *testing.T) {
+	s, run, _, _ := finishFixture(t)
+	run.PageCount, run.FirstPageCount = 2, 2
+	run.Record.ScannedCount = finishInt64(3)
+	run.SearchSaved = SearchSaved{}
+	if err := s.finishRun(t.Context(), run, web.ErrDenied); err != nil {
+		t.Fatal(err)
+	}
+	if got := finishScalar[int](t, s.db, `SELECT scanned_count FROM run_records WHERE id=1`); got != 3 {
+		t.Fatalf("后页中断抹掉了已解析的商品数：%d", got)
+	}
+	if got := finishScalar[int](t, s.db, `SELECT new_count FROM run_records WHERE id=1`); got != 0 {
+		t.Fatalf("后页中断时把未入库的商品算作新发现：%d", got)
+	}
+}
+
 func seedFinishMarket(t *testing.T, s *Service, now time.Time, samples int, provider bool) {
 	t.Helper()
 	if provider {

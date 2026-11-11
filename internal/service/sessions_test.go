@@ -708,6 +708,8 @@ func TestManualSignalErrorsKeepRiskAndHTTPMeaning(t *testing.T) {
 		code string
 	}{
 		{web.ErrNeedVerify, "run.account_needs_verification"},
+		{errors.Join(web.ErrNeedVerify, web.ErrVerificationRefresh), "remote.verification_refresh_confirm"},
+		{errors.Join(web.ErrNeedVerify, web.ErrVerificationRefresh, web.ErrDenied), "run.account_denied"},
 		{web.ErrLoginExpired, "run.account_expired"},
 		{web.ErrDenied, "run.account_denied"},
 		{web.ErrEnvBlocked, "run.account_denied"},
@@ -717,5 +719,30 @@ func TestManualSignalErrorsKeepRiskAndHTTPMeaning(t *testing.T) {
 		if !errors.Is(err, test.err) || !errors.As(err, &problem) || problem.Kind != ErrorConflict || problem.Reason.Code != test.code {
 			t.Fatalf("人工风控丢失了业务语义：%v", err)
 		}
+	}
+}
+
+func TestManualFrameClearsViewportAndStopsUpdatingAfterClose(t *testing.T) {
+	s := sessionTestService(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	work := &sessionWork{Context: ctx, Remote: &remote.Session{}, View: SessionView{Phase: SessionVerifying, RefreshVerification: true}}
+	s.updateManualFrame(work, nil, true)
+	if work.View.Viewport != nil || !work.View.RefreshVerification {
+		t.Fatalf("重开时仍然没有验证框，应保留提示：%+v", work.View)
+	}
+	view := &remote.Viewport{X: 30, Y: 60, Width: 300, Height: 200}
+	s.updateManualFrame(work, view, false)
+	if work.View.Viewport == nil || *work.View.Viewport != *view || work.View.RefreshVerification {
+		t.Fatalf("验证区域没有发布：%+v", work.View)
+	}
+	s.updateManualFrame(work, nil, true)
+	if work.View.Viewport != nil || work.View.RefreshVerification {
+		t.Fatalf("验证框消失后没有清除旧区域：%+v", work.View)
+	}
+	work.Closing = true
+	s.updateManualFrame(work, view, false)
+	if work.View.Viewport != nil || work.View.RefreshVerification {
+		t.Fatalf("关闭时迟到的结果改写了画面：%+v", work.View)
 	}
 }

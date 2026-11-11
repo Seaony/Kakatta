@@ -245,7 +245,7 @@ func (s *Service) SetRiskOverrides(ctx context.Context, findingID int64, overrid
 	if _, err := s.recalculateFindingTx(ctx, tx, task, findingID, s.now().UnixMilli()); err != nil {
 		return FindingView{}, storageFailure(err)
 	}
-	view, err := getFindingViewTx(ctx, tx, findingID)
+	view, err := s.getFindingViewTx(ctx, tx, findingID)
 	if err != nil {
 		return FindingView{}, storageFailure(err)
 	}

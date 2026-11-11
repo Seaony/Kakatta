@@ -361,20 +361,32 @@ func (s *Service) reserveStart(request startRequest, limit int64, now time.Time)
 	if s.closing || s.maintenance > 0 || s.runtimeErr != nil {
 		return nil, false, &ServiceError{Kind: ErrorUnavailable, Reason: locales.Message{Code: "runtime.closed", Args: map[string]any{}}}
 	}
-	if s.pausedTasks[request.TaskID] > 0 || s.pausedAccounts[request.AccountID] > 0 {
-		return nil, false, nil
-	}
+	id := request.SessionID
+	session := s.sessions[id]
 	if request.SessionID != "" {
-		current := false
+		var current *startRequest
 		for _, queued := range s.queue {
 			if queued.SessionID == request.SessionID && queued.QueuedAt.Equal(request.QueuedAt) {
-				current = true
+				current = queued
 				break
 			}
 		}
-		if !current {
+		if current == nil {
 			return nil, false, &ServiceError{Kind: ErrorConflict, Reason: locales.Message{Code: "runtime.session_changed", Args: map[string]any{}}}
 		}
+		if session != nil && (session.View.Phase != SessionQueued || session.Closing) {
+			return nil, false, nil
+		}
+		if current.AccountID != request.AccountID {
+			current.AccountID = request.AccountID
+			if session != nil {
+				session.View.AccountID = request.AccountID
+			}
+			s.signalRuntimeLocked()
+		}
+	}
+	if s.pausedTasks[request.TaskID] > 0 || s.pausedAccounts[request.AccountID] > 0 {
+		return nil, false, nil
 	}
 	var occupied int64
 	if request.TaskID > 0 && s.runs[request.TaskID] != nil {
@@ -392,11 +404,9 @@ func (s *Service) reserveStart(request startRequest, limit int64, now time.Time)
 	if occupied >= limit {
 		return nil, false, nil
 	}
-	id := request.SessionID
 	if id == "" {
 		id = rand.Text()
 	}
-	session := s.sessions[id]
 	if session == nil {
 		ctx, cancel := context.WithCancelCause(s.ctx)
 		session = &sessionWork{Context: ctx, Cancel: cancel, Closed: make(chan struct{}), OpenDone: make(chan struct{}), View: SessionView{ID: id, AccountID: request.AccountID, Kind: request.Kind}}
@@ -415,7 +425,8 @@ func (s *Service) reserveStart(request startRequest, limit int64, now time.Time)
 func (s *Service) releaseReservation(sessionID string) {
 	s.mu.Lock()
 	session := s.sessions[sessionID]
-	if session != nil && session.Resource == nil {
+	discard := session != nil && session.Resource == nil
+	if discard {
 		delete(s.sessions, sessionID)
 		session.Cancel(errServiceClosed)
 		session.openOnce.Do(func() {
@@ -424,7 +435,6 @@ func (s *Service) releaseReservation(sessionID string) {
 			}
 		})
 		session.closeOnce.Do(func() { close(session.Closed) })
-		s.signalRuntimeLocked()
 	}
 	queue := s.queue[:0]
 	for _, request := range s.queue {
@@ -432,7 +442,11 @@ func (s *Service) releaseReservation(sessionID string) {
 			queue = append(queue, request)
 		}
 	}
+	changed := discard || len(queue) != len(s.queue)
 	s.queue = queue
+	if changed {
+		s.signalRuntimeLocked()
+	}
 	s.mu.Unlock()
 }
 
@@ -470,16 +484,17 @@ func (s *Service) confirmReservation(session *sessionWork, limit int64) (bool, e
 	return occupied <= limit, nil
 }
 
-func (s *Service) restoreQueuedReservation(session *sessionWork) {
+func (s *Service) restoreQueuedReservation(session *sessionWork, accountID int64) {
 	s.mu.Lock()
-	queued := false
+	var queued *startRequest
 	for _, request := range s.queue {
 		if request.SessionID == session.View.ID {
-			queued = true
+			queued = request
 			break
 		}
 	}
-	if queued && s.sessions[session.View.ID] == session && session.Resource == nil && !session.Closing {
+	if queued != nil && s.sessions[session.View.ID] == session && session.Resource == nil && !session.Closing {
+		queued.AccountID, session.View.AccountID = accountID, accountID
 		session.View.Phase, session.View.StartedAt = SessionQueued, nil
 		s.signalRuntimeLocked()
 		s.mu.Unlock()

@@ -1,9 +1,9 @@
 package notification
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -380,15 +380,19 @@ func TestFormatTitleShrinksSpecBeforeOtherFields(t *testing.T) {
 			task := formatTask(analysis.ModeAI)
 			task.Name = "相机"
 			longSpec := strings.Repeat("规格😀<&", 100)
-			task.Profile.Specs = []analysis.ProfileSpec{{Name: "型号", Options: []string{longSpec}, Values: []string{longSpec}}}
 			value := formatCandidate(1, intentRecommended, formatPtr(int64(84)))
+			if channel == notify.Telegram {
+				value.Listing.ThumbnailURL = nil
+				longSpec = strings.Repeat("规格😀<&", 400)
+			}
+			task.Profile.Specs = []analysis.ProfileSpec{{Name: "型号", Options: []string{longSpec}, Values: []string{longSpec}}}
 			value.Finding.Summary = formatPtr("保留完整理由<&😀{count}")
 			value.ItemSpecs = &service.TaskItemSpecs{ItemSpecs: analysis.ItemSpecs{Specs: []analysis.SpecValue{{Name: "型号", Value: &longSpec}}}}
 			message, err := formatGroup(task, messageGroup{Members: []candidate{value}}, channel, formatOpts(locales.ZhCN))
 			if err != nil || !strings.HasPrefix(message.Title, "[相机]") || message.ItemTitle != value.Listing.Title || message.Config != longSpec || !strings.Contains(message.Body, *value.Finding.Summary) || !strings.Contains(message.Title, "¥1,000") || !utf8.ValidString(message.Title) {
 				t.Fatalf("缩标题改掉核心数据：%+v %v", message, err)
 			}
-			if channel == notify.ServerChan && utf8.RuneCountInString(message.Title) > notify.ServerChanTitleRunes || channel == notify.WeCom && len(message.Title+" · "+message.ItemTitle) > notify.WeComTitleBytes || channel == notify.Telegram && notify.TelegramContentUnits(message) > notify.TelegramCaptionLimit {
+			if channel == notify.ServerChan && utf8.RuneCountInString(message.Title) > notify.ServerChanTitleRunes || channel == notify.WeCom && len(message.Title+" · "+message.ItemTitle) > notify.WeComTitleBytes || channel == notify.Telegram && notify.TelegramContentUnits(message, message.ItemTitle) > notify.TelegramTextLimit {
 				t.Fatal("标题超出实际协议限量")
 			}
 		})
@@ -400,33 +404,74 @@ func TestFormatTitleShrinksSpecBeforeOtherFields(t *testing.T) {
 	}
 }
 
-func TestFormatTelegramUsesRealHTMLAndSendsOnceLocally(t *testing.T) {
-	var calls atomic.Int64
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
-		calls.Add(1)
-		var payload struct {
-			Caption string `json:"caption"`
-		}
-		if json.NewDecoder(request.Body).Decode(&payload) != nil || notify.UTF16Len(payload.Caption) > notify.TelegramCaptionLimit || !strings.Contains(payload.Caption, "保留&lt;&amp;😀{count}") || !strings.Contains(payload.Caption, "¥1,000") || !strings.Contains(payload.Caption, "goofish.com/item?id=1") {
-			t.Error("真实HTML没有保留理由、价格、链接或超限", payload.Caption)
-		}
-		fmt.Fprint(w, `{"ok":true}`)
-	}))
-	defer server.Close()
+func TestFormatTelegramPhotoOnlyShrinksItemTitle(t *testing.T) {
 	task := formatTask(analysis.ModeAI)
-	spec := strings.Repeat("规格<&😀", 120)
+	task.Name = "相机 <&😀"
+	spec := "规格 <&😀"
 	task.Profile.Specs = []analysis.ProfileSpec{{Name: "型号", Options: []string{spec}, Values: []string{spec}}}
 	value := formatCandidate(1, intentRecommended, formatPtr(int64(84)))
-	value.Finding.Summary = formatPtr("保留<&😀{count}")
+	value.Listing.Title = strings.Repeat("😀", 40)
+	value.Listing.DesktopURL += "&source=kakatta"
+	summary := "保留<&😀{count}"
+	value.Finding.Summary = &summary
 	value.ItemSpecs = &service.TaskItemSpecs{ItemSpecs: analysis.ItemSpecs{Specs: []analysis.SpecValue{{Name: "型号", Value: &spec}}}}
-	message, err := formatGroup(task, messageGroup{Members: []candidate{value}}, notify.Telegram, formatOpts(locales.ZhCN))
+	options := formatOpts(locales.ZhCN)
+	base, err := formatGroup(task, messageGroup{Members: []candidate{value}}, notify.Bark, options)
 	if err != nil {
 		t.Fatal(err)
 	}
-	sender := notify.New(notify.Dependencies{HTTP: server.Client()})
-	config := notify.ChannelConfig{Type: notify.Telegram, Config: json.RawMessage(`{"chat_id":"1","api_url":"` + server.URL + `"}`), Secrets: json.RawMessage(`{"token":"local"}`)}
-	if result := sender.Send(context.Background(), config, message); !result.OK || calls.Load() != 1 {
-		t.Fatalf("真实适配器没有成功发一次：%+v calls=%d", result, calls.Load())
+	title := "<b>" + html.EscapeString(base.Title) + "</b>"
+	body := html.EscapeString(base.Body)
+	link := `<a href="` + html.EscapeString(base.Link) + `">` + html.EscapeString(base.LinkLabel) + `</a>`
+	caption := func(itemTitle, padding string) string {
+		return strings.Join([]string{title, "<b>" + itemTitle + "</b>", body + padding, link}, "\n")
+	}
+	room := notify.TelegramCaptionLimit - notify.UTF16Len(caption("", ""))
+
+	for _, test := range []struct {
+		name      string
+		remaining int
+	}{
+		{"保留部分商品标题", 20},
+		{"清空商品标题刚好容纳", 0},
+		{"固定内容多一个单位", -1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			padding := strings.Repeat("a", room-test.remaining)
+			value.Finding.Summary = formatPtr(summary + padding)
+			message, err := formatGroup(task, messageGroup{Members: []candidate{value}}, notify.Telegram, options)
+			if test.remaining < 0 {
+				if err != errFormatMessage {
+					t.Fatalf("固定内容超限应在投递前明确失败：%v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := caption(strings.Repeat("😀", test.remaining/2), padding)
+			var calls atomic.Int64
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+				calls.Add(1)
+				var payload struct {
+					Caption   string `json:"caption"`
+					Photo     string `json:"photo"`
+					ParseMode string `json:"parse_mode"`
+				}
+				if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+					t.Error(err)
+				} else if request.URL.Path != "/botlocal/sendPhoto" || payload.Photo != base.ImageURL || payload.ParseMode != "HTML" || payload.Caption != want {
+					t.Errorf("图片通知内容或协议不符：长度 %d，首行为 %q", notify.UTF16Len(payload.Caption), strings.SplitN(payload.Caption, "\n", 2)[0])
+				}
+				fmt.Fprint(w, `{"ok":true}`)
+			}))
+			defer server.Close()
+			sender := notify.New(notify.Dependencies{HTTP: server.Client()})
+			config := notify.ChannelConfig{Type: notify.Telegram, Config: json.RawMessage(`{"chat_id":"1","api_url":"` + server.URL + `"}`), Secrets: json.RawMessage(`{"token":"local"}`)}
+			if result := sender.Send(t.Context(), config, message); !result.OK || calls.Load() != 1 {
+				t.Fatalf("图片通知应成功发送一次：%+v，实际 %d 次", result, calls.Load())
+			}
+		})
 	}
 }
 

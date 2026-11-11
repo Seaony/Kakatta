@@ -11,7 +11,7 @@ import { createAppQueryClient } from '../../app/query-client';
 import { AuthenticationContext } from '../../app/auth-state';
 import { createI18n, I18nProvider } from '../../i18n';
 import { AccountConnect, AccountsPage } from './index';
-import { remotePath } from './manual-session';
+import { ManualSession, remotePath } from './manual-session';
 
 let iframeLoadingDisabled = false;
 let restoreConsole = () => {};
@@ -191,6 +191,33 @@ describe('账号连接与人工会话', () => {
     await waitFor(() => expect(confirmations).toEqual([{ session_id: 'session-opaque-7' }]));
     expect(accepted).toBe(0);
     expect(screen.getByText('需要验证')).toBeTruthy();
+    view.unmount(); view.queryClient.clear();
+  });
+
+  test('重开无验证框和未恢复接口验证都提示在原画面手动刷新', async () => {
+    const path = '/remote/sessions/session-opaque-7/';
+    let current = session({ kind: 'verification', phase: 'verifying', remote_path: path, refresh_verification: true });
+    const updated = mock(() => {});
+    const requests: unknown[] = [];
+    const view = mount(<ManualSession account={account({ state: 'needs_verification' })} session={current} timeZone="Asia/Shanghai"
+      reveal onReveal={() => {}} onChanged={updated} onGone={() => {}} />, async (request) => {
+      if (request.method === 'GET') return json(current);
+      requests.push(await request.json());
+      return failure(409, 'remote.verification_refresh_confirm');
+    });
+    const user = userEvent.setup();
+    const firstHint = '当前画面没有验证框，请在画面里刷新一下页面。';
+    await screen.findByText(firstHint);
+    const frame = view.container.querySelector('iframe');
+    expect(frame?.getAttribute('src')).toBe(`http://localhost${path}`);
+    current = { ...current, refresh_verification: false };
+    await user.click(screen.getByRole('button', { name: '重新读取会话' }));
+    await waitFor(() => expect(screen.queryByText(firstHint)).toBeNull());
+    await user.click(screen.getByRole('button', { name: '我已完成验证' }));
+    await screen.findByText('页面可能还没刷新，请在画面里刷新一下页面，再点我已完成验证。');
+    expect(requests).toEqual([{ session_id: 'session-opaque-7' }]);
+    expect(view.container.querySelector('iframe')).toBe(frame);
+    expect(updated).not.toHaveBeenCalled();
     view.unmount(); view.queryClient.clear();
   });
 

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -49,7 +50,15 @@ func (c cleanupScheduleClock) Sleep(ctx context.Context, delay time.Duration) er
 
 func (cleanupScheduleClock) Float64() float64 { return 0 }
 
-type cleanupScheduleCache struct{ pruned chan struct{} }
+type cacheCleanupStub struct{}
+
+func (cacheCleanupStub) Get(context.Context, string) ([]byte, error)      { return nil, os.ErrInvalid }
+func (cacheCleanupStub) Put(context.Context, string, []byte, int64) error { return os.ErrInvalid }
+
+type cleanupScheduleCache struct {
+	cacheCleanupStub
+	pruned chan struct{}
+}
 
 func (c cleanupScheduleCache) Prune(ctx context.Context, _ int64) (int64, error) {
 	select {

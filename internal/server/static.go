@@ -5,11 +5,14 @@ import (
 	"io/fs"
 	"mime"
 	"net/http"
+	"net/netip"
 	"path"
 	"strconv"
 	"strings"
 	"time"
 )
+
+var sharedAddressSpace = netip.MustParsePrefix("100.64.0.0/10")
 
 func reservedPath(value string) bool {
 	for _, prefix := range []string{"/api", "/mcp", "/remote", "/healthz", "/docs", "/openapi.json"} {
@@ -57,6 +60,12 @@ func (s *Server) static(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		WriteError(w, r, http.StatusNotFound, message("http.not_found"), nil)
 		return
+	}
+	if name == "index.html" {
+		peer := stateOf(r).peer
+		if !peer.Secure && peer.IP.IsGlobalUnicast() && !peer.IP.IsPrivate() && !sharedAddressSpace.Contains(peer.IP) {
+			data = bytes.Replace(data, []byte(`data-kakatta-public-http="false"`), []byte(`data-kakatta-public-http="true"`), 1)
+		}
 	}
 	http.ServeContent(w, r, name, time.Time{}, bytes.NewReader(data))
 }

@@ -5,7 +5,28 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/Seaony/Kakatta/internal/remote"
 )
+
+func TestVerificationScreenBoxUsesBrowserOriginAndClipsToDisplay(t *testing.T) {
+	for _, test := range []struct {
+		box  VerificationBox
+		x, y int64
+		want *remote.Viewport
+	}{
+		{VerificationBox{X: 100.5, Y: 50.25, Width: 200, Height: 100}, 10, 80, &remote.Viewport{X: 86, Y: 106, Width: 249, Height: 149}},
+		{VerificationBox{X: 1895, Y: 1040, Width: 50, Height: 50}, 0, 0, &remote.Viewport{X: 1871, Y: 1016, Width: 49, Height: 64}},
+		{VerificationBox{X: -5, Y: -5, Width: 10, Height: 10}, 0, 0, &remote.Viewport{Width: 29, Height: 29}},
+		{VerificationBox{X: -20, Y: 50, Width: 10, Height: 10}, 0, 0, nil},
+		{VerificationBox{X: 50, Y: 50, Width: 0, Height: 10}, 0, 0, nil},
+	} {
+		got := verificationScreenBox(test.box, test.x, test.y)
+		if (got == nil) != (test.want == nil) || got != nil && *got != *test.want {
+			t.Errorf("屏幕位置不符：盒子 %+v，得到 %+v，期望 %+v", test.box, got, test.want)
+		}
+	}
+}
 
 func TestCurrentVerificationBoxOnlyReadsVisibleMask(t *testing.T) {
 	f := newFake(t)

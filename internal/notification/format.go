@@ -448,6 +448,16 @@ func (r *messageRenderer) title(parts titleParts, summary bool) string {
 
 func fitNotificationTitle(r *messageRenderer, message *notify.Message, parts titleParts, channel notify.Type) error {
 	message.Title = r.title(parts, message.Kind == "summary")
+	if r.err != nil {
+		return r.err
+	}
+	if channel == notify.Telegram && message.ImageURL != "" {
+		// 图片说明发送时只裁商品标题，先确认其余内容放得下。
+		if notify.TelegramContentUnits(*message, "") > notify.TelegramCaptionLimit {
+			return errFormatMessage
+		}
+		return nil
+	}
 	fits := func() bool {
 		switch channel {
 		case notify.ServerChan:
@@ -455,11 +465,7 @@ func fitNotificationTitle(r *messageRenderer, message *notify.Message, parts tit
 		case notify.WeCom:
 			return message.Link == "" || len(notificationJoin(" · ", message.Title, message.ItemTitle)) <= notify.WeComTitleBytes
 		case notify.Telegram:
-			limit := notify.TelegramTextLimit
-			if message.ImageURL != "" {
-				limit = notify.TelegramCaptionLimit
-			}
-			return notify.TelegramContentUnits(*message) <= limit
+			return notify.TelegramContentUnits(*message, message.ItemTitle) <= notify.TelegramTextLimit
 		}
 		return true
 	}

@@ -39,6 +39,42 @@ func TestCombinedRiskKeepsRefusalAheadOfVerification(t *testing.T) {
 	}
 }
 
+func TestPageURLRiskKeepsDenialAheadOfLogin(t *testing.T) {
+	if err := pageURLRisk("http://local/punish?action=deny&next=mini_login", "测试"); !errors.Is(err, ErrDenied) {
+		t.Fatalf("登录网址标记遮住了直接拒绝：%v", err)
+	}
+	if err := pageURLRisk("http://local/punish?action=captcha&next=mini_login", "测试"); !errors.Is(err, ErrLoginExpired) {
+		t.Fatalf("非拒绝时应继续按登录网址区分掉登录和验证：%v", err)
+	}
+}
+
+func TestManualSessionKeepsPageRefusalAheadOfLogin(t *testing.T) {
+	for _, test := range []struct {
+		path string
+		want error
+	}{
+		{"blocked-mask?next=mini_login", ErrEnvBlocked},
+		{"punish?action=deny&next=mini_login", ErrDenied},
+	} {
+		t.Run(test.path, func(t *testing.T) {
+			f := newFake(t)
+			r, _, ctx := startRunner(t, f)
+			if err := r.S.Navigate(f.Home()+test.path, 15*time.Second); err != nil {
+				t.Fatal(err)
+			}
+			if err := r.CheckVerification(ctx); !errors.Is(err, test.want) {
+				t.Errorf("人工窗口没有因拒绝停止：%v", err)
+			}
+			if err := r.ConfirmVerification(ctx); !errors.Is(err, test.want) {
+				t.Errorf("人工验证完成检查没有返回拒绝：%v", err)
+			}
+			if err := r.WaitForLogin(ctx, 2*time.Second); !errors.Is(err, test.want) {
+				t.Errorf("登录等待没有因拒绝停止：%v", err)
+			}
+		})
+	}
+}
+
 func TestOrdinaryCheckDoesNotHidePageRefusal(t *testing.T) {
 	for _, responseState := range []string{"verify", "expired"} {
 		for _, currentPage := range []struct {

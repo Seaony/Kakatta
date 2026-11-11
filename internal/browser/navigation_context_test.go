@@ -183,6 +183,40 @@ func TestNavigateContextRespectsSessionCancellationAndTimeout(t *testing.T) {
 	})
 }
 
+func TestNavigateContextReportsStartOnlyForAttemptedNavigation(t *testing.T) {
+	for _, cancelBefore := range []bool{true, false} {
+		t.Run(map[bool]string{true: "导航前取消", false: "导航后取消"}[cancelBefore], func(t *testing.T) {
+			s, wire, _ := navigationProtocol(t)
+			wire.noReply = true
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			if cancelBefore {
+				cancel()
+			}
+			starts := 0
+			finished := make(chan navigationResult, 1)
+			go func() {
+				url, err := s.NavigateContextWithStart(ctx, "http://127.0.0.1/request", time.Second, func() { starts++ })
+				finished <- navigationResult{url: url, err: err}
+			}()
+			want := 0
+			if !cancelBefore {
+				select {
+				case <-wire.entered:
+				case <-time.After(time.Second):
+					t.Fatal("没有收到导航命令")
+				}
+				cancel()
+				want = 1
+			}
+			result := awaitNavigation(t, finished)
+			if !errors.Is(result.err, context.Canceled) || starts != want {
+				t.Fatalf("导航开始回调次数不对：得到 %d，预期 %d，错误 %v", starts, want, result.err)
+			}
+		})
+	}
+}
+
 func TestNavigateContextMatchesMainFrameAndReturnsActualURL(t *testing.T) {
 	s, wire, _ := navigationProtocol(t)
 	finished := runNavigation(s, t.Context(), time.Second)

@@ -25,7 +25,7 @@ func (s *Service) GetListing(ctx context.Context, itemID string) (ListingView, e
 		return ListingView{}, storageFailure(err)
 	}
 	defer tx.Rollback()
-	view, err := getListingViewTx(ctx, tx, itemID)
+	view, err := s.getListingViewTx(ctx, tx, itemID)
 	if err != nil {
 		return ListingView{}, storageFailure(err)
 	}
@@ -114,7 +114,7 @@ func (s *Service) ListListings(ctx context.Context, q ListingQuery) (Page[Listin
 		page.NextCursor = &token
 	}
 	for _, item := range anchors {
-		view, err := getListingViewTx(ctx, tx, item.ItemID)
+		view, err := s.getListingViewTx(ctx, tx, item.ItemID)
 		if err != nil {
 			return Page[ListingView]{Items: []ListingView{}}, storageFailure(err)
 		}
@@ -126,7 +126,7 @@ func (s *Service) ListListings(ctx context.Context, q ListingQuery) (Page[Listin
 	return page, nil
 }
 
-func getListingViewTx(ctx context.Context, tx *sql.Tx, itemID string) (ListingView, error) {
+func (s *Service) getListingViewTx(ctx context.Context, tx *sql.Tx, itemID string) (ListingView, error) {
 	item, err := loadListingTx(ctx, tx, itemID)
 	if err != nil {
 		return ListingView{}, err
@@ -157,7 +157,7 @@ func getListingViewTx(ctx context.Context, tx *sql.Tx, itemID string) (ListingVi
 		return ListingView{}, err
 	}
 	for _, id := range ids {
-		finding, err := getFindingViewTx(ctx, tx, id)
+		finding, err := s.getFindingViewTx(ctx, tx, id)
 		if err != nil {
 			return ListingView{}, err
 		}

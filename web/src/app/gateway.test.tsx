@@ -32,7 +32,8 @@ async function mountGateway(fetch: ApiFetch, backup = false) {
   const root = createRootRouteWithContext<RouterContext>()({ component: () => <UnsavedChangesProvider><Gateway><Draft />{backup && <BackupPage />}</Gateway></UnsavedChangesProvider> });
   const route = createRoute({ getParentRoute: () => root, path: '/draft' });
   const login = createRoute({ getParentRoute: () => root, path: '/login' });
-  const router = createRouter({ routeTree: root.addChildren([route, login]), context: { queryClient, api }, history: createMemoryHistory({ initialEntries: ['/draft'] }) });
+  const setup = createRoute({ getParentRoute: () => root, path: '/setup' });
+  const router = createRouter({ routeTree: root.addChildren([route, login, setup]), context: { queryClient, api }, history: createMemoryHistory({ initialEntries: ['/draft'] }) });
   await router.load();
   const view = render(<I18nProvider instance={createI18n('zh-CN')}><ThemeProvider initialTheme="light"><QueryClientProvider client={queryClient}><ApiProvider api={api}><RouterProvider router={router} /></ApiProvider></QueryClientProvider></ThemeProvider></I18nProvider>);
   return { api, queryClient, router, async dispose() {
@@ -40,6 +41,45 @@ async function mountGateway(fetch: ApiFetch, backup = false) {
     if (eventSource) Object.defineProperty(globalThis, 'EventSource', eventSource); else Reflect.deleteProperty(globalThis, 'EventSource');
   } };
 }
+
+test.each([
+  { label: '初始化', marker: 'true', initialized: false, authenticated: false },
+  { label: '登录前', marker: 'true', initialized: true, authenticated: false },
+  { label: '登录后', marker: 'true', initialized: true, authenticated: true },
+  { label: '本地或已加密', marker: 'false', initialized: true, authenticated: true },
+])('公网明文提示由服务端标记决定：$label', async ({ marker, initialized, authenticated }) => {
+  const dataset = document.documentElement.dataset;
+  const previous = dataset.kakattaPublicHttp;
+  dataset.kakattaPublicHttp = marker;
+  const gateway = await mountGateway(async (request) => {
+    const path = new URL(request.url).pathname;
+    if (path === '/api/v1/setup') return Response.json({ initialized, token_expires_at: null });
+    if (path === '/api/v1/settings') return Response.json({ values: {}, sources: {}, warnings: [] });
+    if (path === '/api/v1/me' && authenticated) return Response.json(user);
+    if (path === '/api/v1/me' || path === '/api/v1/tasks') return Response.json({ error: { code: 'auth.unauthenticated', args: {} }, fields: [], request_id: 'login' }, { status: 401 });
+    throw new Error(`测试未声明路径：${path}`);
+  });
+  try {
+    if (!initialized) await waitFor(() => expect(gateway.router.state.location.pathname).toBe('/setup'));
+    if (initialized && !authenticated) await screen.findByRole('heading', { name: '登录' });
+    if (authenticated) await screen.findByRole('textbox', { name: '本地草稿' });
+    if (marker === 'true') {
+      const alert = await screen.findByRole('alert');
+      expect(alert.textContent).toContain('当前连接未加密');
+      expect(alert.textContent).toContain('请切换到 HTTPS');
+      if (authenticated) {
+        await act(async () => { await gateway.api.GET('/api/v1/tasks').catch(() => {}); });
+        const dialog = await screen.findByRole('dialog', { name: '登录已失效' });
+        expect(within(dialog).getByRole('alert').textContent).toContain('当前连接未加密');
+      }
+    } else {
+      expect(screen.queryByRole('alert')).toBeNull();
+    }
+  } finally {
+    await gateway.dispose();
+    if (previous === undefined) delete dataset.kakattaPublicHttp; else dataset.kakattaPublicHttp = previous;
+  }
+});
 
 test('登录失效保留原页非敏感草稿，明确重新登录后恢复同一组件', async () => {
   let expired = false, logins = 0;

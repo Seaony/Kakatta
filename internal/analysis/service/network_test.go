@@ -542,8 +542,10 @@ func TestModelNetworkProxySecretsAndCompatibilityLogAreSafe(t *testing.T) {
 			t.Fatalf("凭据进入安全原因或日志：%s %s", reason, logs.String())
 		}
 	}
-	if !strings.Contains(logs.String(), "模型兼容参数已更新") || strings.Contains(logs.String(), "model.invalid") || strings.Contains(logs.String(), "raw-user-input") {
-		t.Fatalf("兼容日志包含配置地址或正文：%s", logs.String())
+	if !strings.Contains(logs.String(), "模型兼容参数已更新") || !strings.Contains(logs.String(), "model="+input.VisionModel) ||
+		!strings.Contains(logs.String(), "from=schema") || !strings.Contains(logs.String(), "to=object") ||
+		strings.Contains(logs.String(), "model.invalid") || strings.Contains(logs.String(), "raw-user-input") {
+		t.Fatalf("兼容日志未记录模型和降级方向，或包含配置地址及正文：%s", logs.String())
 	}
 }
 

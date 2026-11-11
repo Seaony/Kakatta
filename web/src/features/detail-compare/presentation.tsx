@@ -3,9 +3,10 @@ import { useApiError } from '../../api/hooks';
 import type { Schema } from '../../api/types';
 import { Button, Dialog, StatePanel, StatusBadge, CopyButton, InlineMessage } from '../../components/ui';
 import { useTranslation, type TranslationKey } from '../../i18n';
-import { formatDateTime, formatMoney } from '../../i18n/format';
+import { formatDateTime, formatMoney, formatSellerRegistration } from '../../i18n/format';
 import { formatStoredMessage, StoredMessage } from '../../i18n/stored-message';
 import { profileFields, safeExternalURL, usePriceHistory, type Finding } from './data';
+import { listingThumbnailURL } from '../results/model';
 import { NotificationStatus } from '../results/notification-status';
 
 export const decisionKeys = {
@@ -103,10 +104,10 @@ export function Evidence({ source, evidence }: { source: string | null; evidence
   </div>;
 }
 
-export function Images({ listing }: { listing: Schema<'Listing'> }) {
+export function Images({ listing, findingId }: { listing: Schema<'Listing'>; findingId: number }) {
   const { t } = useTranslation();
-  const sources = (listing.image_urls.length ? listing.image_urls : listing.thumbnail_url ? [listing.thumbnail_url] : [])
-    .map(safeExternalURL).filter((url): url is string => Boolean(url));
+  const thumbnail = listingThumbnailURL(listing, findingId);
+  const sources = listing.image_urls.length ? listing.image_urls.map(safeExternalURL).filter((url): url is string => Boolean(url)) : thumbnail ? [thumbnail] : [];
   const [index, setIndex] = useState(0);
   const [zoom, setZoom] = useState(false);
   const [failed, setFailed] = useState<string[]>([]);
@@ -137,7 +138,7 @@ export function ContactQuestions({ questions }: { questions: Schema<'AnalysisCon
 export function Deliveries({ finding, priceDrops = false, timeZone }: { finding: Finding; priceDrops?: boolean; timeZone?: string }) {
   const { t } = useTranslation();
   if (!priceDrops) return <NotificationStatus finding={finding} {...(timeZone ? { timeZone } : {})} />;
-  const deliveries = finding.deliveries.filter((delivery) => delivery.kind === 'price_drop');
+  const deliveries = finding.price_drop_deliveries ?? finding.deliveries.filter((delivery) => delivery.kind === 'price_drop');
   return <div className="space-y-md text-body">
     {deliveries.map((delivery) => <div key={delivery.id} className="min-w-0 space-y-sm border-b border-border pb-md">
       <p className="flex flex-wrap items-center gap-sm"><span>{delivery.channel_name ?? t('web.detail.notification_channel_unknown')}</span><StatusBadge tone={delivery.ok === false ? 'danger' : delivery.ok === true ? 'positive' : 'neutral'}>{t(delivery.ok === false ? 'web.detail.notification_failed' : delivery.ok === true ? 'web.detail.notification_sent' : 'web.detail.notification_unknown')}</StatusBadge><DateText value={delivery.at} {...(timeZone ? { timeZone } : {})} /></p>
@@ -153,7 +154,7 @@ export function Seller({ finding, timeZone }: { finding: Finding; timeZone?: str
   const type = finding.seller_assessment?.type ?? finding.seller_type ?? 'unknown';
   return <div className="space-y-lg">
     <p className="flex flex-wrap items-center gap-sm"><strong className="break-words">{seller?.nick ?? finding.listing.seller_nick ?? t('web.detail.unknown')}</strong><StatusBadge tone={type === 'dealer_suspect' ? 'warning' : 'neutral'}>{t(`web.detail.seller_type.${type}`)}</StatusBadge></p>
-    {finding.listing.seller_registration_days !== null && finding.listing.seller_registration_days > 0 && <p className="text-body">{t('web.detail.registration_days', { count: finding.listing.seller_registration_days })}</p>}
+    <p className="text-body">{formatSellerRegistration(finding.listing.seller_registration_days, locale)}</p>
     {finding.seller_assessment && <div className="space-y-sm"><h3 className="text-body font-medium">{t('web.detail.seller_assessment')}</h3><p className="text-caption text-text-secondary"><DateText value={finding.analyzed_at} {...(timeZone ? { timeZone } : {})} /></p><ul className="space-y-sm">{finding.seller_assessment.reasons.map((reason, index) => <li key={index} className="break-words text-body"><StoredMessage message={reason} /></li>)}</ul></div>}
     {seller ? <>
       <p className="text-caption text-text-secondary">{t('web.detail.seller_sampling')}</p>

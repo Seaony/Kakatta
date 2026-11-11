@@ -15,18 +15,14 @@ export function safeExternalURL(value: string | null): string | undefined {
   } catch { return undefined; }
 }
 
-export function resultTime(value: number, locale: Locale, timeZone?: string): string {
-  return timeZone === undefined ? new Date(value).toISOString() : `${formatDateTime(value, locale, timeZone)} (${timeZone})`;
+export function listingThumbnailURL(listing: Listing, findingId?: number): string | undefined {
+  if (!safeExternalURL(listing.thumbnail_url)) return undefined;
+  const query = findingId === undefined ? '' : `?finding_id=${findingId}`;
+  return `/api/v1/listings/${encodeURIComponent(listing.item_id)}/thumbnail${query}`;
 }
 
-export function registrationAge(days: number) {
-  let years = Math.floor(days / 365.25);
-  const rawMonths = (days - years * 365.25) / (365.25 / 12);
-  const lower = Math.floor(rawMonths);
-  // 月数正好在两个整数中间时取偶数。
-  let months = rawMonths - lower === 0.5 ? lower % 2 === 0 ? lower : lower + 1 : Math.round(rawMonths);
-  if (months === 12) { years++; months = 0; }
-  return { years, months };
+export function resultTime(value: number, locale: Locale, timeZone?: string): string {
+  return timeZone === undefined ? new Date(value).toISOString() : `${formatDateTime(value, locale, timeZone)} (${timeZone})`;
 }
 
 export function findingQuery(search: ResultsSearch): RequestQuery<'listFindings'> {
@@ -45,6 +41,7 @@ export function findingQuery(search: ResultsSearch): RequestQuery<'listFindings'
 
 export function detailQuery(search: ResultsSearch): RequestQuery<'getFinding'> {
   const { limit: _limit, cursor: _cursor, ...query } = findingQuery(search);
+  if (query.task_id === undefined && query.view === undefined) return { ...query, view: 'default' };
   return query;
 }
 

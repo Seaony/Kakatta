@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"slices"
-	"time"
 
 	"github.com/Seaony/Kakatta/internal/locales"
 	"github.com/Seaony/Kakatta/internal/service"
@@ -103,7 +102,7 @@ func (s *Service) recordTaskAttemptTx(ctx context.Context, tx *sql.Tx, ref servi
 }
 
 func intentRetryExpired(value intent, nowMS int64) bool {
-	return value.FailureCount >= 3 || value.FirstFailedAt != nil && nowMS > *value.FirstFailedAt && uint64(nowMS)-uint64(*value.FirstFailedAt) > uint64((24*time.Hour).Milliseconds())
+	return service.NotificationRetryExpired(value.FailureCount, value.FirstFailedAt, nowMS)
 }
 
 func abandonDeliveryIntentTx(ctx context.Context, tx *sql.Tx, value intent, nowMS int64) error {
@@ -111,7 +110,14 @@ func abandonDeliveryIntentTx(ctx context.Context, tx *sql.Tx, value intent, nowM
 	if err != nil {
 		return err
 	}
-	result, err := tx.ExecContext(ctx, `UPDATE notification_intents SET state='abandoned',reason=?,updated_at=? WHERE id=? AND state='pending'`, string(reason), nowMS, value.ID)
+	intentReason := reason
+	if value.Reason != nil && (value.Reason.Code == "notification.delivery.invalid_config" || value.Reason.Code == "notification.delivery.invalid_message") {
+		intentReason, err = json.Marshal(value.Reason)
+		if err != nil {
+			return err
+		}
+	}
+	result, err := tx.ExecContext(ctx, `UPDATE notification_intents SET state='abandoned',reason=?,updated_at=? WHERE id=? AND state='pending'`, string(intentReason), nowMS, value.ID)
 	if err != nil {
 		return err
 	}
@@ -131,10 +137,14 @@ func (s *Service) finishRoundTx(ctx context.Context, tx *sql.Tx, group messageGr
 	for _, member := range group.Members {
 		// 摘要等待时可能删去不同成员，只有各渠道都实际包含本意图才算全败。
 		allFailed := true
+		var preflightError *locales.Message
 		for _, outcome := range outcomes {
 			if !outcome.Attempted || outcome.Result.OK || outcome.Result.ErrorCode == "cancelled" || !slices.Contains(outcome.IntentIDs, member.Intent.ID) {
 				allFailed = false
 				break
+			}
+			if preflightError == nil && !outcome.CalledSender && (outcome.Result.ErrorCode == "invalid_config" || outcome.Result.ErrorCode == "invalid_message") {
+				preflightError = deliveryError(outcome.ChannelName, outcome.Result)
 			}
 		}
 		if !allFailed {
@@ -150,10 +160,20 @@ func (s *Service) finishRoundTx(ctx context.Context, tx *sql.Tx, group messageGr
 		if value.State != intentPending {
 			continue
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE notification_intents SET failure_count=failure_count+1,first_failed_at=COALESCE(first_failed_at,?),updated_at=? WHERE id=? AND state='pending'`, nowMS, nowMS, value.ID); err != nil {
+		// 发送前失败没有投递记录，随本轮失败保存已去敏的原因。
+		var reason any
+		if preflightError != nil {
+			raw, err := json.Marshal(preflightError)
+			if err != nil {
+				return err
+			}
+			reason = string(raw)
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE notification_intents SET failure_count=failure_count+1,first_failed_at=COALESCE(first_failed_at,?),updated_at=?,reason=? WHERE id=? AND state='pending'`, nowMS, nowMS, reason, value.ID); err != nil {
 			return err
 		}
 		value.FailureCount++
+		value.Reason = preflightError
 		if value.FirstFailedAt == nil {
 			value.FirstFailedAt = &nowMS
 		}

@@ -341,6 +341,74 @@ func TestFindingSearchIsLiteralAndFailuresDoNotReturnPartialPages(t *testing.T) 
 	}
 }
 
+func TestFindingViewShowsRetryCancellationAndGroupedPriceDrop(t *testing.T) {
+	s, db := queryFixture(t)
+	now := time.UnixMilli(2 * (24 * time.Hour).Milliseconds())
+	s.now = func() time.Time { return now }
+	task := queryTask(t, db, nil)
+	queryListing(t, db, "notification", "camera", nil)
+	queryListing(t, db, "different", "camera", nil)
+	id := queryFinding(t, db, task, "notification", analysis.DecisionMatched, nil, nil, 2)
+	other := queryFinding(t, db, task, "different", analysis.DecisionMatched, nil, nil, 1)
+	queryExec(t, db, `UPDATE findings SET notify_kind='new' WHERE id=?`, id)
+	first := now.Add(-24 * time.Hour).UnixMilli()
+	initial, _ := queryExec(t, db, `INSERT INTO notification_intents(finding_id,task_id,kind,state,created_at,updated_at,failure_count,first_failed_at,reason)
+		VALUES(?,?,'new','pending',1,1,1,?,'{"code":"notification.delivery.invalid_message","args":{"channel":"Bark"}}')`, id, task, first).LastInsertId()
+	drop, _ := queryExec(t, db, `INSERT INTO notification_intents(finding_id,task_id,kind,state,created_at,updated_at) VALUES(?,?,'price_drop','sent',2,2)`, id, task).LastInsertId()
+	otherDrop, _ := queryExec(t, db, `INSERT INTO notification_intents(finding_id,task_id,kind,state,created_at,updated_at) VALUES(?,?,'price_drop','sent',2,2)`, other, task).LastInsertId()
+	channel, _ := queryExec(t, db, `INSERT INTO channels(uuid,type,name,config_json) VALUES('result-notify','bark','Bark','{}')`).LastInsertId()
+	insertDelivery := func(at int64, kind string, ok bool) int64 {
+		result, _ := queryExec(t, db, `INSERT INTO deliveries(at,channel_id,task_id,kind,item_count,ok) VALUES(?,?,?,?,2,?)`, at, channel, task, kind, ok).LastInsertId()
+		queryExec(t, db, `INSERT INTO delivery_items(delivery_id,finding_id) VALUES(?,?)`, result, id)
+		return result
+	}
+	grouped := insertDelivery(2, "summary", false)
+	queryExec(t, db, `INSERT INTO delivery_intents(delivery_id,intent_id) VALUES(?,?)`, grouped, drop)
+	latest := insertDelivery(3, "summary", true)
+	queryExec(t, db, `INSERT INTO delivery_intents(delivery_id,intent_id) VALUES(?,?),(?,?)`, latest, initial, latest, otherDrop)
+
+	check := func(view FindingView, state, reason string) {
+		t.Helper()
+		var actual struct {
+			Status *struct {
+				State  string
+				Reason *locales.Message
+			} `json:"notification_status"`
+			Drops []DeliverySummary `json:"price_drop_deliveries"`
+		}
+		body, err := json.Marshal(view)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(body, &actual); err != nil {
+			t.Fatal(err)
+		}
+		if actual.Status == nil || actual.Status.State != state || actual.Status.Reason == nil || actual.Status.Reason.Code != reason {
+			t.Fatalf("推送状态不符：%+v，期望 %s / %s", actual.Status, state, reason)
+		}
+		if len(view.Deliveries) != 1 || view.Deliveries[0].ID != latest || len(actual.Drops) != 1 || actual.Drops[0].ID != grouped || actual.Drops[0].OK == nil || *actual.Drops[0].OK {
+			t.Fatalf("混淆了通用投递与合并降价：%+v / %+v", view.Deliveries, actual.Drops)
+		}
+	}
+	list, err := s.ListFindings(t.Context(), FindingQuery{View: "all", Sort: "latest"})
+	if err != nil || len(list.Items) != 2 || list.Items[0].ID != id {
+		t.Fatalf("无法读取带推送状态的列表：%+v %v", list, err)
+	}
+	check(list.Items[0], "retrying", "notification.delivery.invalid_message")
+	now = now.Add(time.Millisecond)
+	view, err := s.GetFinding(t.Context(), id, FindingQuery{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	check(view, "abandoned", "notification.delivery.invalid_message")
+	queryExec(t, db, `UPDATE notification_intents SET state='cancelled',reason='{"code":"notify.cancelled_dismissed","args":{}}' WHERE id=?`, initial)
+	view, err = s.GetFinding(t.Context(), id, FindingQuery{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	check(view, "cancelled", "notify.cancelled_dismissed")
+}
+
 func TestFindingViewUsesCurrentVersionQuestionsAndLatestChannelResults(t *testing.T) {
 	s, db := queryFixture(t)
 	taskID := queryTask(t, db, nil)

@@ -123,9 +123,14 @@ func TestDetailVerificationStopsRun(t *testing.T) {
 	f := newFake(t)
 	f.SetDetailRet("FAIL_SYS_USER_VALIDATE::哎哟喂,被挤爆啦")
 	r, _, ctx := startRunner(t, f)
-	_, err := r.OpenDetail(ctx, xianyu.WebLink("fleamarket://item?id=101"))
-	if !errors.Is(err, ErrNeedVerify) || !IsStop(err) {
-		t.Fatalf("应该返回人机验证错误，实际：%v", err)
+	started := 0
+	_, err := r.OpenDetailWithStart(ctx, xianyu.WebLink("fleamarket://item?id=101"), func() { started++ })
+	if !errors.Is(err, ErrNeedVerify) || !IsStop(err) || started != 1 {
+		t.Fatalf("详情导航后应停止等待人机验证，导航 %d 次，错误 %v", started, err)
+	}
+	_, err = r.OpenDetailWithStart(ctx, xianyu.WebLink("fleamarket://item?id=102"), func() { started++ })
+	if !errors.Is(err, ErrNeedVerify) || started != 1 {
+		t.Fatalf("旧风控应在打开下一件前拦住，导航 %d 次，错误 %v", started, err)
 	}
 }
 

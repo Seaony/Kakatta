@@ -346,6 +346,9 @@ func (s *Service) tryStartRun(ctx context.Context, request startRequest) (bool, 
 		return false, nil, err
 	}
 	if preflight.Blocked != nil {
+		if request.SessionID != "" {
+			s.releaseReservation(request.SessionID)
+		}
 		return false, preflight.Blocked, nil
 	}
 	var pageLimit int64
@@ -361,7 +364,7 @@ func (s *Service) tryStartRun(ctx context.Context, request startRequest) (bool, 
 	defer func() {
 		if !registered {
 			if retryReservation {
-				s.restoreQueuedReservation(session)
+				s.restoreQueuedReservation(session, request.AccountID)
 			} else {
 				s.releaseReservation(session.View.ID)
 			}
@@ -388,6 +391,8 @@ func (s *Service) tryStartRun(ctx context.Context, request startRequest) (bool, 
 	}
 	// 绑定变了就交回调度器重新取名额，不把旧账号的名额拿给新账号。
 	if preflight.Account.ID != request.AccountID {
+		request.AccountID = preflight.Account.ID
+		retryReservation = true
 		return false, nil, nil
 	}
 	if err := json.Unmarshal(preflight.Snapshot.Values["crawl.global_pages"], &pageLimit); err != nil || pageLimit < 1 {

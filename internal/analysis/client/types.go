@@ -143,14 +143,22 @@ type Call struct {
 	End   CallEnd   `json:"end"`
 }
 
+type JSONDowngrade struct {
+	From     JSONMode
+	To       JSONMode
+	Provider string
+	Model    string
+}
+
 type Result struct {
-	Text       string        `json:"text"`
-	ProviderID int64         `json:"provider_id"`
-	Model      string        `json:"model"`
-	JSONMode   JSONMode      `json:"json_mode"`
-	Thinking   bool          `json:"thinking"`
-	Duration   time.Duration `json:"duration"`
-	Calls      []Call        `json:"calls"`
+	Text           string          `json:"text"`
+	ProviderID     int64           `json:"provider_id"`
+	Model          string          `json:"model"`
+	JSONMode       JSONMode        `json:"json_mode"`
+	Thinking       bool            `json:"thinking"`
+	Duration       time.Duration   `json:"duration"`
+	Calls          []Call          `json:"calls"`
+	JSONDowngrades []JSONDowngrade `json:"-"`
 }
 
 type Failure struct {

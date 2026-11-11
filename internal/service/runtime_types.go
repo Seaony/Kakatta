@@ -78,6 +78,8 @@ type NotifyResult struct {
 }
 
 type ImageCache interface {
+	Get(ctx context.Context, key string) ([]byte, error)
+	Put(ctx context.Context, key string, data []byte, maxBytes int64) error
 	Prune(ctx context.Context, maxBytes int64) (int64, error)
 	Clear(ctx context.Context) (int64, error)
 }

@@ -157,7 +157,7 @@ func (s *Service) tryStartSession(ctx context.Context, request startRequest) (bo
 		confirmed, err = s.confirmReservation(session, limit)
 		if err == nil && !confirmed {
 			_ = tx.Rollback()
-			s.restoreQueuedReservation(session)
+			s.restoreQueuedReservation(session, request.AccountID)
 			return false, nil, nil
 		}
 	}
@@ -221,10 +221,12 @@ func (s *Service) runManualSession(session *sessionWork, account Account, spec R
 			err = runner.CheckVerification(session.Context)
 		}
 		if err == nil {
-			err = s.publishManualRemote(session, SessionWaitingLogin)
+			err = s.publishManualRemote(session, SessionWaitingLogin, false)
 		}
 		if err == nil {
-			err = runner.WaitForLogin(session.Context, max(deadline.Sub(s.now()), 0))
+			err = runner.WaitForLoginWithViewport(session.Context, max(deadline.Sub(s.now()), 0), func(view *remote.Viewport) {
+				s.updateManualFrame(session, view, false)
+			})
 		}
 		if err == nil {
 			head, profileErr := runner.OwnProfile(session.Context)
@@ -256,15 +258,12 @@ func (s *Service) runManualSession(session *sessionWork, account Account, spec R
 			kind = quota.Detail
 		}
 		err = spec.Budget.Acquire(kind, "重新打开验证网址")
+		var refresh bool
 		if err == nil {
-			_, err = resource.Chrome().NavigateContext(session.Context, *account.VerifyURL, 30*time.Second)
+			refresh, err = runner.ReopenVerification(session.Context, *account.VerifyURL)
 		}
 		if err == nil {
-			runner.BeginVerification()
-			err = runner.CheckVerification(session.Context)
-		}
-		if err == nil {
-			err = s.publishManualRemote(session, SessionVerifying)
+			err = s.publishManualRemote(session, SessionVerifying, refresh)
 		}
 		if err == nil {
 			s.monitorVerification(session)
@@ -280,13 +279,20 @@ func (s *Service) runManualSession(session *sessionWork, account Account, spec R
 	_ = s.closeManualSession(session)
 }
 
-func (s *Service) publishManualRemote(session *sessionWork, phase SessionPhase) error {
+func (s *Service) publishManualRemote(session *sessionWork, phase SessionPhase, refresh bool) error {
 	remoteSession, err := session.Resource.OpenRemote(session.Context)
 	if err != nil {
 		return err
 	}
 	if remoteSession == nil {
 		return errors.New("远程画面未创建")
+	}
+	var view *remote.Viewport
+	if !refresh {
+		view, _ = session.Resource.Runner().VerificationViewport(session.Context)
+	}
+	if err := remoteSession.SetViewport(view); err != nil {
+		view = nil
 	}
 	s.mu.Lock()
 	if session.Closing || session.Context.Err() != nil {
@@ -296,15 +302,29 @@ func (s *Service) publishManualRemote(session *sessionWork, phase SessionPhase) 
 	session.Remote = remoteSession
 	path := "/remote/sessions/" + session.View.ID + "/"
 	session.View.RemotePath = &path
+	session.View.RefreshVerification = refresh
+	session.View.Viewport = view
 	s.mu.Unlock()
 	if err := s.setSessionPhase(session.View.ID, phase, nil); err != nil {
 		return err
 	}
-	view, err := s.GetSession(session.Context, session.View.AccountID, session.View.ID)
+	published, err := s.GetSession(session.Context, session.View.AccountID, session.View.ID)
 	if err == nil {
-		err = s.emit("session.changed", view)
+		err = s.emit("session.changed", published)
 	}
 	return err
+}
+
+func (s *Service) updateManualFrame(session *sessionWork, view *remote.Viewport, refresh bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if session.Closing || session.Context.Err() != nil || session.Remote == nil {
+		return
+	}
+	if err := session.Remote.SetViewport(view); err == nil {
+		session.View.Viewport = view
+		session.View.RefreshVerification = session.View.RefreshVerification && refresh
+	}
 }
 
 func (s *Service) holdVerification(sessionID string, _ error) error {
@@ -348,7 +368,7 @@ func (s *Service) holdVerification(sessionID string, _ error) error {
 	if err := s.setSessionPhase(sessionID, SessionVerifyHold, &deadline); err != nil {
 		return errors.Join(err, s.closeManualSession(session))
 	}
-	if err := s.publishManualRemote(session, SessionVerifyHold); err != nil {
+	if err := s.publishManualRemote(session, SessionVerifyHold, false); err != nil {
 		return errors.Join(err, s.closeManualSession(session))
 	}
 	s.mu.Lock()
@@ -372,7 +392,15 @@ func (s *Service) monitorVerification(session *sessionWork) {
 			return
 		}
 		session.opMu.Lock()
-		err := session.Resource.Runner().CheckVerification(session.Context)
+		runner := session.Resource.Runner()
+		refresh, err := runner.VerificationPageNeedsRefresh(session.Context)
+		if err == nil {
+			var view *remote.Viewport
+			if !refresh {
+				view, _ = runner.VerificationViewport(session.Context)
+			}
+			s.updateManualFrame(session, view, refresh)
+		}
 		session.opMu.Unlock()
 		if err != nil && !errors.Is(err, web.ErrNeedVerify) {
 			if web.IsStop(err) {
@@ -648,6 +676,9 @@ func manualSignalError(err error) error {
 	switch manualRisk(err) {
 	case web.ErrNeedVerify:
 		code = "run.account_needs_verification"
+		if errors.Is(err, web.ErrVerificationRefresh) {
+			code = "remote.verification_refresh_confirm"
+		}
 	case web.ErrLoginExpired:
 		code = "run.account_expired"
 	case web.ErrDenied, web.ErrEnvBlocked:

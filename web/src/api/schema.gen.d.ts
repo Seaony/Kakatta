@@ -1061,6 +1061,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/listings/{item_id}/thumbnail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 读取商品缩略图
+         * @description 从本地缓存读取或通过任务账号代理下载已保存的缩略图。
+         */
+        get: operations["getListingThumbnail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/blocked-sellers": {
         parameters: {
             query?: never;
@@ -2552,6 +2572,11 @@ export interface components {
         };
         /** @enum {string} */
         FindingStage: "title" | "detail" | "done";
+        FindingNotificationStatus: {
+            /** @enum {string} */
+            state: "retrying" | "cancelled" | "abandoned";
+            reason: components["schemas"]["LocalizedMessage"] | null;
+        };
         /** @description pending/failed 重分析不以旧分数冒充当前结果：score、grade、score_breakdown 为 null。previous_id/next_id 依据相同查询上下文定位，未计算或不存在时为 null。 */
         FindingView: {
             analysis: components["schemas"]["AnalysisFacts"] | null;
@@ -2564,6 +2589,10 @@ export interface components {
             decided_layer: number | null;
             decision: components["schemas"]["AnalysisDecision"];
             deliveries: components["schemas"]["DeliverySummary"][];
+            /** @description 首次推荐或新商品提醒的重试和终止状态。 */
+            notification_status?: components["schemas"]["FindingNotificationStatus"] | null;
+            /** @description 每个渠道最近的降价投递，包含发在合并提醒里的降价。 */
+            price_drop_deliveries?: components["schemas"]["DeliverySummary"][];
             /** @description UTC Unix 整数毫秒；未知时为 null。 */
             drop_notified_at: number | null;
             fair_basis: components["schemas"]["LocalizedMessage"] | null;
@@ -2755,6 +2784,12 @@ export interface components {
         MarketView: {
             insight: components["schemas"]["MarketInsight"] | null;
             market: components["schemas"]["AnalysisMarketResult"];
+            /** @description 近 14 个自然日的个人卖家占比，无可分类卖家时为 null。 */
+            personal_seller_share: number | null;
+            /** Format: int64 */
+            today_new_count: number;
+            /** Format: int64 */
+            today_recommended_count: number;
         };
         MetricComparison: {
             /** Format: int64 */
@@ -3174,6 +3209,8 @@ export interface components {
             phase: components["schemas"]["SessionPhase"];
             /** @description UTC Unix 整数毫秒；未知时为 null。 */
             queued_at: number | null;
+            /** @description 重开验证网址后当前画面没有验证框，用户可以在远程画面里手动刷新。 */
+            refresh_verification?: boolean;
             remote_path: string | null;
             run_id: number | null;
             /** @description UTC Unix 整数毫秒；未知时为 null。 */
@@ -6689,6 +6726,43 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["ValidationFailed"];
+            503: components["responses"]["Unavailable"];
+            default: components["responses"]["InternalError"];
+        };
+    };
+    getListingThumbnail: {
+        parameters: {
+            query?: {
+                /** @description 使用这条发现对应的任务账号；省略时取商品最近一条发现。 */
+                finding_id?: number;
+            };
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 返回 JPEG 缩略图。 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/jpeg": Blob;
+                };
+            };
+            /** @description 商品暂时没有可用的缩略图。 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
             503: components["responses"]["Unavailable"];
             default: components["responses"]["InternalError"];
         };

@@ -23,15 +23,21 @@ rfb.scaleViewport = !mobile();
 rfb.clipViewport = false;
 let detachTouch = () => {};
 let panning = false;
-let pendingRegion = null;
+let pendingRegion;
 let connected = false;
 
+function showControlHelp() {
+    help.textContent = panning ? '拖动画面查看其他位置，不会向远程浏览器发送鼠标操作。' : '现在可以直接点击、输入或拖动远程浏览器。';
+}
+
 function focusRegion(region) {
-    if (!connected) { pendingRegion = region; return; }
+    pendingRegion = region;
+    if (!connected) return;
     rfb.scaleViewport = false;
     const scroll = host.firstElementChild;
     if (region && Number.isFinite(region.x) && Number.isFinite(region.y) && region.width > 0 && region.height > 0) {
         requestAnimationFrame(() => {
+            if (!connected || pendingRegion !== region) return;
             scroll.scrollLeft = Math.max(0, region.x + region.width / 2 - scroll.clientWidth / 2);
             scroll.scrollTop = Math.max(0, region.y + region.height / 2 - scroll.clientHeight / 2);
         });
@@ -39,6 +45,7 @@ function focusRegion(region) {
     } else {
         scroll.scrollLeft = 0;
         scroll.scrollTop = 0;
+        showControlHelp();
     }
 }
 
@@ -49,7 +56,7 @@ pan.addEventListener('click', () => {
     pan.setAttribute('aria-pressed', String(panning));
     host.dataset.panning = String(panning);
     pan.textContent = panning ? '继续操控' : '移动画面';
-    help.textContent = panning ? '拖动画面查看其他位置，不会向远程浏览器发送鼠标操作。' : '现在可以直接点击、输入或拖动远程浏览器。';
+    showControlHelp();
 });
 rfb.addEventListener('connect', async () => {
     connected = true;
@@ -63,13 +70,17 @@ rfb.addEventListener('connect', async () => {
     canvas.tabIndex = 0;
     canvas.setAttribute('aria-label', '远程浏览器，可用键盘输入');
     detachTouch = attachTouch(canvas, (x, y, mask) => rfb.sendPointer(x, y, mask), host.firstElementChild, () => panning);
+    if (pendingRegion !== undefined) {
+        if (pendingRegion !== null) focusRegion(pendingRegion);
+        return;
+    }
     try {
         const response = await fetch(new URL('viewport', location.href));
         if (response.ok) {
-            const region = pendingRegion || await response.json();
-            if (region) focusRegion(region);
+            const region = await response.json();
+            if (region && pendingRegion === undefined && connected) focusRegion(region);
         }
-    } catch { help.textContent = '位置提示暂时不可用，仍可在画面里手动操作。'; }
+    } catch { if (pendingRegion === undefined && connected) help.textContent = '位置提示暂时不可用，仍可在画面里手动操作。'; }
 });
 rfb.addEventListener('disconnect', () => {
     connected = false;

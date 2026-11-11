@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Seaony/Kakatta/internal/analysis"
+	"github.com/Seaony/Kakatta/internal/quota"
 )
 
 func loadMarketTx(ctx context.Context, tx *sql.Tx, task Task, nowMS int64, timezone string) (analysis.MarketResult, error) {
@@ -105,18 +106,40 @@ func (s *Service) GetMarket(ctx context.Context, taskID int64) (view MarketView,
 	if err != nil {
 		return MarketView{}, err
 	}
-	market, err := loadMarketTx(ctx, tx, task, now.UnixMilli(), timezone)
+	view.Market, err = loadMarketTx(ctx, tx, task, now.UnixMilli(), timezone)
 	if err != nil {
 		return MarketView{}, err
 	}
-	insight, err := loadMarketInsightTx(ctx, tx, taskID)
+	location, err := time.LoadLocation(timezone)
+	if err != nil {
+		return MarketView{}, err
+	}
+	localNow := now.In(location)
+	today, _ := quota.DayBounds(localNow)
+	date := time.Date(localNow.Year(), localNow.Month(), localNow.Day(), 0, 0, 0, 0, time.UTC)
+	first := overviewDateStart(date.AddDate(0, 0, -13), location)
+	var personal, classified int64
+	err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FILTER(WHERE f.found_at>=?),
+		COUNT(*) FILTER(WHERE f.found_at>=? AND (`+findingRecommendedSQL+`)),
+		COUNT(*) FILTER(WHERE f.seller_type='personal'),
+		COUNT(*) FILTER(WHERE f.seller_type IN ('personal','dealer_suspect','dealer'))`+findingFromSQL+
+		`WHERE f.task_id=? AND f.found_at BETWEEN ? AND ?`, today.UnixMilli(), today.UnixMilli(), taskID, first.UnixMilli(), now.UnixMilli()).
+		Scan(&view.TodayNewCount, &view.TodayRecommendedCount, &personal, &classified)
+	if err != nil {
+		return MarketView{}, err
+	}
+	if classified > 0 {
+		share := float64(personal) / float64(classified)
+		view.PersonalSellerShare = &share
+	}
+	view.Insight, err = loadMarketInsightTx(ctx, tx, taskID)
 	if err != nil {
 		return MarketView{}, err
 	}
 	if err := tx.Commit(); err != nil {
 		return MarketView{}, err
 	}
-	return MarketView{Market: market, Insight: insight}, nil
+	return view, nil
 }
 
 func loadMarketInsightTx(ctx context.Context, tx *sql.Tx, taskID int64) (*MarketInsight, error) {

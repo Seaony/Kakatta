@@ -25,6 +25,7 @@ func (b *businessHandler) registerResultRoutes() {
 		"GET /api/v1/listings/{item_id}":                    b.resultListing,
 		"PATCH /api/v1/listings/{item_id}":                  b.resultUpdateListing,
 		"GET /api/v1/listings/{item_id}/prices":             b.resultPrices,
+		"GET /api/v1/listings/{item_id}/thumbnail":          b.resultListingThumbnail,
 		"GET /api/v1/blocked-sellers":                       b.resultBlockedSellers,
 		"PUT /api/v1/blocked-sellers/{seller_id}":           b.resultBlockSeller,
 		"DELETE /api/v1/blocked-sellers/{seller_id}":        b.resultUnblockSeller,
@@ -326,6 +327,34 @@ func (b *businessHandler) resultListing(w http.ResponseWriter, r *http.Request) 
 	}
 	value, err := b.service.GetListing(r.Context(), id)
 	b.reply(w, r, http.StatusOK, value, err)
+}
+
+func (b *businessHandler) resultListingThumbnail(w http.ResponseWriter, r *http.Request) {
+	itemID, err := pathText(r, "item_id")
+	var findingID *int64
+	if err == nil {
+		values, queryErr := queryValues(r, "finding_id")
+		err = queryErr
+		if err == nil {
+			findingID, err = queryID(values, "finding_id")
+		}
+	}
+	if err != nil {
+		b.failure(w, r, err)
+		return
+	}
+	data, err := b.service.ListingThumbnail(r.Context(), itemID, findingID)
+	if err != nil {
+		b.failure(w, r, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "private, no-store")
+	if len(data) == 0 {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	w.Header().Set("Content-Type", "image/jpeg")
+	_, _ = w.Write(data)
 }
 
 func (b *businessHandler) resultUpdateListing(w http.ResponseWriter, r *http.Request) {

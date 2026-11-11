@@ -1,7 +1,11 @@
 package web
 
 import (
+	"context"
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"strings"
 	"testing"
@@ -12,6 +16,52 @@ import (
 	"github.com/Seaony/Kakatta/internal/browser"
 	"github.com/Seaony/Kakatta/internal/xianyu"
 )
+
+func TestReopenVerificationKeepsRefusalWhileDocumentIsWaiting(t *testing.T) {
+	f := newFake(t)
+	r, _, ctx := startRunner(t, f)
+	waiting, release := make(chan struct{}), make(chan struct{})
+	mux := http.NewServeMux()
+	mux.HandleFunc("/verify", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		io.WriteString(w, `<!doctype html><script>fetch('/h5/mtop.local.verify/')</script><script src="/waiting.js"></script>`)
+	})
+	mux.HandleFunc("/waiting.js", func(w http.ResponseWriter, request *http.Request) {
+		close(waiting)
+		select {
+		case <-release:
+		case <-request.Context().Done():
+		}
+	})
+	mux.HandleFunc("/h5/mtop.local.verify/", func(w http.ResponseWriter, request *http.Request) {
+		select {
+		case <-waiting:
+			w.Header().Set("Content-Type", "application/json")
+			io.WriteString(w, `{"ret":["SUCCESS::调用成功"],"data":{"url":"/punish?action=deny"}}`)
+		case <-request.Context().Done():
+		}
+	})
+	fixture := httptest.NewServer(mux)
+	defer fixture.Close()
+	defer close(release)
+	r.Site.APIHost = strings.TrimPrefix(fixture.URL, "http://")
+	checkCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	if refresh, err := r.ReopenVerification(checkCtx, fixture.URL+"/verify"); refresh || !errors.Is(err, ErrDenied) {
+		t.Fatalf("文档未加载完成时，已收到的拒绝也应停止验证：%v %v", refresh, err)
+	}
+}
+
+func TestReopenVerificationSuggestsRefreshOnlyWithoutPrompt(t *testing.T) {
+	f := newFake(t)
+	r, _, ctx := startRunner(t, f)
+	if refresh, err := r.ReopenVerification(ctx, f.Home()); !refresh || err != nil {
+		t.Fatalf("重开无验证框时应提示手动刷新：%v %v", refresh, err)
+	}
+	if refresh, err := r.ReopenVerification(ctx, f.Home()+"punish?action=captcha"); refresh || err != nil {
+		t.Fatalf("已有验证页面时不用提示刷新：%v %v", refresh, err)
+	}
+}
 
 func TestConfirmVerificationUsesCurrentPageAndClearsHandledBoundary(t *testing.T) {
 	f := newFake(t)
