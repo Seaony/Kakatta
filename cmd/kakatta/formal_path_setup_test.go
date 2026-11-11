@@ -186,10 +186,12 @@ func formalFastSettings(t *testing.T, browser context.Context, events *webSmokeE
 		return formalScalar(t, "SELECT count(*) FROM settings WHERE key='general.update_check' AND value_json='false'") == 1
 	})
 	formalSetupVisit(t, browser, events, "/settings/general", "web.settings.general_title")
+	formalSetupSelect(t, browser, events, "settings.general.language.label", "zh-CN")
 	formalSetupCheck(t, browser, events, "#setting-crawl-quiet_hours button[role=switch]", false)
 	formalSetupButton(t, browser, events, "//main", "web.settings.save")
-	formalWait(t, browser, "网页已关闭安静时段", 10*time.Second, func() bool {
-		return formalScalar(t, "SELECT count(*) FROM settings WHERE key='crawl.quiet_hours' AND json_extract(value_json,'$.enabled')=0") == 1
+	formalWait(t, browser, "网页已关闭安静时段并保存中文", 10*time.Second, func() bool {
+		return formalScalar(t, "SELECT count(*) FROM settings WHERE key='crawl.quiet_hours' AND json_extract(value_json,'$.enabled')=0") == 1 &&
+			formalScalar(t, `SELECT count(*) FROM settings WHERE key='general.language' AND value_json='"zh-CN"'`) == 1
 	})
 	formalSetupVisit(t, browser, events, "/settings/limits", "web.settings.limits_title")
 	for _, field := range []struct{ key, value string }{
