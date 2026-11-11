@@ -48,6 +48,11 @@ func newCoreFlowHarness(t *testing.T, ctx context.Context, modelHook func(http.R
 		t.Skip("由 deploy/test-core-flow.sh 在断网容器里运行")
 	}
 	cfg, paths, key := graphConfig(t)
+	return newCoreFlowHarnessWithPaths(t, ctx, cfg, paths, key, modelHook, pushHook)
+}
+
+func newCoreFlowHarnessWithPaths(t *testing.T, ctx context.Context, cfg config.Config, paths config.Paths, key [32]byte, modelHook func(http.ResponseWriter, *http.Request, string) bool, pushHook func(http.ResponseWriter, *http.Request, map[string]string) bool) *coreFlowHarness {
+	t.Helper()
 	h := &coreFlowHarness{t: t, ctx: ctx, cfg: cfg, paths: paths, key: key, xianyu: fake.Start()}
 	t.Cleanup(h.Close)
 	h.xianyu.EnableAutomaticLogin()

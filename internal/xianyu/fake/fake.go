@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -88,6 +89,11 @@ type Xianyu struct {
 	sellerProfile         bool
 	sellerHits            SellerVisitCounts
 	searchPages           *[2][]SearchItem
+	searchFaults          map[string]searchFaultState
+	faultGates            []*SearchFaultGate
+	requests              atomic.Int64
+	sequences             map[string]*searchSequence
+	sequenceSellers       map[string]string
 }
 
 // Start 在本机随机端口启动假闲鱼，用完调用 Close。
@@ -289,6 +295,12 @@ func Start() *Xianyu {
 		finalDelay := f.finalDelay
 		pages := f.searchPages
 		f.mu.Unlock()
+		if f.serveSearchFault(w, r, body) {
+			return
+		}
+		if f.serveSearchSequence(w, r, body) {
+			return
+		}
 		if finalDelay > 0 && r.URL.Query().Get("final") == "1" {
 			select {
 			case <-time.After(finalDelay):
@@ -328,6 +340,9 @@ func Start() *Xianyu {
 				}
 			}
 		}
+		if seller := f.sequenceSellerLocked(r.URL.Query().Get("id")); seller != "" {
+			sellerID = seller
+		}
 		f.mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		if ret != "" && r.URL.Query().Get("n") == "1" {
@@ -342,12 +357,15 @@ func Start() *Xianyu {
 			},
 		})
 	})
-	f.srv = httptest.NewServer(mux)
+	f.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		f.requests.Add(1)
+		mux.ServeHTTP(w, r)
+	}))
 	return f
 }
 
 // Close 关闭假闲鱼。
-func (f *Xianyu) Close() { f.ReleaseLoginResponses(); f.srv.Close() }
+func (f *Xianyu) Close() { f.ReleaseLoginResponses(); f.releaseSearchFaults(); f.srv.Close() }
 
 // ReleaseLoginResponses 让测试控制在途登录响应何时返回。
 func (f *Xianyu) ReleaseLoginResponses() { f.loginRelease.Do(func() { close(f.loginHold) }) }
