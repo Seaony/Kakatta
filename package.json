@@ -1,0 +1,11 @@
+{
+  "name": "kakatta-development",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.3.14",
+  "scripts": {
+    "dev": "bun scripts/dev.ts fake",
+    "dev:real": "bun scripts/dev.ts real",
+    "test:dev": "bun test ./scripts/dev.test.ts"
+  }
+}

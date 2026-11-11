@@ -11,7 +11,7 @@
     "generate:routes": "bun scripts/generate-routes.ts",
     "check:generated": "bun scripts/check-generated.ts",
     "check:locales": "bun scripts/check-locales.ts",
-    "typecheck": "bun run generate:routes && bun run --bun tsc -b --pretty false",
+    "typecheck": "bun run generate:routes && bun run --bun tsc -b --pretty false && bun run --bun tsc -p dev/tsconfig.json --pretty false",
     "build": "bun run typecheck && bun run --bun vite build",
     "test": "bun test",
     "check": "bun run check:generated && bun run check:locales && bun run typecheck && bun run test && bun run --bun vite build"
@@ -30,6 +30,7 @@
   "devDependencies": {
     "@happy-dom/global-registrator": "21.0.4",
     "@tanstack/router-cli": "1.168.0",
+    "@tanstack/router-generator": "1.168.0",
     "@tanstack/router-plugin": "1.169.0",
     "@testing-library/dom": "10.4.2",
     "@testing-library/react": "16.3.3",

@@ -28,12 +28,13 @@ func (e *vncStartError) Error() string { return previewText(locales.ZhCN, e.reas
 func (e *vncStartError) Unwrap() error { return e.cause }
 
 type readOnlyPreview struct {
-	reason  string
-	capture func(context.Context) ([]byte, error)
-	mu      sync.Mutex
-	next    time.Time
-	last    []byte
-	lastErr error
+	reason     string
+	noticeCode string
+	capture    func(context.Context) ([]byte, error)
+	mu         sync.Mutex
+	next       time.Time
+	last       []byte
+	lastErr    error
 }
 
 // StartWithFallback 只在 x11vnc 启动失败时，改用当前浏览器的只读画面。
@@ -107,6 +108,9 @@ func (s *Session) previewDocument(w http.ResponseWriter, r *http.Request) {
 			Lang: copyLang, Title: text("title"), Heading: text("heading"), Alt: text("alt"),
 			Help:       previewText(copyLang, "help", map[string]any{"reason": text(s.preview.reason)}),
 			Connecting: text("connecting"), Connected: text("connected"), Disconnected: text("disconnected"),
+		}
+		if s.preview.noticeCode != "" {
+			copy.Help = text(s.preview.noticeCode)
 		}
 		document.Copies = append(document.Copies, copy)
 		if copyLang == lang {

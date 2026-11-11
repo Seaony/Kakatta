@@ -30,6 +30,9 @@ func main() {
 }
 
 func run(ctx context.Context, args []string, input io.Reader, output io.Writer, lookup config.Lookup) error {
+	if handled, err := runDevelopment(ctx, args, output, lookup); handled {
+		return err
+	}
 	if len(args) > 0 {
 		switch args[0] {
 		case "check":
@@ -56,6 +59,10 @@ func serve(ctx context.Context, cfg config.Config, lookup config.Lookup, logger 
 }
 
 func serveWithGraphFactory(ctx context.Context, cfg config.Config, lookup config.Lookup, logger *slog.Logger, factory runtimeGraphFactory) (result error) {
+	return serveRuntime(ctx, cfg, lookup, logger, factory, nil)
+}
+
+func serveRuntime(ctx context.Context, cfg config.Config, lookup config.Lookup, logger *slog.Logger, factory runtimeGraphFactory, decorate func(*runtimeManager) (http.Handler, error)) (result error) {
 	if err := os.MkdirAll(cfg.DataDir, 0700); err != nil {
 		return err
 	}
@@ -143,8 +150,17 @@ func serveWithGraphFactory(ctx context.Context, cfg config.Config, lookup config
 		defer stop()
 		return errors.Join(err, runtime.Close(cleanup))
 	}
+	handler := http.Handler(runtime)
+	if decorate != nil {
+		handler, err = decorate(runtime)
+		if err != nil {
+			cleanup, stop := context.WithTimeout(context.Background(), 30*time.Second)
+			defer stop()
+			return errors.Join(err, runtime.Close(cleanup))
+		}
+	}
 	httpServer := &http.Server{
-		Handler: runtime, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: time.Minute,
+		Handler: handler, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: time.Minute,
 		MaxHeaderBytes: 1 << 20, BaseContext: func(net.Listener) context.Context { return ctx },
 	}
 	bootstrap := runtime.graph.bootstrap

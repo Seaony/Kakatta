@@ -24,6 +24,7 @@ type Service struct {
 	db             *sql.DB
 	cipher         *security.Cipher
 	now            func() time.Time
+	dataDir        string
 	mu             sync.Mutex
 	initialHash    [32]byte
 	initialExpires int64
@@ -81,7 +82,7 @@ func New(ctx context.Context, deps Dependencies) (*Service, Bootstrap, error) {
 		deps.Now = time.Now
 	}
 	s := &Service{
-		db: deps.DB, cipher: deps.Cipher, now: deps.Now,
+		db: deps.DB, cipher: deps.Cipher, now: deps.Now, dataDir: deps.DataDir,
 		challenges: make(map[[32]byte]challenge), setups: make(map[[32]byte]pendingSetup),
 	}
 	generation, _ := security.NewToken()
@@ -93,6 +94,9 @@ func New(ctx context.Context, deps Dependencies) (*Service, Bootstrap, error) {
 	}
 	_, err := s.admin(ctx)
 	if err == nil {
+		if err := s.removeInitialTokenFile(); err != nil {
+			return nil, Bootstrap{}, err
+		}
 		return s, Bootstrap{}, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
@@ -102,6 +106,9 @@ func New(ctx context.Context, deps Dependencies) (*Service, Bootstrap, error) {
 	s.initialHash, s.initialSet = hash, true
 	s.initialExpires = s.now().Add(setupLifetime).UnixMilli()
 	expires := s.initialExpires
+	if err := s.writeInitialTokenFile(token); err != nil {
+		return nil, Bootstrap{}, err
+	}
 	return s, Bootstrap{Token: token, ExpiresAt: &expires}, nil
 }
 
@@ -166,6 +173,8 @@ func (s *Service) Initialize(ctx context.Context, token, username, password, use
 		return Session{}, stored(err)
 	}
 	s.initialHash, s.initialSet = [32]byte{}, false
+	// 管理员已建好，旧令牌已作废；删除失败留到重启重试，不能误报初始化失败。
+	_ = s.removeInitialTokenFile()
 	return session, nil
 }
 

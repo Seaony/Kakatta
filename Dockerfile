@@ -42,7 +42,7 @@ RUN export DEBIAN_FRONTEND=noninteractive \
     && useradd --uid 1000 --gid kakatta --create-home --shell /usr/sbin/nologin kakatta \
     && install -d -o kakatta -g kakatta -m 0700 /data \
     && install -d -o root -g root -m 1777 /tmp/.X11-unix
-ENV PUID=1000 PGID=1000 TZ=Asia/Shanghai \
+ENV TZ=Asia/Shanghai \
     HOME=/data/home XDG_CONFIG_HOME=/data/home/.config LANG=C.UTF-8
 COPY --chmod=0755 deploy/entrypoint.sh /usr/local/bin/kakatta-entrypoint
 EXPOSE 8080
@@ -57,6 +57,27 @@ FROM runtime AS formal-test
 COPY --from=build /out/kakatta /usr/local/bin/kakatta
 COPY --from=build /out/experiment /usr/local/bin/experiment
 COPY --from=formal-test-build /out/formal-path.test /tests/formal-path.test
+
+FROM --platform=$TARGETPLATFORM golang:${GO_VERSION}-trixie AS dev-tools
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+RUN CGO_ENABLED=0 GOBIN=/out go install github.com/air-verse/air@v1.67.4
+COPY . .
+RUN CGO_ENABLED=0 go build -tags kakatta_dev -buildvcs=false -trimpath -o /out/devhost ./cmd/devhost
+
+FROM runtime AS dev
+COPY --from=dev-tools /usr/local/go /usr/local/go
+COPY --from=dev-tools /out/air /usr/local/bin/air
+COPY --from=dev-tools /out/devhost /usr/local/bin/devhost
+COPY --from=dev-tools /go/pkg/mod /go/pkg/mod
+COPY --from=dev-tools /root/.cache/go-build /go/build-cache
+COPY --chmod=0755 deploy/dev-entrypoint.sh /usr/local/bin/kakatta-dev-entrypoint
+ENV PATH="/usr/local/go/bin:${PATH}" GOROOT=/usr/local/go GOPATH=/go \
+    GOMODCACHE=/go/pkg/mod GOCACHE=/go/build-cache CGO_ENABLED=0 GOTOOLCHAIN=local
+WORKDIR /workspace
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/kakatta-dev-entrypoint"]
+CMD ["/usr/local/bin/devhost", "--mode", "real", "--root", "/workspace", "--state", "/data/.development", "--data", "/data", "--listen", "0.0.0.0:18081", "--backend-listen", "127.0.0.1:8080", "--proxy-listen", "0.0.0.0:18080", "--air", "/usr/local/bin/air", "--poll"]
 
 FROM runtime AS final
 COPY --from=build /out/kakatta /usr/local/bin/kakatta

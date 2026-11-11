@@ -30,9 +30,10 @@ var (
 )
 
 type Dependencies struct {
-	DB     *sql.DB
-	Cipher *security.Cipher
-	Now    func() time.Time
+	DB      *sql.DB
+	Cipher  *security.Cipher
+	Now     func() time.Time
+	DataDir string
 }
 
 type Bootstrap struct {

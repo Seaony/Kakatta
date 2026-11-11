@@ -74,6 +74,7 @@ type Service struct {
 	prepareDone         chan struct{}
 	prepareErr          error
 	activationPending   bool
+	development         developmentState
 }
 
 func (e *ServiceError) Error() string { return e.Reason.Code }

@@ -14,7 +14,7 @@ Kakatta is in development. The instructions below describe how to build from sou
 
 Use a Linux `amd64` or `arm64` Docker host, including Docker Desktop running Linux containers. Allow at least 1 GB of memory for the container and leave browser concurrency at its default of one page on small hosts.
 
-For a source build, run `KAKATTA_BUILD_COMMIT=$(git rev-parse HEAD) docker compose up -d --build` from a checkout with the repository's [compose.yaml](compose.yaml).
+From a source checkout, run `docker compose up -d`; the first start builds the image. Open `http://127.0.0.1:8080`, read the token from `data/初始化令牌.txt`, and create an administrator. Stop with `docker compose down` to keep your data; after updating the source, run `docker compose up -d --build`. Prefix the start command with `KAKATTA_BUILD_COMMIT=$(git rev-parse HEAD)` to record the exact commit.
 
 For a published image, save the following as `compose.yaml` in its own directory. In a `.env` file beside it, set `KAKATTA_IMAGE=ghcr.io/seaony/kakatta:VERSION` and replace `VERSION` with the exact version from [GitHub Releases](https://github.com/Seaony/Kakatta/releases), without the leading `v`. You can also use the Docker Hub repository announced for the release. The workflow targets both registries with exact version, major version, and `latest` tags. Pin the exact version for predictable upgrades.
 
@@ -25,8 +25,8 @@ services:
     ports:
       - "127.0.0.1:8080:8080"
     environment:
-      PUID: "${PUID:-1000}"
-      PGID: "${PGID:-1000}"
+      PUID:
+      PGID:
       TZ: "${TZ:-Asia/Shanghai}"
     volumes:
       - ./data:/data
@@ -43,9 +43,9 @@ docker compose up -d
 docker compose logs kakatta
 ```
 
-On first start, open `http://127.0.0.1:8080` on the Docker host, or use an SSH tunnel or HTTPS proxy for a remote host. Enter the one-time setup token from the logs and create your administrator username and password. If the token expires after 30 minutes, restart `kakatta` and read the new token from the logs. Keep these logs private. The setup guide then takes you through scanning a Xianyu login QR code, configuring optional AI and notification channels, and creating a first task.
+On first start, open `http://127.0.0.1:8080` on the Docker host, or use an SSH tunnel or HTTPS proxy for a remote host. Read the one-time setup token from `data/初始化令牌.txt` or `docker compose logs kakatta` and create your administrator username and password. The file has mode 0600 and is removed after setup. If the token expires after 30 minutes before setup, restart `kakatta` for a new token. Keep the data directory and logs private. The setup guide then takes you through scanning a Xianyu login QR code, configuring optional AI and notification channels, and creating a first task.
 
-Set `PUID` and `PGID` to the numeric owner and group you want for the data directory. The entrypoint adjusts ownership under `/data` before running Kakatta and Chrome as a non-root user. `TZ` sets the container time zone and the initial application default. Change the application's time zone in Settings after setup. On macOS, use `PUID=$(id -u) PGID=$(id -g) docker compose up -d` so your account can read the private diagnostics on the host without sudo. Before scanning, follow the local checks and troubleshooting steps in [CONTAINER.md](docs/CONTAINER.md).
+When `PUID` and `PGID` are unset, the entrypoint uses the mounted directory's owner and group, falling back to 1000 for either ID that is 0. Set the variables only when you want explicit IDs. The entrypoint adjusts ownership under `/data` before running Kakatta and Chrome as a non-root user. `TZ` sets the container time zone and the initial application default. Change the application's time zone in Settings after setup. On macOS, start directly, or use `PUID=$(id -u) PGID=$(id -g) docker compose up -d` to set explicit ownership. Before scanning, follow the local checks and troubleshooting steps in [CONTAINER.md](docs/CONTAINER.md).
 
 `seccomp=unconfined` relaxes Docker's syscall filter so Chrome can start with its own sandbox intact. For a narrower filter, save [chrome-seccomp.json](deploy/chrome-seccomp.json) beside your Compose file and change the entry to `seccomp=./chrome-seccomp.json`. Keep Chrome's sandbox enabled and publish only the application port.
 
@@ -145,7 +145,17 @@ Kakatta browses Xianyu in read-only mode. It does not place orders, send message
 
 ## Development
 
-Build the web assets before running Go checks. Use the Go version in [go.mod](go.mod) and the Bun version in [web/package.json](web/package.json).
+Use the Go version in [go.mod](go.mod) and the Bun version in [package.json](package.json). With Google Chrome installed, run this from the repository root:
+
+```sh
+bun run dev
+```
+
+Open `http://127.0.0.1:5173`. The first start seeds fictional data in `build/_dev/data`, starts local Xianyu, model, and notification fixtures, and signs you in automatically. Run “示例 · MacBook监控” from Tasks to exercise the full flow. The development panel shows backend logs and recent errors, with controls for expired login, verification, missing fields, and API errors. Vite updates the page immediately; Air compiles Go changes before the manager drains active work and switches processes. Failed builds keep the old backend running. One Ctrl+C safely closes the child processes.
+
+For maintainer testing against the live site, use `bun run dev:real`. Go, Chrome, and Air run in a development container, with Vite on the host. It preserves the formal authentication and protection records in `./data`; first-time setup still needs a token. Scheduling starts paused every time: run a task manually or explicitly enable scheduling in the panel. Go reloads wait for active work to finish and retain login state and quotas. The first build downloads development tools and dependencies. The development image and compiler require more disk space and memory than the release image. See [development containers](docs/CONTAINER.md#开发热更新).
+
+Run the full checks with:
 
 ```sh
 bun install --cwd web --frozen-lockfile

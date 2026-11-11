@@ -1,9 +1,10 @@
-import { cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import openapiTS, { astToString } from 'openapi-typescript';
 import ts from 'typescript';
+import { Generator, getConfig, type GeneratorPlugin } from '@tanstack/router-generator';
 
 export const webRoot = fileURLToPath(new URL('../', import.meta.url));
 export const apiOutput = join(webRoot, 'src/api/schema.gen.d.ts');
@@ -18,6 +19,19 @@ export function normalizeRouteNotice(source: string): string {
   throw new Error('路由生成器的说明格式已改变，请核对生成脚本。');
 }
 
+export const routeNoticePlugin: GeneratorPlugin = {
+  name: 'local-route-notice',
+  init({ generator }) {
+    const build = generator.buildRouteTree.bind(generator);
+    // 写盘和缓存前统一说明，避免开发监听反复改回去。
+    generator.buildRouteTree = (options) => {
+      const result = build(options);
+      result.routeTreeContent = normalizeRouteNotice(result.routeTreeContent);
+      return result;
+    };
+  },
+};
+
 export async function generateApi(): Promise<string> {
   const ast = await openapiTS(new URL('../../api/openapi.json', import.meta.url), {
     transform(schema) {
@@ -27,18 +41,15 @@ export async function generateApi(): Promise<string> {
   return '// 接口类型由 api/openapi.json 生成，请勿手改。\n\n' + astToString(ast);
 }
 
-export async function generateRoutes(): Promise<string> {
+export async function generateRoutes(root = webRoot): Promise<string> {
   const temp = await mkdtemp(join(tmpdir(), 'kakatta-routes-'));
   try {
-    await cp(join(webRoot, 'src/routes'), join(temp, 'src/routes'), { recursive: true });
-    const config = JSON.parse(await readFile(join(webRoot, 'tsr.config.json'), 'utf8')) as Record<string, unknown>;
-    await writeFile(join(temp, 'tsr.config.json'), JSON.stringify(config));
-    const child = Bun.spawn([process.execPath, join(webRoot, 'node_modules/.bin/tsr'), 'generate'], {
-      cwd: temp, stdout: 'pipe', stderr: 'pipe',
-    });
-    const [code, output] = await Promise.all([child.exited, new Response(child.stderr).text()]);
-    if (code !== 0) throw new Error('路由生成失败：' + output.trim());
-    return normalizeRouteNotice(await readFile(join(temp, 'src/routeTree.gen.ts'), 'utf8'));
+    await cp(join(root, 'src/routes'), join(temp, 'src/routes'), { recursive: true });
+    await cp(join(root, 'tsr.config.json'), join(temp, 'tsr.config.json'));
+    const generator = new Generator({ root: temp,
+      config: getConfig({ plugins: [routeNoticePlugin], disableLogging: true }, temp) });
+    await generator.run();
+    return await readFile(join(temp, 'src/routeTree.gen.ts'), 'utf8');
   } finally {
     await rm(temp, { recursive: true, force: true });
   }

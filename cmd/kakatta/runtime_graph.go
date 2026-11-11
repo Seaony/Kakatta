@@ -37,6 +37,15 @@ func newRuntimeGraph(life context.Context, cfg config.Config, paths config.Paths
 
 func newRuntimeGraphWithSite(life context.Context, cfg config.Config, paths config.Paths, key [backup.MasterKeyBytes]byte, source backup.KeySource, generation string, site web.Site) (_ *runtimeGraph, err error) {
 	defer clear(key[:])
+	factory, err := resources.New(site)
+	if err != nil {
+		return nil, err
+	}
+	return newRuntimeGraphWithResources(life, cfg, paths, key, source, generation, factory)
+}
+
+func newRuntimeGraphWithResources(life context.Context, cfg config.Config, paths config.Paths, key [backup.MasterKeyBytes]byte, source backup.KeySource, generation string, factory service.ResourceFactory) (_ *runtimeGraph, err error) {
+	defer clear(key[:])
 	if err := life.Err(); err != nil {
 		return nil, err
 	}
@@ -68,11 +77,7 @@ func newRuntimeGraphWithSite(life context.Context, cfg config.Config, paths conf
 	if err != nil {
 		return nil, err
 	}
-	g.authentication, g.bootstrap, err = auth.New(ctx, auth.Dependencies{DB: g.database.DB(), Cipher: cipher})
-	if err != nil {
-		return nil, err
-	}
-	factory, err := resources.New(site)
+	g.authentication, g.bootstrap, err = auth.New(ctx, auth.Dependencies{DB: g.database.DB(), Cipher: cipher, DataDir: paths.DataDir})
 	if err != nil {
 		return nil, err
 	}

@@ -345,6 +345,9 @@ func (s *Service) recordPreflightSkipTx(ctx context.Context, tx *sql.Tx, preflig
 }
 
 func (s *Service) tryStartRun(ctx context.Context, request startRequest) (bool, *RuntimeBlocked, error) {
+	if request.Trigger == TriggerAuto && s.automaticSchedulingPaused() {
+		return false, nil, nil
+	}
 	release, err := s.beginMutation()
 	if err != nil {
 		return false, nil, err

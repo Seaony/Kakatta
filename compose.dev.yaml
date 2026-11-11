@@ -1,0 +1,50 @@
+services:
+  dev:
+    build:
+      context: .
+      target: dev
+    image: kakatta:dev
+    ports:
+      - "127.0.0.1:18080:18080"
+      - "127.0.0.1:18081:18081"
+    environment:
+      PUID:
+      PGID:
+      TZ: "${TZ:-Asia/Shanghai}"
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      ALL_PROXY: ""
+      NO_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+      all_proxy: ""
+      no_proxy: ""
+    volumes:
+      - type: bind
+        source: .
+        target: /workspace
+        read_only: true
+      - type: bind
+        source: ./data
+        target: /data
+      - type: volume
+        source: gomodcache
+        target: /go/pkg/mod
+      - type: volume
+        source: gocache
+        target: /go/build-cache
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    security_opt:
+      - seccomp=unconfined
+    stop_grace_period: 20m
+    healthcheck:
+      test: [CMD, curl, --noproxy, "*", -fsS, http://127.0.0.1:18080/healthz]
+      interval: 5s
+      timeout: 3s
+      start_period: 120s
+      retries: 3
+
+volumes:
+  gomodcache:
+  gocache:

@@ -93,6 +93,7 @@ type Xianyu struct {
 	sellerProfile         bool
 	sellerHits            SellerVisitCounts
 	searchPages           *[2][]SearchItem
+	searchResponse        SearchResponseBehavior
 	searchFaults          map[string]searchFaultState
 	faultGates            []*SearchFaultGate
 	requests              atomic.Int64
@@ -325,7 +326,17 @@ func Start() *Xianyu {
 		finalFails := f.finalFails
 		finalDelay := f.finalDelay
 		pages := f.searchPages
+		responseBehavior := f.searchResponse
 		f.mu.Unlock()
+		if responseBehavior.Status != 0 {
+			http.Error(w, "本地搜索接口暂不可用", responseBehavior.Status)
+			return
+		}
+		if responseBehavior.Ret != "" {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{"ret": []string{responseBehavior.Ret}, "data": map[string]any{}})
+			return
+		}
 		if f.serveSearchFault(w, r, body) {
 			return
 		}
@@ -345,15 +356,18 @@ func Start() *Xianyu {
 			return
 		}
 		page2 := r.URL.Query().Get("page") == "2"
+		response := searchJSON(f.srv.URL, page2)
 		if pages != nil {
 			index := 0
 			if page2 {
 				index = 1
 			}
-			json.NewEncoder(w).Encode(searchItemsJSON(f.srv.URL, pages[index]))
-			return
+			response = searchItemsJSON(f.srv.URL, pages[index])
 		}
-		json.NewEncoder(w).Encode(searchJSON(f.srv.URL, page2))
+		if responseBehavior.MissingFields {
+			omitSearchOptionalFields(response)
+		}
+		json.NewEncoder(w).Encode(response)
 	})
 	mux.HandleFunc("/h5/mtop.taobao.idle.pc.detail/1.0/", func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()

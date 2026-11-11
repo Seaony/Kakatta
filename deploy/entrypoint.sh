@@ -12,14 +12,26 @@ valid_id() {
     [ "$1" -ge 1 ] && [ "$1" -le 2147483647 ]
 }
 
+[ -d /data ] && [ ! -L /data ] || fail '数据目录必须是真实目录，不能是符号链接。'
+data_owner=$(stat -c '%u:%g' /data) || fail '无法读取数据目录属主，请检查挂载和权限。'
+if [ "${PUID+x}" != x ]; then
+    PUID=${data_owner%:*}
+    [ "$PUID" -ne 0 ] || PUID=1000
+fi
+if [ "${PGID+x}" != x ]; then
+    PGID=${data_owner#*:}
+    [ "$PGID" -ne 0 ] || PGID=1000
+fi
 valid_id "$PUID" || fail 'PUID 必须是 1 到 2147483647 之间的用户编号。'
 valid_id "$PGID" || fail 'PGID 必须是 1 到 2147483647 之间的组编号。'
+export PUID PGID
 [ "$HOME" = /data/home ] && [ "$XDG_CONFIG_HOME" = /data/home/.config ] \
     || fail '请不要覆盖 HOME 或 XDG_CONFIG_HOME，运行目录必须保留在 /data 内。'
 [ ! -L "$HOME" ] && [ ! -L "$XDG_CONFIG_HOME" ] \
     || fail '运行目录不能是符号链接，请移除 data/home 或 data/home/.config 的链接后重试。'
 
 if [ "$(id -u)" -eq 0 ]; then
+    printf '运行用户：UID=%s GID=%s。\n' "$PUID" "$PGID"
     [ ! -L /tmp/.X11-unix ] || fail '虚拟屏幕套接字目录不能是符号链接。'
     install -d -o root -g root -m 1777 /tmp/.X11-unix
     if [ "$(id -g kakatta)" != "$PGID" ]; then
@@ -38,6 +50,7 @@ if [ "$(id -u)" -eq 0 ]; then
     gosu kakatta sh -c 'probe=$(mktemp /data/.write-test.XXXXXX) && rm -f "$probe"' \
         || fail '数据目录不能写入，请把挂载目录的属主改为 PUID/PGID，或调整目录权限。'
 else
+    printf '运行用户：UID=%s GID=%s（使用容器指定的非 root 用户）。\n' "$(id -u)" "$(id -g)"
     mkdir -p "$HOME" "$XDG_CONFIG_HOME" \
         || fail '数据目录不能写入，请调整挂载目录权限后重试。'
     probe=$(mktemp /data/.write-test.XXXXXX) \

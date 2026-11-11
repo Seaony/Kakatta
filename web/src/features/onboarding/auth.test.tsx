@@ -23,16 +23,24 @@ function failure(status: number, code: string, args = {}, fields: Schema<'FieldI
   return Response.json({ error: { code, args }, fields, request_id: 'request-local-27' }, { status });
 }
 
-async function mount(node: ReactNode, transport: ApiFetch) {
+async function mount(node: ReactNode, transport: ApiFetch, locale: 'zh-CN' | 'en' = 'zh-CN') {
   const queryClient = createAppQueryClient();
   const route = createRootRoute({ component: () => node });
   const router = createRouter({ routeTree: route, history: createMemoryHistory({ initialEntries: ['/'] }) });
   await router.load();
-  const view = render(<I18nProvider instance={createI18n('zh-CN')}><QueryClientProvider client={queryClient}>
+  const view = render(<I18nProvider instance={createI18n(locale)}><QueryClientProvider client={queryClient}>
     <ApiProvider api={createApiClient({ fetch: transport })}><RouterProvider router={router} /></ApiProvider>
   </QueryClientProvider></I18nProvider>);
   return { queryClient, view, close() { view.unmount(); queryClient.clear(); } };
 }
+
+test.each(['zh-CN', 'en'] as const)('%s 初始化页明确说明令牌文件位置与容器日志命令', async (locale) => {
+  const page = await mount(<SetupPage />, async () => Response.json({ initialized: false, token_expires_at: Date.now() + 1_800_000 }), locale);
+  try {
+    const help = await screen.findByText(/data\/初始化令牌.txt/);
+    expect(help.textContent).toContain('docker compose logs kakatta');
+  } finally { page.close(); }
+});
 
 test('密码失败保留输入并定位字段，未知原因安全回退，不自动重复登录', async () => {
   let requests = 0;

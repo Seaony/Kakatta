@@ -14,7 +14,7 @@
 
 使用支持 Linux 容器的 `amd64` 或 `arm64` Docker 环境，Docker Desktop 也可以。给容器至少留 1 GB 内存。内存较紧的机器建议维持默认值，一次打开一个浏览器页面。
 
-从源码构建时，在仓库目录按现有的 [compose.yaml](compose.yaml) 运行 `KAKATTA_BUILD_COMMIT=$(git rev-parse HEAD) docker compose up -d --build`。
+从源码运行，在仓库目录执行 `docker compose up -d`，首次会自动构建。打开 `http://127.0.0.1:8080`，从 `data/初始化令牌.txt` 取令牌并设置管理员。停止用 `docker compose down`，数据保留；更新源码后用 `docker compose up -d --build`。需要记录准确提交号时，在启动命令前加 `KAKATTA_BUILD_COMMIT=$(git rev-parse HEAD)`。
 
 使用正式镜像时，把下面的内容保存为独立目录里的 `compose.yaml`。在同目录的 `.env` 中填 `KAKATTA_IMAGE=ghcr.io/seaony/kakatta:VERSION`，把 `VERSION` 换成 [GitHub Releases](https://github.com/Seaony/Kakatta/releases) 公布的精确版本，去掉开头的 `v`。也可以使用发布时公布的 Docker Hub 仓库。工作流给两处镜像加上精确版本、主版本和 `latest` 标签。建议固定精确版本，升级时再明确更改。
 
@@ -25,8 +25,8 @@ services:
     ports:
       - "127.0.0.1:8080:8080"
     environment:
-      PUID: "${PUID:-1000}"
-      PGID: "${PGID:-1000}"
+      PUID:
+      PGID:
       TZ: "${TZ:-Asia/Shanghai}"
     volumes:
       - ./data:/data
@@ -43,9 +43,9 @@ docker compose up -d
 docker compose logs kakatta
 ```
 
-首次启动后，在 Docker 宿主机打开 `http://127.0.0.1:8080`。宿主机在远端时，用 SSH 隧道或 HTTPS 反向代理访问。填入日志里的一次性初始化令牌，设置管理员用户名和密码。令牌 30 分钟后过期，重启 `kakatta` 后可从日志取新令牌。请保管好这些日志。首次引导接下来会带你扫码登录闲鱼、选配 AI 和推送渠道，以及创建第一个任务。
+首次启动后，在 Docker 宿主机打开 `http://127.0.0.1:8080`。宿主机在远端时，用 SSH 隧道或 HTTPS 反向代理访问。填入 `data/初始化令牌.txt` 或 `docker compose logs kakatta` 中的一次性初始化令牌，设置管理员用户名和密码。文件权限为 0600，初始化成功后删除；令牌 30 分钟后过期，未初始化时重启 `kakatta` 可取新令牌。请保管好数据目录和日志。首次引导接下来会带你扫码登录闲鱼、选配 AI 和推送渠道，以及创建第一个任务。
 
-把 `PUID` 和 `PGID` 设成数据目录要使用的数字用户编号和组编号。入口脚本会修正 `/data` 下的属主，随后以非 root 用户运行 Kakatta 和 Chrome。`TZ` 设置容器时区和应用的初始默认时区，初始化后可在设置里修改应用时区。 Mac 上用 `PUID=$(id -u) PGID=$(id -g) docker compose up -d`，让当前用户无需 sudo 就能读宿主上的私有诊断文件。扫码前按 [容器文档](docs/CONTAINER.md) 做本地自检；出错后的文件位置也在该文档。
+不设置 `PUID` 和 `PGID` 时，入口自动采用挂载目录的用户和组编号，编号为 0 时分别回退到 1000；需要指定时再设置这两个变量。入口脚本会修正 `/data` 下的属主，随后以非 root 用户运行 Kakatta 和 Chrome。`TZ` 设置容器时区和应用的初始默认时区，初始化后可在设置里修改应用时区。 Mac 上可直接启动；需要显式指定属主时使用 `PUID=$(id -u) PGID=$(id -g) docker compose up -d`。扫码前按 [容器文档](docs/CONTAINER.md) 做本地自检；出错后的文件位置也在该文档。
 
 `seccomp=unconfined` 放宽 Docker 的系统调用限制，让 Chrome 能保留自己的沙盒。想收窄容器权限时，把 [chrome-seccomp.json](deploy/chrome-seccomp.json) 保存到 Compose 文件旁，把该项改成 `seccomp=./chrome-seccomp.json`。请保留 Chrome 沙盒，只映射应用端口。
 
@@ -145,7 +145,17 @@ Kakatta 只读浏览闲鱼，不下单、不发消息、不改浏览器指纹。
 
 ## 本地开发
 
-先构建网页资源，再运行 Go 检查。Go 和 Bun 版本分别以 [go.mod](go.mod) 和 [web/package.json](web/package.json) 为准。
+使用 [go.mod](go.mod) 指定的 Go 和 [package.json](package.json) 指定的 Bun。本机安装 Google Chrome 后，在仓库根目录执行：
+
+```sh
+bun run dev
+```
+
+打开 `http://127.0.0.1:5173`。首次自动生成样例，使用本地假闲鱼、假模型和假推送，免登录；数据固定保存在 `build/_dev/data`。在任务页手动运行「示例 · MacBook监控」可走完整流程。网页面板可看后端日志和最近错误，并切换登录失效、风控、字段缺失或接口报错。网页改动即时更新，Go 改动由 Air 编译后自动切换；运行中的任务先正常结束，编译失败继续使用旧服务。按一次 Ctrl+C 安全退出并回收子进程。
+
+作者验证真实站点时运行 `bun run dev:real`：Go、Chrome 和 Air 在开发容器，Vite 在宿主机；沿用 `./data` 的正式登录和保护记录，首次仍需初始化令牌。调度每次启动默认暂停，页面手动运行或明确打开调度后才开始任务。修改 Go 同样等待当前运行结束再切换，不清登录和额度。首次构建需要下载开发工具和依赖；开发镜像比正式镜像大，编译也需要额外内存。详见 [开发容器](docs/CONTAINER.md#开发热更新)。
+
+完整检查：
 
 ```sh
 bun install --cwd web --frozen-lockfile

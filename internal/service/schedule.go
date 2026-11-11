@@ -74,6 +74,9 @@ func (s *Service) scheduleOnce(ctx context.Context) (*time.Time, error) {
 			next = earlierWake(next, request.GapUntil)
 		}
 	}
+	if s.automaticSchedulingPaused() {
+		return next, nil
+	}
 	starts, err := s.automaticStarts(ctx)
 	if err != nil {
 		return nil, err
