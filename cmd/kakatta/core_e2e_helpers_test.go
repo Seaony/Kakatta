@@ -37,6 +37,7 @@ type coreFlowHarness struct {
 	accountID, providerID, channelID int64
 	mu                               sync.Mutex
 	modelKinds                       []string
+	modelActive, maxModelActive      int
 	products                         []map[string]any
 	pushed                           []map[string]string
 }
@@ -52,6 +53,15 @@ func newCoreFlowHarness(t *testing.T, ctx context.Context, modelHook func(http.R
 	h.xianyu.EnableAutomaticLogin()
 	h.xianyu.EnableSellerProfile()
 	h.model = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h.mu.Lock()
+		h.modelActive++
+		h.maxModelActive = max(h.maxModelActive, h.modelActive)
+		h.mu.Unlock()
+		defer func() {
+			h.mu.Lock()
+			h.modelActive--
+			h.mu.Unlock()
+		}()
 		if r.Method != http.MethodPost || r.URL.Path != "/v1/chat/completions" || r.Header.Get("Authorization") != "Bearer local-core-flow-key" {
 			h.t.Errorf("模型请求没有经过正式兼容客户端：%s %s", r.Method, r.URL.Path)
 			http.Error(w, "unexpected local request", http.StatusBadRequest)
@@ -247,6 +257,12 @@ func (h *coreFlowHarness) ModelKinds() []string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return append([]string(nil), h.modelKinds...)
+}
+
+func (h *coreFlowHarness) ModelConcurrency() (active, maximum int) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.modelActive, h.maxModelActive
 }
 func (h *coreFlowHarness) Products() []map[string]any {
 	h.mu.Lock()

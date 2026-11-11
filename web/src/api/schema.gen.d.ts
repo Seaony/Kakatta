@@ -436,7 +436,7 @@ export interface paths {
         put?: never;
         /**
          * 立即运行任务
-         * @description 只有资源忙时排队；排队开始前重检全部适用门禁。HTTP 请求结束不取消已接纳运行。
+         * @description 首次请求仅在资源忙时排队；已因资源占用入队的请求继续等待前次结束后自然产生的账号间隔，到期唤醒。排队期间仍重检其他全部适用门禁，阻断时移队记跳过。HTTP 请求结束不取消已接纳运行。
          */
         post: operations["runTask"];
         delete?: never;

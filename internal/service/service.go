@@ -125,15 +125,16 @@ func (s *Service) initRuntime() {
 }
 
 type preflightResult struct {
-	Task       Task
-	Account    Account
-	Snapshot   settings.Snapshot
-	Config     settings.Values
-	Clock      quota.ClockState
-	Now        time.Time
-	Blocked    *RuntimeBlocked
-	NeedsUser  bool
-	UserReason *locales.Message
+	Task              Task
+	Account           Account
+	Snapshot          settings.Snapshot
+	Config            settings.Values
+	Clock             quota.ClockState
+	Now               time.Time
+	Blocked           *RuntimeBlocked
+	BlockedWithoutGap *RuntimeBlocked
+	NeedsUser         bool
+	UserReason        *locales.Message
 }
 
 func (s *Service) emit(kind string, data any) error {

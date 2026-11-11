@@ -69,6 +69,11 @@ func (s *Service) scheduleOnce(ctx context.Context) (*time.Time, error) {
 			s.removeQueued(request)
 		}
 	}
+	for _, request := range s.queuedStarts() {
+		if !request.GapUntil.IsZero() {
+			next = earlierWake(next, request.GapUntil)
+		}
+	}
 	starts, err := s.automaticStarts(ctx)
 	if err != nil {
 		return nil, err

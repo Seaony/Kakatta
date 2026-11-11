@@ -39,7 +39,7 @@ func (s *Service) preflightTx(ctx context.Context, tx *sql.Tx, task Task, trigge
 	}
 	if trigger == TriggerAuto {
 		if !task.Enabled {
-			result.Blocked = runBlock("run.disabled", nil)
+			result.block(runBlock("run.disabled", nil))
 			return result, nil
 		}
 		for _, gate := range []struct {
@@ -47,7 +47,7 @@ func (s *Service) preflightTx(ctx context.Context, tx *sql.Tx, task Task, trigge
 			at   *int64
 		}{{"run.not_due", task.NextRunAt}, {"run.failure_paused", task.FailurePausedUntil}} {
 			if gate.at != nil && *gate.at > now.UnixMilli() {
-				mergeRunBlock(&result.Blocked, runBlock(gate.code, gate.at))
+				result.block(runBlock(gate.code, gate.at))
 			}
 		}
 	}
@@ -82,7 +82,7 @@ func (s *Service) preflightTx(ctx context.Context, tx *sql.Tx, task Task, trigge
 	}
 	manualOpportunity := trigger == TriggerManual && account.State == AccountCooling && !account.CooldownManualUsed && !loggedOut
 	if pause != nil && !manualOpportunity {
-		mergeRunBlock(&result.Blocked, pause)
+		result.block(pause)
 	}
 	if loggedOut && !accountIsDenied(account, now.UnixMilli()) {
 		setRunUserReason(&result, trigger, "run.account_signed_out")
@@ -110,14 +110,14 @@ func (s *Service) preflightTx(ctx context.Context, tx *sql.Tx, task Task, trigge
 		return result, storageFailure(err)
 	}
 	if reason != nil {
-		mergeRunBlock(&result.Blocked, &RuntimeBlocked{Reason: *reason, NextAllowedAt: readyAt})
+		result.block(&RuntimeBlocked{Reason: *reason, NextAllowedAt: readyAt})
 	}
 	if task.JudgeMode == analysis.ModeAI {
 		blocked, err := aiRunBudgetTx(ctx, tx, snapshot, clock)
 		if err != nil {
 			return result, storageFailure(err)
 		}
-		mergeRunBlock(&result.Blocked, blocked)
+		result.block(blocked)
 	} else if task.JudgeMode != analysis.ModeKeyword {
 		return result, storageFailure(errors.New("任务判断方式无效"))
 	}
@@ -139,7 +139,17 @@ func (s *Service) preflightTx(ctx context.Context, tx *sql.Tx, task Task, trigge
 	}
 	if until != nil {
 		at := until.UnixMilli()
-		mergeRunBlock(&result.Blocked, runBlock("run.quiet_hours", &at))
+		result.block(runBlock("run.quiet_hours", &at))
+	}
+	if ready.After(now) {
+		currentUntil, err := quietUntil(now, quiet, location)
+		if err != nil {
+			return result, storageFailure(err)
+		}
+		if currentUntil != nil {
+			at := currentUntil.UnixMilli()
+			mergeRunBlock(&result.BlockedWithoutGap, runBlock("run.quiet_hours", &at))
+		}
 	}
 	if task.JudgeMode != analysis.ModeAI {
 		return result, nil
@@ -162,9 +172,15 @@ func runBlock(code string, at *int64) *RuntimeBlocked {
 	return &RuntimeBlocked{Reason: locales.Message{Code: code, Args: map[string]any{}}, NextAllowedAt: int64Copy(at)}
 }
 
+func (result *preflightResult) block(blocked *RuntimeBlocked) {
+	mergeRunBlock(&result.Blocked, blocked)
+	mergeRunBlock(&result.BlockedWithoutGap, blocked)
+}
+
 func setRunUserReason(result *preflightResult, trigger RunTrigger, code string) {
 	blocked := runBlock(code, nil)
 	result.UserReason, result.NeedsUser = &blocked.Reason, true
+	result.BlockedWithoutGap = blocked
 	// 自动计划仍等已有的有限时间门禁；展示原因独立，不能承诺到时就能运行。
 	if trigger == TriggerManual || result.Blocked == nil || result.Blocked.NextAllowedAt == nil {
 		result.Blocked = blocked
@@ -342,8 +358,13 @@ func (s *Service) tryStartRun(ctx context.Context, request startRequest) (bool, 
 	if err != nil {
 		return false, nil, err
 	}
+	gapUntil := queuedAccountGapWait(request, &preflight)
 	if err := s.saveRunPreflightTx(ctx, tx, preflight, request.Trigger); err != nil {
 		return false, nil, err
+	}
+	s.setQueuedGapUntil(request, gapUntil)
+	if !gapUntil.IsZero() {
+		return false, nil, nil
 	}
 	if preflight.Blocked != nil {
 		if request.SessionID != "" {
@@ -355,7 +376,10 @@ func (s *Service) tryStartRun(ctx context.Context, request startRequest) (bool, 
 	if err := json.Unmarshal(preflight.Snapshot.Values["crawl.global_pages"], &pageLimit); err != nil || pageLimit < 1 {
 		return false, nil, storageFailure(errors.New("全局页面上限无效"))
 	}
-	request.AccountID = preflight.Account.ID
+	if request.AccountID != preflight.Account.ID {
+		request.AccountID = preflight.Account.ID
+		request.WaitedForAccount, request.GapUntil = false, time.Time{}
+	}
 	session, reserved, err := s.reserveStart(request, pageLimit, preflight.Now)
 	if err != nil || !reserved {
 		return false, nil, err
@@ -383,15 +407,22 @@ func (s *Service) tryStartRun(ctx context.Context, request startRequest) (bool, 
 	if err != nil {
 		return false, nil, err
 	}
-	if preflight.Blocked != nil {
+	gapUntil = queuedAccountGapWait(request, &preflight)
+	if preflight.Blocked != nil || !gapUntil.IsZero() {
 		if err := s.saveRunPreflightTx(ctx, tx, preflight, request.Trigger); err != nil {
 			return false, nil, err
+		}
+		if !gapUntil.IsZero() {
+			s.setQueuedGapUntil(request, gapUntil)
+			retryReservation = true
+			return false, nil, nil
 		}
 		return false, preflight.Blocked, nil
 	}
 	// 绑定变了就交回调度器重新取名额，不把旧账号的名额拿给新账号。
 	if preflight.Account.ID != request.AccountID {
 		request.AccountID = preflight.Account.ID
+		request.WaitedForAccount, request.GapUntil = false, time.Time{}
 		retryReservation = true
 		return false, nil, nil
 	}
@@ -487,6 +518,23 @@ func (s *Service) tryStartRun(ctx context.Context, request startRequest) (bool, 
 	_ = s.emit("runs.changed", map[string]any{"task_id": task.ID, "run_id": record.ID})
 	go s.executeRun(run, session)
 	return true, nil, nil
+}
+
+// 资源队列只续等自然间隔，不能让较晚的间隔盖过其他门禁。
+func queuedAccountGapWait(request startRequest, preflight *preflightResult) time.Time {
+	if request.Trigger != TriggerManual || request.SessionID == "" || !request.WaitedForAccount || request.AccountID != preflight.Account.ID {
+		return time.Time{}
+	}
+	if preflight.BlockedWithoutGap != nil {
+		preflight.Blocked = preflight.BlockedWithoutGap
+		return time.Time{}
+	}
+	if preflight.NeedsUser || preflight.Blocked == nil || preflight.Blocked.Reason.Code != "run.account_gap" || preflight.Blocked.NextAllowedAt == nil {
+		return time.Time{}
+	}
+	until := time.UnixMilli(*preflight.Blocked.NextAllowedAt).UTC()
+	preflight.Blocked = nil
+	return until
 }
 
 func (s *Service) saveRunPreflightTx(ctx context.Context, tx *sql.Tx, preflight preflightResult, trigger RunTrigger) error {

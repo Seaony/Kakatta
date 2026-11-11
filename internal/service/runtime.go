@@ -89,12 +89,14 @@ type sessionWork struct {
 }
 
 type startRequest struct {
-	TaskID    int64
-	AccountID int64
-	Kind      SessionKind
-	SessionID string
-	QueuedAt  time.Time
-	Trigger   RunTrigger
+	TaskID           int64
+	AccountID        int64
+	Kind             SessionKind
+	SessionID        string
+	QueuedAt         time.Time
+	Trigger          RunTrigger
+	WaitedForAccount bool // 已等过本账号的资源，改绑后不能沿用。
+	GapUntil         time.Time
 }
 
 type insightWork struct {
@@ -312,6 +314,14 @@ func (s *Service) enqueueStart(request startRequest) error {
 	if copy.QueuedAt.IsZero() {
 		copy.QueuedAt = s.now()
 	}
+	if copy.Kind == SessionRun && copy.Trigger == TriggerManual {
+		for _, session := range s.sessions {
+			if session.View.AccountID == copy.AccountID && session.View.Phase != SessionQueued {
+				copy.WaitedForAccount = true
+				break
+			}
+		}
+	}
 	s.queue = append(s.queue, &copy)
 	s.signalRuntimeLocked()
 	return nil
@@ -326,6 +336,20 @@ func (s *Service) queuedStarts() []startRequest {
 		queue[i] = *request
 	}
 	return queue
+}
+
+func (s *Service) setQueuedGapUntil(request startRequest, until time.Time) {
+	if request.SessionID == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, queued := range s.queue {
+		if queued.SessionID == request.SessionID && queued.QueuedAt.Equal(request.QueuedAt) {
+			queued.GapUntil = until
+			return
+		}
+	}
 }
 
 func (s *Service) removeQueued(request startRequest) {
@@ -363,8 +387,8 @@ func (s *Service) reserveStart(request startRequest, limit int64, now time.Time)
 	}
 	id := request.SessionID
 	session := s.sessions[id]
+	var current *startRequest
 	if request.SessionID != "" {
-		var current *startRequest
 		for _, queued := range s.queue {
 			if queued.SessionID == request.SessionID && queued.QueuedAt.Equal(request.QueuedAt) {
 				current = queued
@@ -379,6 +403,7 @@ func (s *Service) reserveStart(request startRequest, limit int64, now time.Time)
 		}
 		if current.AccountID != request.AccountID {
 			current.AccountID = request.AccountID
+			current.WaitedForAccount, current.GapUntil = false, time.Time{}
 			if session != nil {
 				session.View.AccountID = request.AccountID
 			}
@@ -397,6 +422,9 @@ func (s *Service) reserveStart(request startRequest, limit int64, now time.Time)
 			continue
 		}
 		if session.View.AccountID == request.AccountID {
+			if current != nil && request.Kind == SessionRun && request.Trigger == TriggerManual {
+				current.WaitedForAccount = true
+			}
 			return nil, false, nil
 		}
 		occupied++
@@ -494,6 +522,9 @@ func (s *Service) restoreQueuedReservation(session *sessionWork, accountID int64
 		}
 	}
 	if queued != nil && s.sessions[session.View.ID] == session && session.Resource == nil && !session.Closing {
+		if queued.AccountID != accountID {
+			queued.WaitedForAccount, queued.GapUntil = false, time.Time{}
+		}
 		queued.AccountID, session.View.AccountID = accountID, accountID
 		session.View.Phase, session.View.StartedAt = SessionQueued, nil
 		s.signalRuntimeLocked()
