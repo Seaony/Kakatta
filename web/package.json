@@ -46,5 +46,8 @@
     "tailwindcss": "3.4.19",
     "typescript": "5.9.3",
     "vite": "8.3.7"
+  },
+  "patchedDependencies": {
+    "vite@8.3.7": "patches/vite@8.3.7.patch"
   }
 }

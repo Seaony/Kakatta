@@ -4,6 +4,7 @@ ARG GO_VERSION=1.27.3
 FROM --platform=$BUILDPLATFORM oven/bun:1.3.14-slim AS web-build
 WORKDIR /src/web
 COPY web/package.json web/bun.lock ./
+COPY web/patches ./patches
 RUN bun install --frozen-lockfile
 COPY web/ ./
 COPY api/openapi.json /src/api/openapi.json

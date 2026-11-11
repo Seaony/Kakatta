@@ -31,7 +31,10 @@ func configureDevelopmentFixture(ctx context.Context, g *runtimeGraph, metadata 
 		if err := json.Unmarshal([]byte(raw), &ids); err != nil || ids.AccountID <= 0 || ids.ProviderID <= 0 || ids.ChannelID <= 0 || ids.TaskID <= 0 {
 			return errors.New("开发样例对象记录损坏")
 		}
-		return refreshDevelopmentFixture(ctx, g, metadata, ids)
+		if err := refreshDevelopmentFixture(ctx, g, metadata, ids); err != nil {
+			return err
+		}
+		return completeDevelopmentFixtureOnboarding(ctx, g)
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return err
@@ -116,7 +119,18 @@ func configureDevelopmentFixture(ctx context.Context, g *runtimeGraph, metadata 
 	if err := tx.Commit(); err != nil {
 		return err
 	}
-	_, err = g.core.OpenLogin(ctx, ids.AccountID)
+	if _, err = g.core.OpenLogin(ctx, ids.AccountID); err != nil {
+		return err
+	}
+	return completeDevelopmentFixtureOnboarding(ctx, g)
+}
+
+func completeDevelopmentFixtureOnboarding(ctx context.Context, g *runtimeGraph) error {
+	snapshot, err := g.preferences.Get(ctx)
+	if err != nil || snapshot.Sources["general.onboarding_done"] != settings.SourceDefault {
+		return err
+	}
+	_, err = g.preferences.Apply(ctx, settings.Values{"general.onboarding_done": []byte(`true`)})
 	return err
 }
 

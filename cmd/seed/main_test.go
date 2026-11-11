@@ -20,6 +20,7 @@ import (
 	"github.com/Seaony/Kakatta/internal/locales"
 	"github.com/Seaony/Kakatta/internal/security"
 	"github.com/Seaony/Kakatta/internal/service"
+	"github.com/Seaony/Kakatta/internal/settings"
 	"github.com/Seaony/Kakatta/internal/store"
 )
 
@@ -54,6 +55,10 @@ func TestSeedCommandCreatesOfflineDataAndPreservesInitialization(t *testing.T) {
 	}
 	defer database.Close()
 	db := database.DB()
+	defaults, err := settings.Resolve(nil, settings.Environment{TZ: "Asia/Shanghai"})
+	if err != nil || string(defaults.Values["general.onboarding_done"]) != "false" || countRows(t, db, `SELECT count(*) FROM settings WHERE key='general.onboarding_done'`) != 0 {
+		t.Fatal("通用样例必须保留默认未完成的首次引导，不能使用假数据开发的完成状态", err)
+	}
 	for table, want := range map[string]int64{"tasks": 2, "listings": 9, "findings": 9, "seen_items": 9,
 		"task_sightings": 10, "task_item_specs": 6, "price_points": 9, "run_records": 2,
 		"accounts": 0, "proxies": 0, "ai_providers": 0, "channels": 0, "admin": 0,

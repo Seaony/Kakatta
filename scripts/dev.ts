@@ -57,18 +57,18 @@ async function capture(command: string[], cwd = root) {
   return output.trim();
 }
 
-async function waitReady(url: string, manager: OwnedProcess) {
-  const ended = manager.exited.then(() => true);
+async function waitReady(url: string, child: OwnedProcess, name: string, check: (response: Response) => Promise<boolean> = async () => true) {
+  const ended = child.exited.then(() => true);
   const timeout = Date.now() + 120_000;
   while (Date.now() < timeout) {
-    if (await Promise.race([ended, Promise.resolve(false)])) throw new Error('开发管理器已退出');
+    if (await Promise.race([ended, Promise.resolve(false)])) throw new Error(`${name}已退出`);
     try {
       const response = await fetch(url, { signal: AbortSignal.timeout(1_000) });
-      if (response.ok) return;
-    } catch { /* 编译启动时控制端口可能还没打开。 */ }
+      if (response.status === 200 && await check(response)) return;
+    } catch { /* 编译启动时服务可能还没就绪。 */ }
     await Bun.sleep(200);
   }
-  throw new Error('开发管理器未就绪，请检查上面的日志');
+  throw new Error(`${name}未就绪，请检查上面的日志`);
 }
 
 export async function main(mode: string, projectRoot = root) {
@@ -161,9 +161,11 @@ export async function main(mode: string, projectRoot = root) {
       if (stopRequested) return;
       manager = start([...plan.compose, 'attach', '--sig-proxy=false', '--no-stdin', 'dev'], projectRoot);
     }
-    await waitReady('http://127.0.0.1:18081/__dev/status', manager);
+    await waitReady('http://127.0.0.1:18081/__dev/status', manager, '开发管理器的后端', async response => (await response.json()).backend_ready === true);
     if (stopRequested) return;
     vite = start(plan.vite, resolve(projectRoot, 'web'), { ...process.env, ...plan.viteEnvironment });
+    await waitReady('http://127.0.0.1:5173/', vite, 'Vite 网页服务');
+    if (stopRequested) return;
     console.log('开发网页：http://127.0.0.1:5173；按 Ctrl+C 安全退出');
     const finished = await Promise.race([manager.exited, vite.exited]);
     if (finished !== 0 && !stopRequested) throw new Error('开发进程已退出，请检查上面的日志');

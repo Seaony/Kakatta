@@ -1,0 +1,23 @@
+diff --git a/dist/node/chunks/node.js b/dist/node/chunks/node.js
+index 51580d61df0c53a2cd8ae7edc8f92545a5a9cd9c..06d31c9ccd64b313d9f3a3f2c3c35427d530a119 100644
+--- a/dist/node/chunks/node.js
++++ b/dist/node/chunks/node.js
+@@ -14658,16 +14658,13 @@ async function httpServerStart(httpServer, serverOptions) {
+ 		throw new Error(`Port ${port} is already in use`);
+ 	}
+ 	for (let port = startPort; port <= MAX_PORT; port++) {
+-		const portAvailableOnWildcard = await isPortAvailable(port);
+ 		if (strictPort) {
+ 			const result = await tryBindServer(httpServer, port, host);
+-			if (result.success) {
+-				if (!portAvailableOnWildcard) logger.warn(import_picocolors.default.yellow(`Port ${port} is in use on a wildcard address, but ${host ?? "localhost"}:${port} is available. There may be another server running on a wildcard IP on port ${port}.`));
+-				return port;
+-			}
++			if (result.success) return port;
+ 			if (result.error.code !== "EADDRINUSE") throw result.error;
+ 			throw new Error(`Port ${port} is already in use`);
+ 		}
++		const portAvailableOnWildcard = await isPortAvailable(port);
+ 		if (portAvailableOnWildcard) {
+ 			const result = await tryBindServer(httpServer, port, host);
+ 			if (result.success) return port;

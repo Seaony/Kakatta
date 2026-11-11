@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -99,10 +100,13 @@ func TestDevelopmentFixtureFirstSetupUsesPublicServicesAndKeepsExistingTasks(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	for key, want := range map[string]string{"crawl.account_min_gap_seconds": "2", "crawl.account_min_gap_jitter_seconds": "0", "crawl.interval_jitter_percent": "0", "crawl.max_details_per_run": "10", "crawl.run_timeout_minutes": "15", "ai.image_count": "1", "general.update_check": "false"} {
+	for key, want := range map[string]string{"crawl.account_min_gap_seconds": "2", "crawl.account_min_gap_jitter_seconds": "0", "crawl.interval_jitter_percent": "0", "crawl.max_details_per_run": "10", "crawl.run_timeout_minutes": "15", "ai.image_count": "1", "general.update_check": "false", "general.onboarding_done": "true"} {
 		if string(snapshot.Values[key]) != want {
 			t.Fatal("开发假页设置没有生效", key)
 		}
+	}
+	if snapshot.Sources["general.onboarding_done"] != settings.SourceStored {
+		t.Fatal("假数据样例齐备后必须持久保存完成状态")
 	}
 	for _, key := range []string{"home_stay_seconds", "page_wait_seconds", "detail_pre_wait_seconds", "detail_stay_seconds", "action_wait_seconds"} {
 		if string(snapshot.Values["crawl."+key]) != `{"min":0.01,"max":0.01}` {
@@ -116,6 +120,102 @@ func TestDevelopmentFixtureFirstSetupUsesPublicServicesAndKeepsExistingTasks(t *
 	push, err := g.notifications.TestChannel(t.Context(), ids["channel_id"])
 	if err != nil || !push.OK {
 		t.Fatal("样例推送没有连到本地回执夹具", err)
+	}
+}
+
+func TestDevelopmentFixtureReloadCompletesOnlyUnstoredOnboarding(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		stored string
+		want   string
+	}{
+		{"旧假数据缺少完成标记", "", "true"},
+		{"保留用户明确未完成", "false", "false"},
+		{"保留已完成", "true", "true"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			g, resources := developmentFixtureGraph(t)
+			fixture := devfixture.New(t.Context(), "")
+			t.Cleanup(fixture.Close)
+			ids := configureDevelopmentTestFixture(t, g, fixture.Metadata())
+			graphWait(t, func() bool { return resources.calls.Load() == 1 })
+			graphWait(t, func() bool {
+				return graphScalar(t, g, `SELECT count(*) FROM meta WHERE key LIKE 'runtime.session.%'`) == 0
+			})
+			graphWait(t, func() bool {
+				account, err := g.core.GetAccount(t.Context(), ids["account_id"])
+				return err == nil && account.Session == nil
+			})
+			if test.stored == "" {
+				if _, err := g.database.DB().ExecContext(t.Context(), `DELETE FROM settings WHERE key='general.onboarding_done'`); err != nil {
+					t.Fatal(err)
+				}
+			} else if _, err := g.preferences.Apply(t.Context(), settings.Values{"general.onboarding_done": []byte(test.stored)}); err != nil {
+				t.Fatal(err)
+			}
+			nextIDs := configureDevelopmentTestFixture(t, g, fixture.Metadata())
+			snapshot, err := g.preferences.Get(t.Context())
+			if err != nil || string(snapshot.Values["general.onboarding_done"]) != test.want || snapshot.Sources["general.onboarding_done"] != settings.SourceStored {
+				t.Fatalf("重载完成标记：得到 %s/%s，期望 %s/stored，错误 %v", snapshot.Values["general.onboarding_done"], snapshot.Sources["general.onboarding_done"], test.want, err)
+			}
+			if !reflect.DeepEqual(nextIDs, ids) || resources.calls.Load() != 1 || graphScalar(t, g, `SELECT (SELECT count(*) FROM accounts)+(SELECT count(*) FROM ai_providers)+(SELECT count(*) FROM channels)+(SELECT count(*) FROM tasks)`) != 4 {
+				t.Fatal("补完成标记不能重建样例对象或重复登录")
+			}
+			account, err := g.core.GetAccount(t.Context(), ids["account_id"])
+			if err != nil || account.Session != nil {
+				t.Fatal("补完成标记不能排队新的登录会话", err)
+			}
+		})
+	}
+}
+
+func TestDevelopmentFixtureFirstSetupPreservesStoredOnboarding(t *testing.T) {
+	for _, value := range []string{"false", "true"} {
+		t.Run(value, func(t *testing.T) {
+			g, _ := developmentFixtureGraph(t)
+			if _, err := g.preferences.Apply(t.Context(), settings.Values{"general.onboarding_done": []byte(value)}); err != nil {
+				t.Fatal(err)
+			}
+			fixture := devfixture.New(t.Context(), "")
+			t.Cleanup(fixture.Close)
+			configureDevelopmentTestFixture(t, g, fixture.Metadata())
+			snapshot, err := g.preferences.Get(t.Context())
+			if err != nil || string(snapshot.Values["general.onboarding_done"]) != value || snapshot.Sources["general.onboarding_done"] != settings.SourceStored {
+				t.Fatal("首次建立开发样例不能覆盖用户明确保存的引导状态", err)
+			}
+		})
+	}
+}
+
+func TestDevelopmentFixtureFailureDoesNotCompleteOnboarding(t *testing.T) {
+	for _, stage := range []string{"first", "refresh"} {
+		t.Run(stage, func(t *testing.T) {
+			g, resources := developmentFixtureGraph(t)
+			fixture := devfixture.New(t.Context(), "")
+			t.Cleanup(fixture.Close)
+			action := "INSERT"
+			if stage == "refresh" {
+				configureDevelopmentTestFixture(t, g, fixture.Metadata())
+				graphWait(t, func() bool { return resources.calls.Load() == 1 })
+				graphWait(t, func() bool {
+					return graphScalar(t, g, `SELECT count(*) FROM meta WHERE key LIKE 'runtime.session.%'`) == 0
+				})
+				if _, err := g.database.DB().ExecContext(t.Context(), `DELETE FROM settings WHERE key='general.onboarding_done'`); err != nil {
+					t.Fatal(err)
+				}
+				action = "UPDATE"
+			}
+			if _, err := g.database.DB().ExecContext(t.Context(), `CREATE TRIGGER fail_development_provider BEFORE `+action+` ON ai_providers BEGIN SELECT RAISE(ABORT,'本地写入失败'); END`); err != nil {
+				t.Fatal(err)
+			}
+			if err := configureDevelopmentFixture(t.Context(), g, fixture.Metadata()); err == nil {
+				t.Fatal("样例未成功配置时必须返回失败")
+			}
+			snapshot, err := g.preferences.Get(t.Context())
+			if err != nil || string(snapshot.Values["general.onboarding_done"]) != "false" || snapshot.Sources["general.onboarding_done"] != settings.SourceDefault {
+				t.Fatal("配置失败不能提前写入完成状态", err)
+			}
+		})
 	}
 }
 
