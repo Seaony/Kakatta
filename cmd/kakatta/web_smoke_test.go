@@ -31,6 +31,8 @@ type webSmokePage struct {
 	name, path, heading, selector, text string
 }
 
+const webSmokeTimezone = "Asia/Shanghai"
+
 var webSmokePages = []webSmokePage{
 	{"onboarding", "/onboarding", "web.onboarding.title", "main h2", ""},
 	{"overview", "/overview", "overview.title", "main h2", "示例 · 轻薄本"},
@@ -100,6 +102,9 @@ func TestWebSmoke(t *testing.T) {
 				if _, err := chromedp.Call(ctx, log.Enable, cdp.Empty{}); err != nil {
 					return err
 				}
+				if _, err := chromedp.Call(ctx, emulation.SetTimezoneOverride, emulation.SetTimezoneOverrideParams{TimezoneID: "UTC"}); err != nil {
+					return err
+				}
 				_, err := chromedp.Call(ctx, emulation.SetDeviceMetricsOverride, emulation.SetDeviceMetricsOverrideParams{
 					Width: viewport.width, Height: viewport.height, ScreenWidth: viewport.width, ScreenHeight: viewport.height,
 					DeviceScaleFactor: 1, Mobile: viewport.mobile,
@@ -115,6 +120,15 @@ func TestWebSmoke(t *testing.T) {
 				t.Helper()
 				t.Logf("%s %s", lang, page.path)
 				visitWebSmokePage(t, browser, &events, page, lang, viewport.width)
+				if page.name == "results" {
+					found := smokeTranslationWithArgs(t, lang, "results.card.found", map[string]any{"time": ""})
+					waitWebSmoke(t, browser, &events, `(label, zone) => [...document.querySelectorAll('main article span')].some(node =>
+						node.textContent.startsWith(label) && node.textContent.endsWith(' (' + zone + ')'))`, found, webSmokeTimezone)
+				}
+				if page.name == "settings-prompts" && lang == locales.ZhCN {
+					waitWebSmoke(t, browser, &events, `() => document.querySelector('nav a[href="/settings/prompts"]')?.textContent.trim() === '提示词' &&
+						document.querySelector('main h1')?.textContent.trim() === '提示词模板'`)
+				}
 				if takeScreenshot {
 					writeWebSmokeScreenshot(t, browser, &events, filepath.Join(shots, page.name+".png"))
 				}
@@ -169,10 +183,12 @@ func TestWebSmoke(t *testing.T) {
 func startWebSmokeServer(t *testing.T) (string, string) {
 	t.Helper()
 	data := t.TempDir()
-	if output, err := exec.CommandContext(t.Context(), "/tests/seed", "--data", data).CombinedOutput(); err != nil {
+	seed := exec.CommandContext(t.Context(), "/tests/seed", "--data", data)
+	seed.Env = append(seed.Environ(), "TZ="+webSmokeTimezone)
+	if output, err := seed.CombinedOutput(); err != nil {
 		t.Fatalf("样例数据库生成失败：%v %s", err, output)
 	}
-	environment := settings.Environment{TZ: "UTC"}
+	environment := settings.Environment{TZ: webSmokeTimezone}
 	prepareOfflineRuntime(t, data, environment)
 	ctx, cancel := context.WithCancel(t.Context())
 	logs := &observedLog{address: make(chan string, 1)}
@@ -342,7 +358,12 @@ func smokeTranslation(t *testing.T, lang locales.Language, code string) string {
 	if code == "" {
 		return ""
 	}
-	result, err := locales.Format(lang, locales.Message{Code: code})
+	return smokeTranslationWithArgs(t, lang, code, nil)
+}
+
+func smokeTranslationWithArgs(t *testing.T, lang locales.Language, code string, args map[string]any) string {
+	t.Helper()
+	result, err := locales.Format(lang, locales.Message{Code: code, Args: args})
 	if err != nil {
 		t.Fatalf("%s %s：%v", lang, code, err)
 	}

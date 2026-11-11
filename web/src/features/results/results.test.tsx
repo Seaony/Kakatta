@@ -287,6 +287,7 @@ describe('结果契约映射', () => {
     expect(selectableIDs(Array.from({ length: 210 }, (_, id) => finding({ id: id + 1 })))).toHaveLength(200);
     expect(selectableIDs([finding(), finding()])).toEqual([31]);
     expect(resultTime(0, 'zh-CN')).toBe('1970-01-01T00:00:00.000Z');
+    expect(resultTime(Date.UTC(2026, 0, 1), 'zh-CN', 'Asia/Shanghai')).toContain('08:00:00 (Asia/Shanghai)');
     expect(registrationAge(1461)).toEqual({ years: 4, months: 0 });
     expect(registrationAge(364)).toEqual({ years: 1, months: 0 });
   });
