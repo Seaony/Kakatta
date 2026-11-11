@@ -258,6 +258,15 @@ func formalSetupButton(t *testing.T, browser context.Context, events *webSmokeEv
 		const node = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
 		return !!node?.getClientRects().length && !node.disabled;
 	}`, xpath)
+	runWebSmoke(t, browser, events, chromedp.ScrollIntoView(chromedp.Search(xpath)))
+	// 弹窗刚出现时仍可能挡住指针，不能只看按钮尺寸。
+	waitWebSmoke(t, browser, events, `(xpath) => {
+		const node = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+		if (!node || node.disabled) return false;
+		const rect = node.getBoundingClientRect();
+		const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+		return !!rect.width && !!rect.height && node.contains(hit);
+	}`, xpath)
 	runWebSmoke(t, browser, events, chromedp.Click(chromedp.Search(xpath)))
 }
 
