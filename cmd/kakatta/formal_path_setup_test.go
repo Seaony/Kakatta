@@ -182,6 +182,7 @@ func formalFastSettings(t *testing.T, browser context.Context, events *webSmokeE
 	formalSetupVisit(t, browser, events, "/settings/about", "admin.about.title")
 	formalSetupCheck(t, browser, events, `//button[@role='switch' and @id=//label[normalize-space(.)=`+strconv.Quote(smokeTranslation(t, locales.ZhCN, "admin.about.check_enabled"))+`]/@for]`, false)
 	formalSetupButton(t, browser, events, "//main", "admin.save")
+	formalSettingsSaved(t, browser, events, "admin.saved", "admin.save")
 	formalWait(t, browser, "网页已关闭更新检查", 10*time.Second, func() bool {
 		return formalScalar(t, "SELECT count(*) FROM settings WHERE key='general.update_check' AND value_json='false'") == 1
 	})
@@ -189,6 +190,7 @@ func formalFastSettings(t *testing.T, browser context.Context, events *webSmokeE
 	formalSetupSelect(t, browser, events, "settings.general.language.label", "zh-CN")
 	formalSetupCheck(t, browser, events, "#setting-crawl-quiet_hours button[role=switch]", false)
 	formalSetupButton(t, browser, events, "//main", "web.settings.save")
+	formalSettingsSaved(t, browser, events, "web.settings.saved", "web.settings.save")
 	formalWait(t, browser, "网页已关闭安静时段并保存中文", 10*time.Second, func() bool {
 		return formalScalar(t, "SELECT count(*) FROM settings WHERE key='crawl.quiet_hours' AND json_extract(value_json,'$.enabled')=0") == 1 &&
 			formalScalar(t, `SELECT count(*) FROM settings WHERE key='general.language' AND value_json='"zh-CN"'`) == 1
@@ -212,6 +214,7 @@ func formalFastSettings(t *testing.T, browser context.Context, events *webSmokeE
 		}
 	}
 	formalSetupButton(t, browser, events, "//main", "web.settings.save")
+	formalSettingsSaved(t, browser, events, "web.settings.saved", "web.settings.save")
 	formalWait(t, browser, "网页加速设置已保存", 10*time.Second, func() bool {
 		return formalScalar(t, "SELECT count(*) FROM settings WHERE key='crawl.account_min_gap_seconds' AND value_json='2'") == 1 &&
 			formalScalar(t, "SELECT count(*) FROM settings WHERE key='general.update_check' AND value_json='false'") == 1
@@ -220,10 +223,22 @@ func formalFastSettings(t *testing.T, browser context.Context, events *webSmokeE
 	formalSetupFillLabel(t, browser, events, "settings.ai.request_timeout_seconds.label", "1")
 	formalSetupFillLabel(t, browser, events, "settings.ai.image_count.label", "1")
 	formalSetupButton(t, browser, events, "//main", "web.ai.save")
+	formalSettingsSaved(t, browser, events, "web.ai.saved", "web.ai.save")
 	formalWait(t, browser, "网页模型超时已保存", 10*time.Second, func() bool {
 		return formalScalar(t, "SELECT count(*) FROM settings WHERE key='ai.request_timeout_seconds' AND value_json='1'") == 1
 	})
 	formalSetupVisit(t, browser, events, "/onboarding", "web.onboarding.title")
+}
+
+func formalSettingsSaved(t *testing.T, browser context.Context, events *webSmokeEvents, savedCode, saveCode string) {
+	t.Helper()
+	// 落盘可能早于网页收到回执，离开前要等页面结束保存并清掉草稿。
+	waitWebSmoke(t, browser, events, `(saved, save, dirty) => {
+		const main = document.querySelector('main');
+		const feedback = [...(main?.querySelectorAll('[role=status]') ?? [])].some(node => node.textContent.trim() === saved);
+		const button = [...(main?.querySelectorAll('button') ?? [])].find(node => node.textContent.trim() === save);
+		return feedback && button?.disabled && button.getAttribute('aria-busy') !== 'true' && !main.innerText.includes(dirty);
+	}`, smokeTranslation(t, locales.ZhCN, savedCode), smokeTranslation(t, locales.ZhCN, saveCode), smokeTranslation(t, locales.ZhCN, "web.settings.not_saved"))
 }
 
 func formalSetupVisit(t *testing.T, browser context.Context, events *webSmokeEvents, path, heading string) {

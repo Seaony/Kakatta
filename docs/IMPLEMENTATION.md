@@ -478,9 +478,13 @@ Go 全量 40 包、构建和静态检查通过，解析、网页抓取、模板�
 
 修后整批验证通过：网页 536 项通过、一项既有条件跳过，生成文件、字典、类型与构建通过；正式及开发 Go 全量、构建、静态检查全部通过，远程模块竞态通过。新增等待断言改为比较布尔值，避免失败重试时格式化完整模拟窗口阻塞页面更新，保留默认截止；原始失败及分段计时保留在 `build/formal-session-web-check.log` 与 `build/_session-lifecycle/`。最终日志为 `build/formal-session-web-final.log`、`build/formal-session-final-{normal,dev}-{test,build,vet}.log` 与 `build/formal-session-remote-race.log`。
 
-| 步骤 | 本轮结果 |
+`6ffce44` 新归档 `run-xq7g36p7` 未进入扫码，按本轮记录为 0/8：前置的通用设置已落库，但测试尚未等网页收到保存响应便硬导航，触发真实 beforeunload。保护未被确认或绕过；弹窗阻塞截图及 CDP 关闭，报告如实记 `browser_closed=false`，进程检查及容器清理通过，无 OOM。现仅修测试的四处设置保存等待：先确认页面成功反馈、保存按钮结束忙碌且清掉未保存状态，再保留原数据库校验和导航。真实设置组件的延迟响应回归证明“后端已写但回执未到”期间仍保护草稿，确认响应后才能直接离开；相关 21 例、132 项断言通过，证据为 `build/formal-settings-wait-{test,go-test,typecheck}.log`。完整归档仍待下一轮 Chrome 绿验，本轮不证明或否定扫码收尾修复。
+
+本次仅有测试改动，网页整批 537 项通过、一项既有条件跳过，字典、生成文件、类型与构建通过；正式夹具的普通竞态及开发标签定向测试、两种服务端构建和命令包静态检查通过。最终日志为 `build/formal-settings-wait-web-final.log`、`build/formal-settings-wait-go-{race,dev}.log`、`build/formal-settings-wait-build{,-dev}.log` 与 `build/formal-settings-wait-vet{,-dev}.log`。
+
+| 步骤 | 当前证据 |
 |---|---|
-| 1. 初始化与下一步引导 | `5d14098` 新归档实际通过：令牌权限、建立管理员、令牌删除和引导均正常 |
+| 1. 初始化与下一步引导 | `5d14098` 已实际通过；`6ffce44` 新轮的前置设置等待已修，待新归档重验 |
 | 2. 网页账号与远程扫码 | 远程画布及后台扫码成功；正常结束收尾的两处修复已定向通过，待新归档重验 |
 | 3. 模型配置与失败提示 | 待正式路径实跑 |
 | 4. 推送配置与失败提示 | 待正式路径实跑 |

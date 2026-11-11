@@ -154,6 +154,43 @@ describe('真实设置协议的本地页面回归', () => {
     expect((screen.getByRole('button', { name: '保存设置' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
+  test('后端已保存但回执未到时仍保护草稿，页面确认保存后才能直接离开', async () => {
+    let stored = false;
+    let respond!: (response: Response) => void;
+    const response = new Promise<Response>((resolve) => { respond = resolve; });
+    const current = pageSnapshot();
+    const page = mount(<GeneralPage />, fixtureFetch(async (request) => {
+      if (request.method !== 'PATCH') return undefined;
+      const body: components['schemas']['SettingsPatch'] = await request.json();
+      current.values = { ...current.values, ...body.values };
+      stored = true;
+      return response;
+    }));
+    try {
+      await generalReady();
+      fireEvent.change(screen.getByRole('textbox', { name: '外部访问地址' }), { target: { value: 'https://local.test/saved' } });
+      const user = userEvent.setup();
+      await user.click(screen.getByRole('button', { name: '保存设置' }));
+      expect(stored).toBe(true);
+      expect(screen.queryByText('设置已保存。')).toBeNull();
+      expect(screen.getByRole('button', { name: '保存设置' }).getAttribute('aria-busy')).toBe('true');
+      expect(screen.getByText('有未保存的改动。')).toBeTruthy();
+      await user.click(screen.getByRole('link', { name: '抓取与限制' }));
+      const confirm = await screen.findByRole('alertdialog', { name: '放弃未保存的修改？' });
+      await user.click(within(confirm).getByRole('button', { name: '取消' }));
+      expect(page.router.state.location.pathname).toBe('/');
+      await act(async () => { respond(json(current)); });
+      await screen.findByText('设置已保存。');
+      const save = screen.getByRole<HTMLButtonElement>('button', { name: '保存设置' });
+      expect(save.disabled).toBe(true);
+      expect(save.getAttribute('aria-busy')).toBeNull();
+      expect(screen.queryByText('有未保存的改动。')).toBeNull();
+      await user.click(screen.getByRole('link', { name: '抓取与限制' }));
+      await screen.findByRole('heading', { name: '目标页' });
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+    } finally { respond(json(current)); page.unmount(); page.queryClient.clear(); }
+  });
+
   test('清业务必须输入中文确认词，保留说明可见，文件警告不冒充全部成功', async () => {
     let requestBody: unknown;
     mount(<GeneralPage />, fixtureFetch(async (request) => {
