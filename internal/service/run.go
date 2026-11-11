@@ -589,6 +589,11 @@ func (s *Service) executeRun(run *runExecution, session *sessionWork) {
 			}
 		}
 	}
+	// 运行仍在继续时，浏览器断开属于普通故障，不能当成用户取消。
+	if errors.Is(cause, context.Canceled) && run.Context.Err() == nil && run.Resource != nil &&
+		run.Resource.Chrome() != nil && run.Resource.Chrome().Context().Err() != nil {
+		cause = errors.Join(errRunNetwork, cause)
+	}
 	// 已识别风险必须保留；取消不能把拒绝信号覆盖成普通 cancelled。
 	if stopped := context.Cause(run.Context); stopped != nil {
 		cause = errors.Join(cause, stopped)
