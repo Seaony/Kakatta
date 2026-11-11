@@ -79,6 +79,7 @@ func formalFailures(t *testing.T, browser context.Context, events *webSmokeEvent
 	waitWebSmoke(t, browser, events, `(label) => document.querySelector('main').innerText.includes('已失效') && [...document.querySelectorAll('main button')].some(button => button.textContent.trim() === label)`, smokeTranslation(t, locales.ZhCN, "accounts.relogin"))
 	formalSnapshot(t, browser, events, "07-login-expired")
 	formalControl(t, "risk", map[string]any{"mode": "none"})
+	formalReadyToRun(t, browser)
 	previousLogin := formalSetupAccountSequence(t, 1, "")
 	clickWebSmokeButton(t, browser, events, smokeTranslation(t, locales.ZhCN, "accounts.relogin"))
 	formalRemoteConnected(t, browser, events)

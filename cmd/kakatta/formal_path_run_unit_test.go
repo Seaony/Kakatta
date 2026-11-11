@@ -95,11 +95,14 @@ func TestFormalReadyToRunWaitsForResourceCloseAndNewAccountGap(t *testing.T) {
 	if newEnded <= oldEnded || gap != 2 {
 		t.Fatal("关闭完成后没有按正式逻辑结算新账号间隔")
 	}
+	if _, err := g.database.DB().ExecContext(t.Context(), `UPDATE accounts SET state='expired' WHERE id=1`); err != nil {
+		t.Fatal(err)
+	}
 	deadline := newEnded + gap*1000
 	if readyAt(deadline - 1) {
 		t.Fatal("资源关闭后仍提前释放了新的账号间隔")
 	}
 	if !readyAt(deadline) {
-		t.Fatal("资源关闭且新账号间隔到期后仍未允许运行")
+		t.Fatal("账号失效但收尾与新间隔完成后仍拦住重新扫码")
 	}
 }
