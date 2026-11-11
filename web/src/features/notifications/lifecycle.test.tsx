@@ -32,6 +32,7 @@ function adapterFixture() {
 const readFixture: ApiFetch = async (request) => {
   const path = new URL(request.url).pathname;
   if (path === '/api/v1/settings') return Response.json(snapshot);
+  if (path === '/api/v1/tasks') return Response.json({ items: [], next_cursor: null, total: 0 });
   if (path === '/api/v1/settings/definitions' || path === '/api/v1/channels') return Response.json([]);
   throw new Error('测试禁止未声明请求');
 };
@@ -82,7 +83,7 @@ for (const action of ['test', 'toggle', 'remove'] as const) test(`会话失效�
   const view = await mount(<ChannelSetup adapter={f.adapter} />); const user = userEvent.setup(); await screen.findByRole('heading', { name: '原渠道' });
   if (action === 'test') await user.click(screen.getByRole('button', { name: '向 原渠道 发送测试' }));
   if (action === 'toggle') await user.click(screen.getByRole('button', { name: '停用' }));
-  if (action === 'remove') { await user.click(screen.getByRole('button', { name: '删除' })); await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: '删除' })); }
+  if (action === 'remove') { await user.click(screen.getByRole('button', { name: '删除' })); const confirm = within(screen.getByRole('alertdialog')).getByRole<HTMLButtonElement>('button', { name: '删除' }); await waitFor(() => expect(confirm.disabled).toBe(false)); await user.click(confirm); }
   await waitFor(() => expect(calls).toBe(1)); const reads = f.list.mock.calls.length;
   await relogin(view); await act(async () => pending.resolve());
   expect(signals[0]?.aborted).toBe(true); expect(f.list).toHaveBeenCalledTimes(reads); expect(calls).toBe(1);

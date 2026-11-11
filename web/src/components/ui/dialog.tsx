@@ -24,6 +24,7 @@ export type ConfirmDialogProps = {
   error?: string;
   destructive?: boolean;
   trigger?: ReactElement;
+  children?: ReactNode;
 };
 
 const overlayClass = "fixed inset-0 z-[var(--layer-overlay)] bg-overlay";
@@ -82,6 +83,7 @@ export function ConfirmDialog({
   error,
   destructive = false,
   trigger,
+  children,
 }: ConfirmDialogProps) {
   const focus = useReturnFocus(Boolean(trigger));
   return (
@@ -98,6 +100,7 @@ export function ConfirmDialog({
             <AlertDialogPrimitive.Title className="text-section font-semibold">{title}</AlertDialogPrimitive.Title>
             {description && <AlertDialogPrimitive.Description className="text-body text-text-secondary">{description}</AlertDialogPrimitive.Description>}
             {error && <p role="alert" className="text-body text-danger">{error}</p>}
+            {children}
           </div>
           <footer className="flex shrink-0 flex-wrap justify-end gap-sm">
             <AlertDialogPrimitive.Cancel asChild><Button>{cancelLabel}</Button></AlertDialogPrimitive.Cancel>

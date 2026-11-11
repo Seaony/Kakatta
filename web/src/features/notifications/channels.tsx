@@ -4,7 +4,7 @@ import { Link } from '@tanstack/react-router';
 import { Button, Checkbox, ConfirmDialog, Dialog, FormSection, InlineMessage, Skeleton, StatePanel, StatusBadge } from '../../components/ui';
 import { apiKey } from '../../api/keys';
 import { ApiError } from '../../api/errors';
-import { useApi, useApiError, useMessageText, useTimeZone } from '../../api/hooks';
+import { apiData, useApi, useApiError, useMessageText, useTimeZone } from '../../api/hooks';
 import { useTranslation } from '../../i18n';
 import { formatDateTime, formatInteger } from '../../i18n/format';
 import { channelCatalog } from './catalog';
@@ -20,6 +20,33 @@ export function useChannelAdapter(supplied?: ChannelAdapter) {
 }
 export function useChannels(adapter: ChannelAdapter) {
   return useQuery({ queryKey: apiKey('channels'), queryFn: ({ signal }) => adapter.list(signal) });
+}
+
+function ChannelDeleteConfirmation({ channel, pending, error, onOpenChange, onConfirm }: { channel: ChannelRow; pending: boolean; error: string | undefined; onOpenChange(open: boolean): void; onConfirm(): void }) {
+  const api = useApi(); const { t } = useTranslation(); const errorText = useApiError();
+  const impact = useQuery({
+    queryKey: apiKey('tasks', 'channel-delete-impact', channel.id), gcTime: 0, retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false,
+    queryFn: async ({ signal }) => {
+      const affected: { id: number; name: string; noChannels: boolean }[] = [];
+      let cursor: string | undefined;
+      do {
+        signal.throwIfAborted();
+        const response = apiData(await api.GET('/api/v1/tasks', { params: { query: { limit: 200, ...(cursor ? { cursor } : {}) } }, signal }));
+        signal.throwIfAborted();
+        for (const task of response.items) if (task.channel_ids.includes(channel.id)) affected.push({ id: task.id, name: task.name, noChannels: task.channel_ids.every((id) => id === channel.id) });
+        cursor = response.next_cursor ?? undefined;
+      } while (cursor);
+      return affected;
+    },
+  });
+  return <ConfirmDialog open onOpenChange={onOpenChange} title={t('web.notify.delete_named', { name: channel.name })} description={t('web.notify.delete_help')}
+    confirmLabel={t(impact.isError ? 'common.retry' : 'web.notify.delete')} cancelLabel={t('common.cancel')} destructive pending={pending || impact.isPending || impact.isFetching}
+    {...(error !== undefined ? { error } : {})} onConfirm={() => { if (impact.isError) { void impact.refetch(); return; } if (impact.isSuccess && !impact.isFetching) onConfirm(); }}>
+    {impact.isPending || impact.isFetching ? <p role="status" className="text-body text-text-secondary">{t('web.notify.delete_impact_loading')}</p>
+      : impact.isError ? <p role="alert" className="text-body text-danger">{t('web.notify.delete_impact_failed')} {errorText(impact.error)}</p>
+        : impact.data.length === 0 ? <p className="text-body text-text-secondary">{t('web.notify.delete_impact_none')}</p>
+          : <div className="space-y-sm"><p className="text-body">{t('web.notify.delete_impact_tasks')}</p><ul className="space-y-sm">{impact.data.map((task) => <li key={task.id} className="break-words text-body"><span>{task.name}</span>{task.noChannels && <p className="text-caption text-text-secondary">{t('web.notify.delete_impact_no_channels')}</p>}</li>)}</ul></div>}
+  </ConfirmDialog>;
 }
 
 function DeliveryHistory({ channel, adapter, timeZone }: { channel: ChannelRow; adapter: ChannelAdapter; timeZone: string }) {
@@ -96,7 +123,7 @@ function ChannelCard({ channel, adapter, onEdit, timeZone, editing }: { channel:
     {error !== null && <InlineMessage tone="danger"><p>{errorText(error)}</p>{error instanceof ApiError && error.requestID && <p className="break-all">{t('web.request_id', { request_id: error.requestID })}</p>}</InlineMessage>}
     {unknownTest && <InlineMessage tone="warning">{t('web.notify.test_not_confirmed')}</InlineMessage>}
     {test && <InlineMessage tone={test.ok ? 'positive' : 'danger'}><p>{test.ok ? t('web.notify.sent') : test.error ? messageText(test.error) : t('web.notify.failed')}</p>{test.ok && <p>{t('web.notify.accepted')}</p>}</InlineMessage>}
-    <ConfirmDialog open={confirmDelete} onOpenChange={(open) => { if (action !== 'remove') setConfirmDelete(open); }} title={t('web.notify.delete_named', { name: channel.name })} description={t('web.notify.delete_help')} confirmLabel={t('web.notify.delete')} cancelLabel={t('common.cancel')} destructive pending={action === 'remove'} {...(error !== null ? { error: errorText(error) } : {})} onConfirm={() => void perform('remove')} />
+    {confirmDelete && operation.authenticated !== false && <ChannelDeleteConfirmation channel={channel} onOpenChange={(open) => { if (action !== 'remove') setConfirmDelete(open); }} pending={action === 'remove'} error={error !== null ? errorText(error) : undefined} onConfirm={() => void perform('remove')} />}
     <Dialog open={historyOpen} onOpenChange={setHistoryOpen} title={t('web.notify.history_named', { name: channel.name })} closeLabel={t('common.close')}><DeliveryHistory channel={channel} adapter={adapter} timeZone={timeZone} /></Dialog>
   </li>;
 }

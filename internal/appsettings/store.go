@@ -91,6 +91,9 @@ func (s *Store) transact(ctx context.Context, patch settings.Values, initialize 
 	if err != nil {
 		return settings.Snapshot{}, err
 	}
+	if patch == nil && !initialize {
+		return snapshot, nil
+	}
 	for key := range patch {
 		_, err := tx.ExecContext(ctx, `INSERT INTO settings(key,value_json,updated_at) VALUES(?,?,?)
 			ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=excluded.updated_at`, key, string(snapshot.Values[key]), now.UnixMilli())

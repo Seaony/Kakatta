@@ -167,3 +167,27 @@ func TestCanceledSettingsDoesNotWrite(t *testing.T) {
 		t.Fatal("取消后仍写入时钟")
 	}
 }
+
+func TestGetKeepsPersistedClockAndDoesNotRequireClockWrites(t *testing.T) {
+	now := time.Date(2026, 11, 10, 20, 0, 0, 0, time.UTC)
+	s, db := testStore(t, settings.Environment{TZ: "UTC"}, func() time.Time { return now })
+	if _, err := s.Apply(t.Context(), settings.Values{"general.timezone": json.RawMessage(`"Asia/Shanghai"`)}); err != nil {
+		t.Fatal(err)
+	}
+	before := clockState(t, db)
+	now = now.Add(48 * time.Hour)
+	if _, err := s.Get(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(before, clockState(t, db)) {
+		t.Fatal("读取设置推进了保护时钟或删除了旧日窗口")
+	}
+	if _, err := db.Exec(`CREATE TRIGGER forbid_clock_write BEFORE INSERT ON meta
+		WHEN NEW.key IN ('quota.clock','quota.clock_initialized') BEGIN SELECT RAISE(FAIL,'read only'); END`); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := s.Get(t.Context())
+	if err != nil || string(snapshot.Values["general.timezone"]) != `"Asia/Shanghai"` {
+		t.Fatalf("读取设置依赖保护时钟可写：%v", err)
+	}
+}
