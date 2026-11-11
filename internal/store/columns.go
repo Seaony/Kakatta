@@ -29,7 +29,7 @@ var requiredColumns = map[string]string{
 	"ai_compat":            "provider_id model json_mode send_temperature max_tokens_param max_tokens_floor updated_at",
 	"ai_calls":             "id at provider_id model purpose task_id ok http_status error_kind json_mode input_tokens output_tokens reasoning_tokens finish_reason duration_ms",
 	"channels":             "id uuid type name enabled config_json secret_enc last_test_at last_test_ok last_error",
-	"deliveries":           "id at channel_id task_id kind item_count ok error event_id",
+	"deliveries":           "id at channel_id task_id kind item_count ok error event_id format_level",
 	"delivery_items":       "delivery_id finding_id",
 	"notification_intents": "id finding_id task_id kind state created_at updated_at price previous_price failure_count first_failed_at sent_at reason",
 	"delivery_intents":     "delivery_id intent_id",

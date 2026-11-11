@@ -204,5 +204,6 @@ type channelOutcome struct {
 	CalledSender bool
 	StartedAt    int64
 	EndedAt      int64
+	FormatLevel  int
 	Result       notify.Result
 }

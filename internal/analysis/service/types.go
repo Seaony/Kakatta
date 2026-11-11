@@ -86,6 +86,7 @@ type PromptView struct {
 	Kind         client.Kind    `json:"kind"`
 	Content      string         `json:"content"`
 	Default      string         `json:"default"`
+	SystemSuffix string         `json:"system_suffix"`
 	Customized   bool           `json:"customized"`
 	RequiredKeys []string       `json:"required_keys"`
 	Schema       *client.Schema `json:"schema"`

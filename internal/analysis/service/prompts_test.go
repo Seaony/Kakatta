@@ -55,7 +55,7 @@ func TestPromptReadsReturnFreshAssetsWithoutWritingClockOrDefaults(t *testing.T)
 	}
 	for i, view := range views {
 		d := definitions[i]
-		if view.Kind != d.Kind || view.Content != d.Default || view.Default != d.Default || view.Customized || view.UpdatedAt != nil || view.AssetVersion != prompts.AssetVersion || !reflect.DeepEqual(view.RequiredKeys, d.RequiredKeys) || !reflect.DeepEqual(view.Schema, d.Schema) {
+		if view.Kind != d.Kind || view.Content != d.Default || view.Default != d.Default || view.SystemSuffix != prompts.SellerDataSystemSuffix || view.Customized || view.UpdatedAt != nil || view.AssetVersion != prompts.AssetVersion || !reflect.DeepEqual(view.RequiredKeys, d.RequiredKeys) || !reflect.DeepEqual(view.Schema, d.Schema) {
 			t.Fatalf("default view differs from assets: %+v", view)
 		}
 	}

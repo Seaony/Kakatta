@@ -41,6 +41,8 @@ type Message struct {
 	Price, Reason, Score, Grade, Config, FairPrice      string
 	ItemID, Task, Kind                                  string
 	Urgent                                              bool
+	FormatLevel                                         int
+	TextOnly                                            bool
 }
 
 type Result struct {

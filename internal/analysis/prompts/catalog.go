@@ -273,5 +273,5 @@ func requestParts(s Snapshot, kind client.Kind) (string, *client.Schema, error) 
 	if !found {
 		return "", nil, inputError("kind")
 	}
-	return system, schema, nil
+	return system + "\n\n" + SellerDataSystemSuffix, schema, nil
 }

@@ -53,7 +53,7 @@ export function PromptsPage() {
     : !prompts.data || !document ? <StatePanel kind="error" title={t('web.error.title')} description={prompts.error ? errorText(prompts.error) : t('web.invalid_response')} retry={{ label: t('common.retry'), run: () => { void prompts.refetch(); } }} />
     : <div className="space-y-lg">
       {document.updated_at !== null && timeZone && <p className="text-caption text-text-secondary">{t('web.ai.updated_at', { time: formatDateTime(document.updated_at, locale, timeZone) })}</p>}
-      <PromptEditor key={kind} kind={kind} content={document.content} customized={document.customized} requiredKeys={document.required_keys} pending={save.isPending || restore.isPending} onDirtyChange={setDirty} {...(error ? { error: errorText(error) } : {})} {...(contentError ? { fieldError: messageText(contentError.reason) } : {})}
+      <PromptEditor key={kind} kind={kind} content={document.content} systemSuffix={document.system_suffix} customized={document.customized} requiredKeys={document.required_keys} pending={save.isPending || restore.isPending} onDirtyChange={setDirty} {...(error ? { error: errorText(error) } : {})} {...(contentError ? { fieldError: messageText(contentError.reason) } : {})}
         onSave={async (content) => { restore.reset(); const next = await save.mutateAsync({ kind, content }); return next.content; }}
         onRestore={async () => { save.reset(); const next = await restore.mutateAsync(kind); return next.content; }} />
       {save.isSuccess && !dirty && <p role="status" className="text-body text-positive">{t('web.ai.saved')}</p>}

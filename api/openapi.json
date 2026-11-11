@@ -18011,6 +18011,11 @@
               }
             ]
           },
+          "system_suffix": {
+            "description": "构造请求时附加在模板后的固定系统说明，不进入可编辑正文。",
+            "readOnly": true,
+            "type": "string"
+          },
           "updated_at": {
             "anyOf": [
               {
@@ -18029,6 +18034,7 @@
           "kind",
           "content",
           "default",
+          "system_suffix",
           "customized",
           "required_keys",
           "schema",

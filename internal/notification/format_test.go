@@ -22,6 +22,8 @@ import (
 
 func formatPtr[T any](value T) *T { return &value }
 
+func formatChannel(kind notify.Type) notify.ChannelConfig { return notify.ChannelConfig{Type: kind} }
+
 func formatTask(mode analysis.Mode) service.Task {
 	return service.Task{ID: 7, TaskFields: service.TaskFields{Name: "相机", JudgeMode: mode, Keyword: "相机"}}
 }
@@ -128,7 +130,7 @@ func TestFormatMessageKindsAndLocalizedCore(t *testing.T) {
 				t.Run(fmt.Sprintf("%s/%s/%s/%s", language, test.mode, test.kind, channel), func(t *testing.T) {
 					value := formatCandidate(1, test.kind, formatPtr(int64(84)))
 					value.Finding.Reason = &locales.Message{Code: "analysis.keyword_matched", Args: map[string]any{"count": 1, "words": "{count}原文"}}
-					message, err := formatGroup(formatTask(test.mode), messageGroup{Members: []candidate{value}}, channel, formatOpts(language))
+					message, err := formatGroup(formatTask(test.mode), messageGroup{Members: []candidate{value}}, formatChannel(channel), formatOpts(language))
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -164,7 +166,7 @@ func TestFormatSummaryCountsHiddenUrgentAndLinks(t *testing.T) {
 		}
 		members[12].Finding.Grade = formatPtr(analysis.GradeSteal)
 		group := messageGroup{Members: members, Summary: true}
-		message, err := formatGroup(formatTask(analysis.ModeAI), group, notify.Bark, formatOpts(language))
+		message, err := formatGroup(formatTask(analysis.ModeAI), group, formatChannel(notify.Bark), formatOpts(language))
 		if err != nil || !strings.Contains(message.Title, "13") || !message.Urgent || message.Kind != "summary" || len(strings.Split(message.Body, "\n")) != 10 {
 			t.Fatalf("摘要计数、行数或隐藏捡漏丢失：%+v %v", message, err)
 		}
@@ -175,13 +177,13 @@ func TestFormatSummaryCountsHiddenUrgentAndLinks(t *testing.T) {
 			t.Fatal(message.LinkLabel)
 		}
 		members[11].Intent.Kind = intentNew
-		mixed, err := formatGroup(formatTask(analysis.ModeAI), group, notify.Bark, formatOpts(language))
+		mixed, err := formatGroup(formatTask(analysis.ModeAI), group, formatChannel(notify.Bark), formatOpts(language))
 		if err != nil || mixed.Title == message.Title {
 			t.Fatalf("混合摘要仍显示推荐：%+v %v", mixed, err)
 		}
 		options := formatOpts(language)
 		options.TaskResultsURL = ""
-		fallback, err := formatGroup(formatTask(analysis.ModeAI), group, notify.Bark, options)
+		fallback, err := formatGroup(formatTask(analysis.ModeAI), group, formatChannel(notify.Bark), options)
 		if err != nil || fallback.Link != members[0].Listing.DesktopURL || fallback.KakattaURL != "" {
 			t.Fatalf("摘要没有使用首商品回退：%+v %v", fallback, err)
 		}
@@ -231,7 +233,7 @@ func TestFormatPendingChecksCompleteAndNamesLocalized(t *testing.T) {
 		task.Profile.Risks = append(task.Profile.Risks, analysis.ProfileRisk{ID: fmt.Sprintf("c%d", index), Name: fmt.Sprintf("检查%d", index), Attitude: analysis.Mind, Rev: 1})
 	}
 	value := formatCandidate(1, intentRecommended, formatPtr(int64(84)))
-	message, err := formatGroup(task, messageGroup{Members: []candidate{value}}, notify.Bark, formatOpts(locales.En))
+	message, err := formatGroup(task, messageGroup{Members: []candidate{value}}, formatChannel(notify.Bark), formatOpts(locales.En))
 	if err != nil || !strings.Contains(message.Reason, "7 checks") || !strings.Contains(message.Reason, "Carrier lock") || !strings.Contains(message.Reason, "自定义{count}") || strings.Contains(message.Reason, "检查2") || strings.Contains(message.Reason, "、") {
 		t.Fatalf("待确认总数或前两项错误：%+v %v", message, err)
 	}
@@ -306,7 +308,7 @@ func TestFormatSavedSellerAssessmentIgnoresCurrentCache(t *testing.T) {
 				t.Fatalf("当前缓存覆盖了已保存评估：%+v", got)
 			}
 			for _, language := range []locales.Language{locales.ZhCN, locales.En} {
-				message, err := formatGroup(task, messageGroup{Members: []candidate{value}}, notify.Bark, formatOpts(language))
+				message, err := formatGroup(task, messageGroup{Members: []candidate{value}}, formatChannel(notify.Bark), formatOpts(language))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -363,12 +365,12 @@ func TestFormatAllNewUnmatchedPrefixAndNoComparable(t *testing.T) {
 	value.Finding.Grade = nil
 	value.Finding.RejectKind = formatPtr(analysis.RejectUnmatched)
 	value.Finding.Reason = &locales.Message{Code: "analysis.spec_mismatch", Args: map[string]any{"name": "型号", "value": "mini{count}"}}
-	message, err := formatGroup(formatTask(analysis.ModeAI), messageGroup{Members: []candidate{value}}, notify.Bark, formatOpts(locales.En))
+	message, err := formatGroup(formatTask(analysis.ModeAI), messageGroup{Members: []candidate{value}}, formatChannel(notify.Bark), formatOpts(locales.En))
 	if err != nil || !strings.Contains(message.Reason, "Does not meet your requirements") || !strings.Contains(message.Body, "mini{count}") || strings.Contains(message.Body, "No comparable price") {
 		t.Fatalf("不符合需求没有准确表示：%+v %v", message, err)
 	}
 	value.Intent.Kind, value.Finding.RejectKind, value.Finding.FairPrice, value.Finding.FairSample = intentRecommended, nil, nil, formatPtr(int64(3))
-	message, err = formatGroup(formatTask(analysis.ModeAI), messageGroup{Members: []candidate{value}}, notify.Bark, formatOpts(locales.En))
+	message, err = formatGroup(formatTask(analysis.ModeAI), messageGroup{Members: []candidate{value}}, formatChannel(notify.Bark), formatOpts(locales.En))
 	if err != nil || !strings.Contains(message.Title, "No comparable price") || !strings.Contains(message.Body, "3 comparable listings") || message.FairPrice != "" {
 		t.Fatalf("无法比价样本错误：%+v %v", message, err)
 	}
@@ -388,7 +390,7 @@ func TestFormatTitleShrinksSpecBeforeOtherFields(t *testing.T) {
 			task.Profile.Specs = []analysis.ProfileSpec{{Name: "型号", Options: []string{longSpec}, Values: []string{longSpec}}}
 			value.Finding.Summary = formatPtr("保留完整理由<&😀{count}")
 			value.ItemSpecs = &service.TaskItemSpecs{ItemSpecs: analysis.ItemSpecs{Specs: []analysis.SpecValue{{Name: "型号", Value: &longSpec}}}}
-			message, err := formatGroup(task, messageGroup{Members: []candidate{value}}, channel, formatOpts(locales.ZhCN))
+			message, err := formatGroup(task, messageGroup{Members: []candidate{value}}, formatChannel(channel), formatOpts(locales.ZhCN))
 			if err != nil || !strings.HasPrefix(message.Title, "[相机]") || message.ItemTitle != value.Listing.Title || message.Config != longSpec || !strings.Contains(message.Body, *value.Finding.Summary) || !strings.Contains(message.Title, "¥1,000") || !utf8.ValidString(message.Title) {
 				t.Fatalf("缩标题改掉核心数据：%+v %v", message, err)
 			}
@@ -399,8 +401,9 @@ func TestFormatTitleShrinksSpecBeforeOtherFields(t *testing.T) {
 	}
 	value := formatCandidate(1, intentRecommended, formatPtr(int64(84)))
 	value.Finding.Summary = formatPtr(strings.Repeat("不能丢的正文", 1000))
-	if _, err := formatGroup(formatTask(analysis.ModeAI), messageGroup{Members: []candidate{value}}, notify.Telegram, formatOpts(locales.ZhCN)); err != errFormatMessage {
-		t.Fatalf("不可缩正文超限没有明确失败：%v", err)
+	message, err := formatGroup(formatTask(analysis.ModeAI), messageGroup{Members: []candidate{value}}, formatChannel(notify.Telegram), formatOpts(locales.ZhCN))
+	if err != nil || message.FormatLevel != 5 || !message.TextOnly || strings.Contains(message.Body, *value.Finding.Summary) || !notify.MessageFits(formatChannel(notify.Telegram), message) {
+		t.Fatalf("过长自由摘要没有转成可送达的概要：%+v %v", message, err)
 	}
 }
 
@@ -416,7 +419,7 @@ func TestFormatTelegramPhotoOnlyShrinksItemTitle(t *testing.T) {
 	value.Finding.Summary = &summary
 	value.ItemSpecs = &service.TaskItemSpecs{ItemSpecs: analysis.ItemSpecs{Specs: []analysis.SpecValue{{Name: "型号", Value: &spec}}}}
 	options := formatOpts(locales.ZhCN)
-	base, err := formatGroup(task, messageGroup{Members: []candidate{value}}, notify.Bark, options)
+	base, err := formatGroup(task, messageGroup{Members: []candidate{value}}, formatChannel(notify.Bark), options)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -424,7 +427,11 @@ func TestFormatTelegramPhotoOnlyShrinksItemTitle(t *testing.T) {
 	body := html.EscapeString(base.Body)
 	link := `<a href="` + html.EscapeString(base.Link) + `">` + html.EscapeString(base.LinkLabel) + `</a>`
 	caption := func(itemTitle, padding string) string {
-		return strings.Join([]string{title, "<b>" + itemTitle + "</b>", body + padding, link}, "\n")
+		lines := []string{title}
+		if itemTitle != "" {
+			lines = append(lines, "<b>"+itemTitle+"</b>")
+		}
+		return strings.Join(append(lines, body+padding, link), "\n")
 	}
 	room := notify.TelegramCaptionLimit - notify.UTF16Len(caption("", ""))
 
@@ -439,29 +446,40 @@ func TestFormatTelegramPhotoOnlyShrinksItemTitle(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			padding := strings.Repeat("a", room-test.remaining)
 			value.Finding.Summary = formatPtr(summary + padding)
-			message, err := formatGroup(task, messageGroup{Members: []candidate{value}}, notify.Telegram, options)
-			if test.remaining < 0 {
-				if err != errFormatMessage {
-					t.Fatalf("固定内容超限应在投递前明确失败：%v", err)
-				}
-				return
-			}
+			message, err := formatGroup(task, messageGroup{Members: []candidate{value}}, formatChannel(notify.Telegram), options)
 			if err != nil {
 				t.Fatal(err)
 			}
-			want := caption(strings.Repeat("😀", test.remaining/2), padding)
+			wantMethod, want := "sendPhoto", caption(html.EscapeString(message.ItemTitle), padding)
+			if test.remaining < 0 {
+				if !message.TextOnly || message.FormatLevel != 3 || message.ImageURL != "" || !strings.Contains(message.Body, base.ImageURL) {
+					t.Fatal("图片说明超限后没有转成一次纯文字加图片链接")
+				}
+				wantMethod = "sendMessage"
+				want = strings.Join([]string{title, html.EscapeString(message.Body), link}, "\n")
+			} else {
+				if message.TextOnly || message.FormatLevel != 2 || notify.UTF16Len(want) > notify.TelegramCaptionLimit || message.Body != base.Body+padding {
+					t.Fatal("图片说明裁剪改掉了正文或超出上限")
+				}
+				if notify.UTF16Len(caption(html.EscapeString(message.ItemTitle+"😀"), padding)) <= notify.TelegramCaptionLimit {
+					t.Fatal("没有保留能放下的最长商品标题")
+				}
+			}
 			var calls atomic.Int64
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 				calls.Add(1)
 				var payload struct {
 					Caption   string `json:"caption"`
+					Text      string `json:"text"`
 					Photo     string `json:"photo"`
 					ParseMode string `json:"parse_mode"`
 				}
 				if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
 					t.Error(err)
-				} else if request.URL.Path != "/botlocal/sendPhoto" || payload.Photo != base.ImageURL || payload.ParseMode != "HTML" || payload.Caption != want {
-					t.Errorf("图片通知内容或协议不符：长度 %d，首行为 %q", notify.UTF16Len(payload.Caption), strings.SplitN(payload.Caption, "\n", 2)[0])
+				} else if request.URL.Path != "/botlocal/"+wantMethod || payload.ParseMode != "HTML" ||
+					wantMethod == "sendPhoto" && (payload.Photo != base.ImageURL || payload.Caption != want || payload.Text != "") ||
+					wantMethod == "sendMessage" && (payload.Text != want || payload.Photo != "" || payload.Caption != "") {
+					t.Errorf("单次图片或纯文字通知内容/协议不符：method=%s", request.URL.Path)
 				}
 				fmt.Fprint(w, `{"ok":true}`)
 			}))
@@ -559,11 +577,11 @@ func TestFormatSystemOptionalSentencesAndSingulars(t *testing.T) {
 func TestFormatErrorsReturnNoPartialMessage(t *testing.T) {
 	value := formatCandidate(1, intentRecommended, nil)
 	for _, group := range []messageGroup{{}, {Members: []candidate{value, value}}, {Members: []candidate{value, value}, Summary: true}} {
-		if message, err := formatGroup(formatTask(analysis.ModeAI), group, notify.Bark, formatOpts(locales.En)); err == nil || message != (notify.Message{}) {
+		if message, err := formatGroup(formatTask(analysis.ModeAI), group, formatChannel(notify.Bark), formatOpts(locales.En)); err == nil || message != (notify.Message{}) {
 			t.Fatalf("错误分组返回部分内容：%+v %v", message, err)
 		}
 	}
-	if message, err := formatGroup(formatTask(analysis.ModeAI), messageGroup{Members: []candidate{value}}, notify.Bark, formatOpts("xx")); err == nil || message != (notify.Message{}) {
+	if message, err := formatGroup(formatTask(analysis.ModeAI), messageGroup{Members: []candidate{value}}, formatChannel(notify.Bark), formatOpts("xx")); err == nil || message != (notify.Message{}) {
 		t.Fatalf("未知语言被默默接受：%+v %v", message, err)
 	}
 	kind := service.EventAccountDeny
@@ -616,7 +634,7 @@ func TestFormatLimitedChannelsKeepCoreOnWire(t *testing.T) {
 			value := formatCandidate(1, intentRecommended, formatPtr(int64(84)))
 			value.Finding.Summary = formatPtr("完整理由")
 			value.ItemSpecs = &service.TaskItemSpecs{ItemSpecs: analysis.ItemSpecs{Specs: []analysis.SpecValue{{Name: "型号", Value: &spec}}}}
-			message, err := formatGroup(task, messageGroup{Members: []candidate{value}}, kind, formatOpts(locales.ZhCN))
+			message, err := formatGroup(task, messageGroup{Members: []candidate{value}}, formatChannel(kind), formatOpts(locales.ZhCN))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -632,7 +650,7 @@ func TestFormatLimitedChannelsKeepCoreOnWire(t *testing.T) {
 	}
 }
 
-func TestFormatFeishuOversizeUsesAdapterFailureWithoutOutbound(t *testing.T) {
+func TestFormatFeishuOversizeUsesCompactSingleDelivery(t *testing.T) {
 	var calls atomic.Int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		calls.Add(1)
@@ -641,13 +659,13 @@ func TestFormatFeishuOversizeUsesAdapterFailureWithoutOutbound(t *testing.T) {
 	defer server.Close()
 	value := formatCandidate(1, intentRecommended, formatPtr(int64(84)))
 	value.Finding.Summary = formatPtr(strings.Repeat("完整理由不能截断", 3000))
-	message, err := formatGroup(formatTask(analysis.ModeAI), messageGroup{Members: []candidate{value}}, notify.Feishu, formatOpts(locales.ZhCN))
-	if err != nil || !strings.HasSuffix(message.Body, *value.Finding.Summary) {
-		t.Fatal("业务层截掉了完整正文", err)
-	}
 	config := notify.ChannelConfig{Type: notify.Feishu, Config: json.RawMessage(`{}`), Secrets: json.RawMessage(`{"url":"` + server.URL + `","secret":"local"}`)}
+	message, err := formatGroup(formatTask(analysis.ModeAI), messageGroup{Members: []candidate{value}}, config, formatOpts(locales.ZhCN))
+	if err != nil || message.FormatLevel != 5 || strings.Contains(message.Body, *value.Finding.Summary) || !notify.MessageFits(config, message) {
+		t.Fatal("超长自由摘要没有精简为可送达概要", err)
+	}
 	result := notify.New(notify.Dependencies{HTTP: server.Client()}).Send(t.Context(), config, message)
-	if result.OK || result.ErrorCode != "invalid_message" || calls.Load() != 0 {
-		t.Fatalf("超限飞书消息仍出站：%+v calls=%d", result, calls.Load())
+	if !result.OK || calls.Load() != 1 {
+		t.Fatalf("精简后的飞书消息未恰好发送一次：%+v calls=%d", result, calls.Load())
 	}
 }

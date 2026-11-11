@@ -154,13 +154,16 @@ func candidateMessage(raw sql.NullString, allowNull bool) bool {
 }
 
 func validateCandidateDeliveries(ctx context.Context, tx *sql.Tx) error {
-	return candidateRows(ctx, tx, "deliveries", `SELECT id,at,channel_id,task_id,kind,item_count,ok,error,event_id FROM deliveries`, func(rows *sql.Rows) error {
-		var id int64
+	return candidateRows(ctx, tx, "deliveries", `SELECT id,at,channel_id,task_id,kind,item_count,ok,error,event_id,format_level FROM deliveries`, func(rows *sql.Rows) error {
+		var id, formatLevel int64
 		var at, channelID, taskID, count, eventID sql.NullInt64
 		var kind, failure sql.NullString
 		var ok sql.NullBool
-		if err := rows.Scan(&id, &at, &channelID, &taskID, &kind, &count, &ok, &failure, &eventID); err != nil {
+		if err := rows.Scan(&id, &at, &channelID, &taskID, &kind, &count, &ok, &failure, &eventID, &formatLevel); err != nil {
 			return candidateError("deliveries", id, "row")
+		}
+		if formatLevel < 0 || formatLevel > 5 {
+			return candidateError("deliveries", id, "format_level")
 		}
 		if kind.Valid {
 			switch kind.String {

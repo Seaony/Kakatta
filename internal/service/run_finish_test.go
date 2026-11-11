@@ -516,7 +516,7 @@ func TestRunInsightEligibilityAndPromptSnapshot(t *testing.T) {
 			calls := 0
 			s.models = finishModels(func(ctx context.Context, request client.Request) (client.Result, error) {
 				calls++
-				if request.Kind != client.Market || request.System != "旧行情模板" || len(request.Images) != 0 {
+				if request.Kind != client.Market || request.System != "旧行情模板\n\n"+prompts.SellerDataSystemSuffix || len(request.Images) != 0 {
 					t.Errorf("没有复用本次运行的行情模板/纯文字请求：%+v", request)
 				}
 				bounded, cancel := context.WithTimeout(ctx, time.Second)

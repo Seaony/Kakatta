@@ -195,13 +195,14 @@ func (s *Service) sendTaskGroup(ctx context.Context, ref service.RunRef, task se
 		return outcome, nil
 	}
 	defer clear(config.Secrets)
-	message, err := formatGroup(task, group, record.Type, options)
+	message, err := formatGroup(task, group, config, options)
 	kindName, kindErr := taskDeliveryKind(group)
 	if err != nil || kindErr != nil {
 		outcome.Attempted = true
 		outcome.Result = notify.Result{ErrorCode: "invalid_message"}
 		return outcome, nil
 	}
+	outcome.FormatLevel = message.FormatLevel
 	if err := s.checkStorage(); err != nil {
 		return outcome, err
 	}

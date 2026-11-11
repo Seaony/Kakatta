@@ -7,7 +7,7 @@ import { useState, type ReactNode } from 'react';
 import { createApiClient } from '../../api/client';
 import { ApiProvider } from '../../api/hooks';
 import type { Schema } from '../../api/types';
-import { createI18n, I18nProvider } from '../../i18n';
+import { createI18n, I18nProvider, type Locale } from '../../i18n';
 import { ComparePage } from './compare-page';
 import { FindingDetail } from './finding-detail';
 import { AnalysisWarnings, ContactQuestions, Images, ScoreBreakdown, Seller } from './presentation';
@@ -77,15 +77,99 @@ function fakeAPI(initial = fixture(), override?: (request: Request) => Promise<R
   return { api, calls, get current() { return current; }, update(value: Schema<'FindingView'>) { current = value; } };
 }
 
-function mount(content: ReactNode, api = fakeAPI().api) {
+function mount(content: ReactNode, api = fakeAPI().api, locale: Locale = 'zh-CN') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } } });
   clients.push(client);
   const root = createRootRoute({ component: () => content });
   const router = createRouter({ routeTree: root, history: createMemoryHistory({ initialEntries: ['/'] }) });
-  return render(<I18nProvider instance={createI18n('zh-CN')}><ApiProvider api={api}><QueryClientProvider client={client}><RouterProvider router={router} /></QueryClientProvider></ApiProvider></I18nProvider>);
+  return render(<I18nProvider instance={createI18n(locale)}><ApiProvider api={api}><QueryClientProvider client={client}><RouterProvider router={router} /></QueryClientProvider></ApiProvider></I18nProvider>);
 }
 
 describe('商品详情的接口与状态', () => {
+  for (const factRevision of [0, 1]) {
+    test(`旧清单初始版本匹配和无版本事实隔离：事实版本${factRevision}`, async () => {
+      const initial = fixture();
+      profileFields(initial.task.profile)!.musts = [{ id: 'm1', text: '旧清单要求', rev: 0, source: 'user', edited: true }];
+      initial.analysis!.musts = [{ id: 'm1', rev: factRevision, status: 'met', source: 'text', evidence: '原始证据' }];
+      mount(<ScoreBreakdown finding={initial} />);
+      await screen.findByText('旧清单要求');
+      const row = within(screen.getByText('旧清单要求').closest('li')!);
+      expect(row.queryByText('原始证据') !== null).toBe(factRevision === 1);
+      expect(row.queryByText(factRevision === 1 ? '满足' : '无法确认') !== null).toBe(true);
+    });
+  }
+
+  test('正向风险结论也直接展示原文，矛盾证据不藏在折叠内容里', async () => {
+    const initial = fixture();
+    initial.checks[0] = { key: 'id_lock', status: 'ok', source: 'text', evidence: '有ID锁' };
+    initial.analysis!.checks[0] = { key: 'id_lock', rev: 3, status: 'ok', source: 'text', evidence: '有ID锁' };
+    mount(<FindingDetail findingId={1} onClose={() => {}} onNavigate={() => {}} timeZone="UTC" />, fakeAPI(initial).api);
+    const heading = await screen.findByRole('heading', { name: 'ID 锁' });
+    const row = within(heading.closest('li')!);
+    expect(row.getByText('没问题')).toBeTruthy();
+    expect(row.getAllByText('有ID锁').some((node) => node.closest('details') === null)).toBe(true);
+  });
+
+  for (const locale of ['zh-CN', 'en'] as const) {
+    test(`${locale}的必须满足与加分项直接并列结论和证据，不采纳旧版本`, async () => {
+      const initial = fixture();
+      const profile = profileFields(initial.task.profile)!;
+      profile.musts = [
+        { id: 'm1', text: '必须国行', rev: 2, source: 'user', edited: true },
+        { id: 'm2', text: '功能正常', rev: 1, source: 'user', edited: true },
+        { id: 'm3', text: '支持验货', rev: 2, source: 'user', edited: true },
+      ];
+      profile.bonuses = [{ id: 'b4', text: '带发票', rev: 1, source: 'user', edited: true }];
+      initial.analysis!.musts = [
+        { id: 'm1', rev: 2, status: 'met', source: 'text', evidence: '美版' },
+        { id: 'm2', rev: 1, status: 'unmet', source: 'text', evidence: '无法开机' },
+        { id: 'm3', rev: 1, status: 'met', source: 'text', evidence: '过期的旧证据' },
+      ];
+      initial.analysis!.bonuses = [{ id: 'b4', rev: 1, status: 'met', source: 'image', evidence: '第1张图：没有发票' }];
+      mount(<FindingDetail findingId={1} onClose={() => {}} onNavigate={() => {}} timeZone="UTC" />, fakeAPI(initial).api, locale);
+      await screen.findByRole('heading', { name: '本地商品 1' });
+      await screen.findByRole('heading', { name: locale === 'zh-CN' ? 'ID 锁' : 'ID lock' });
+      expect(screen.queryByText('必须国行') !== null).toBe(true);
+      const must = within(screen.getByText('必须国行').closest('li')!);
+      expect(must.getByText(locale === 'zh-CN' ? '满足' : 'Met')).toBeTruthy();
+      expect(must.getByText('美版').closest('details') === null).toBe(true);
+      const unmet = within(screen.getByText('功能正常').closest('li')!);
+      expect(unmet.getByText(locale === 'zh-CN' ? '不满足' : 'Not met')).toBeTruthy();
+      expect(unmet.getByText('无法开机')).toBeTruthy();
+      const old = within(screen.getByText('支持验货').closest('li')!);
+      expect(old.getByText(locale === 'zh-CN' ? '无法确认' : 'Unknown')).toBeTruthy();
+      expect(screen.queryByText('过期的旧证据') === null).toBe(true);
+      const bonus = within(screen.getByText('带发票').closest('li')!);
+      expect(bonus.getByText(locale === 'zh-CN' ? '满足' : 'Met')).toBeTruthy();
+      expect(bonus.getByText(locale === 'zh-CN' ? '看图判断' : 'Image-based assessment')).toBeTruthy();
+      expect(bonus.getByText('第1张图：没有发票').closest('details') === null).toBe(true);
+    });
+  }
+
+  test('第三层未通过条件时仍展示必须满足的失败证据', async () => {
+    const initial = fixture();
+    profileFields(initial.task.profile)!.musts = [{ id: 'm1', text: '功能正常', rev: 1, source: 'user', edited: true }];
+    initial.analysis!.musts = [{ id: 'm1', rev: 1, status: 'unmet', source: 'text', evidence: '无法开机' }];
+    initial.decision = 'rejected'; initial.decided_layer = 3; initial.score_breakdown = null;
+    mount(<ScoreBreakdown finding={initial} />);
+    await screen.findByText('功能正常');
+    expect(screen.getByText('不满足')).toBeTruthy();
+    expect(screen.getByText('无法开机')).toBeTruthy();
+  });
+
+  for (const decision of ['pending', 'failed', 'rejected'] as const) {
+    test(`${decision}状态不把旧分析当作当前清单结论`, async () => {
+      const initial = fixture();
+      profileFields(initial.task.profile)!.musts = [{ id: 'm1', text: '功能正常', rev: 1, source: 'user', edited: true }];
+      initial.analysis!.musts = [{ id: 'm1', rev: 1, status: 'met', source: 'text', evidence: '上次分析的旧证据' }];
+      initial.decision = decision; initial.decided_layer = 1;
+      mount(<ScoreBreakdown finding={initial} />);
+      await screen.findByText(decision === 'pending' ? '等待分析' : decision === 'failed' ? '分析失败' : '未通过条件');
+      expect(screen.queryByText('上次分析的旧证据') === null).toBe(true);
+      expect(screen.queryByText('功能正常') === null).toBe(true);
+    });
+  }
+
   test('没有详情原图时使用同源缩略图，有原图时仍展示原图', () => {
     const listing = { ...fixture().listing, thumbnail_url: 'https://example.invalid/thumbnail.jpg' };
     const view = render(<I18nProvider instance={createI18n()}><Images listing={listing} findingId={1} /></I18nProvider>);

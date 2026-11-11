@@ -11,6 +11,10 @@ import (
 func TestStorageFailureRejectsEveryDocumentedWriteBeforeDispatch(t *testing.T) {
 	f := newBusinessFixture(t)
 	f.registerTransferContracts(t)
+	// 这里只检查请求分发，先等测试调度器退出，避免把后台初始化写入算到请求头上。
+	if err := f.service.Close(); err != nil {
+		t.Fatal(err)
+	}
 	f.server.runtimeFailure = func() *locales.Message {
 		return &locales.Message{Code: "runtime.storage_locked", Args: map[string]any{}}
 	}

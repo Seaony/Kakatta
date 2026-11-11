@@ -55,6 +55,8 @@ export function ScoreLabel({ finding }: { finding: Finding }) {
 export function ScoreBreakdown({ finding }: { finding: Finding }) {
   const { t, locale } = useTranslation();
   const breakdown = finding.decision === 'scored' ? finding.score_breakdown : null;
+  const profile = profileFields(finding.task.profile);
+  const facts = finding.decision === 'scored' || finding.decision === 'rejected' && finding.decided_layer === 3 ? finding.analysis : null;
   const number = new Intl.NumberFormat(locale, { maximumFractionDigits: 1, signDisplay: 'exceptZero' });
   return <div className="min-w-0 space-y-lg">
     <ScoreLabel finding={finding} />
@@ -82,6 +84,16 @@ export function ScoreBreakdown({ finding }: { finding: Finding }) {
       {breakdown.caps.length > 0 && <div className="space-y-sm"><h3 className="text-body font-medium">{t('web.detail.caps')}</h3><ul className="space-y-sm">{breakdown.caps.map((cap, index) => <li key={index} className="break-words text-body text-warning">{t('web.detail.cap', { limit: cap.limit })} · <StoredMessage message={cap.reason} /></li>)}</ul></div>}
       {breakdown.gates.length > 0 && <div className="space-y-sm"><h3 className="text-body font-medium">{t('web.detail.gates')}</h3><ul className="space-y-sm">{breakdown.gates.map((gate, index) => <li key={index} className="break-words text-body text-danger"><StoredMessage message={gate} /></li>)}</ul></div>}
     </>}
+    {facts && profile && (['musts', 'bonuses'] as const).map((group) => profile[group].length > 0 && <div key={group} className="space-y-sm">
+      <h3 className="text-body font-medium">{t(`tasks.profile.${group}`)}</h3>
+      <ul className="divide-y divide-border">{profile[group].map((requirement) => {
+        const fact = facts[group].find((item) => item.id === requirement.id && item.rev > 0 && item.rev === (requirement.rev === 0 ? 1 : requirement.rev));
+        return <li key={requirement.id} className="min-w-0 space-y-md py-md">
+          <div className="flex min-w-0 flex-wrap items-start justify-between gap-md"><h4 className="break-words text-body font-medium">{requirement.text}</h4><StatusBadge tone={fact?.status === 'unmet' ? 'danger' : 'neutral'}>{t(`web.detail.requirement.${fact?.status ?? 'unknown'}`)}</StatusBadge></div>
+          <Evidence source={fact?.source ?? null} evidence={fact?.evidence ?? null} />
+        </li>;
+      })}</ul>
+    </div>)}
   </div>;
 }
 

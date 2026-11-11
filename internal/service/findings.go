@@ -28,7 +28,7 @@ func validateAnalysisWarnings(warnings []locales.Message) error {
 	for _, warning := range warnings {
 		argument := "item"
 		switch warning.Code {
-		case "analysis.item_ignored", "analysis.evidence_missing":
+		case "analysis.item_ignored", "analysis.evidence_missing", "analysis.image_evidence_missing":
 		case "analysis.unknown_field":
 			argument = "field"
 		default:

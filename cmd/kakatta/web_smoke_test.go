@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Seaony/Kakatta/internal/analysis/prompts"
 	"github.com/Seaony/Kakatta/internal/config"
 	"github.com/Seaony/Kakatta/internal/locales"
 	"github.com/Seaony/Kakatta/internal/settings"
@@ -130,8 +131,30 @@ func TestWebSmoke(t *testing.T) {
 					waitWebSmoke(t, browser, &events, `() => document.querySelector('nav a[href="/settings/prompts"]')?.textContent.trim() === '提示词' &&
 						document.querySelector('main h1')?.textContent.trim() === '提示词模板'`)
 				}
+				if page.name == "settings-prompts" {
+					waitWebSmoke(t, browser, &events, `(suffix, hint) => {
+						const main = document.querySelector('main');
+						return main.textContent.includes(suffix) && main.textContent.includes(hint) &&
+							main.querySelectorAll('textarea').length === 1 && !main.querySelector('textarea').value.includes(suffix);
+					}`, prompts.SellerDataSystemSuffix, smokeTranslation(t, lang, "web.ai.prompt_system_suffix_hint"))
+				}
+				if page.name == "result-detail" {
+					waitWebSmoke(t, browser, &events, `(heading, status) => {
+						const node = [...document.querySelectorAll('main h3')].find(node => node.textContent === heading);
+						return node?.parentElement.querySelector('li')?.textContent.includes(status) &&
+							node.parentElement.querySelector('li').textContent.includes('日常办公用轻薄本');
+					}`, smokeTranslation(t, lang, "tasks.profile.musts"), smokeTranslation(t, lang, "web.detail.requirement.met"))
+				}
 				if takeScreenshot {
 					writeWebSmokeScreenshot(t, browser, &events, filepath.Join(shots, page.name+".png"))
+				}
+				if page.name == "settings-prompts" || page.name == "result-detail" {
+					heading := "web.ai.prompt_system_suffix"
+					if page.name == "result-detail" {
+						heading = "tasks.profile.musts"
+					}
+					runWebSmoke(t, browser, &events, chromedp.Evaluate[chromedp.Void](`(heading => [...document.querySelectorAll('main h2,main h3')].find(node => node.textContent === heading)?.scrollIntoView())(`+strconv.Quote(smokeTranslation(t, lang, heading))+`)`))
+					writeWebSmokeScreenshot(t, browser, &events, filepath.Join(shots, page.name+"-evidence-"+string(lang)+".png"))
 				}
 			}
 			const username, password = "smoke-local", "local-smoke-only-password"

@@ -59,7 +59,7 @@ func (s *Service) recordTaskAttemptTx(ctx context.Context, tx *sql.Tx, ref servi
 		}
 		errorJSON = string(raw)
 	}
-	result, err := tx.ExecContext(ctx, `INSERT INTO deliveries(at,channel_id,task_id,kind,item_count,ok,error) VALUES(?,?,?,?,?,?,?)`, outcome.EndedAt, outcome.ChannelID, ref.TaskID, kind, len(group.Members), outcome.Result.OK, errorJSON)
+	result, err := tx.ExecContext(ctx, `INSERT INTO deliveries(at,channel_id,task_id,kind,item_count,ok,error,format_level) VALUES(?,?,?,?,?,?,?,?)`, outcome.EndedAt, outcome.ChannelID, ref.TaskID, kind, len(group.Members), outcome.Result.OK, errorJSON, outcome.FormatLevel)
 	if err != nil {
 		return 0, err
 	}

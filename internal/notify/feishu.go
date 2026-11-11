@@ -46,11 +46,7 @@ func validateFeishu(config ChannelConfig) error {
 	return err
 }
 
-func (s *Sender) sendFeishu(ctx context.Context, config ChannelConfig, message Message) Result {
-	secrets, err := loadFeishu(config)
-	if err != nil {
-		return failure("invalid_config")
-	}
+func buildFeishuBody(message Message, secret, timestamp string) ([]byte, error) {
 	rows := make([][]feishuElement, 0, 3)
 	if message.ItemTitle != "" {
 		rows = append(rows, []feishuElement{{Tag: "text", Text: message.ItemTitle}})
@@ -71,12 +67,24 @@ func (s *Sender) sendFeishu(ctx context.Context, config ChannelConfig, message M
 	}{MsgType: "post", Content: struct {
 		Post map[string]feishuPost `json:"post"`
 	}{Post: map[string]feishuPost{"zh_cn": {Title: message.Title, Content: rows}}}}
-	if secrets.Secret != "" {
-		payload.Timestamp = strconv.FormatInt(s.now().Unix(), 10)
-		mac := hmac.New(sha256.New, []byte(payload.Timestamp+"\n"+secrets.Secret))
+	if secret != "" {
+		payload.Timestamp = timestamp
+		mac := hmac.New(sha256.New, []byte(payload.Timestamp+"\n"+secret))
 		payload.Sign = base64.StdEncoding.EncodeToString(mac.Sum(nil))
 	}
-	body, err := json.Marshal(payload)
+	return json.Marshal(payload)
+}
+
+func (s *Sender) sendFeishu(ctx context.Context, config ChannelConfig, message Message) Result {
+	secrets, err := loadFeishu(config)
+	if err != nil {
+		return failure("invalid_config")
+	}
+	timestamp := ""
+	if secrets.Secret != "" {
+		timestamp = strconv.FormatInt(s.now().Unix(), 10)
+	}
+	body, err := buildFeishuBody(message, secrets.Secret, timestamp)
 	if err != nil || len(body) > FeishuBodyBytes {
 		return failure("invalid_message")
 	}

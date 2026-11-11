@@ -73,7 +73,7 @@ func (s *Sender) sendTelegram(ctx context.Context, config ChannelConfig, message
 		return failure("invalid_config")
 	}
 	method, limit := "sendMessage", TelegramTextLimit
-	if message.ImageURL != "" {
+	if message.ImageURL != "" && !message.TextOnly {
 		method, limit = "sendPhoto", TelegramCaptionLimit
 	}
 	itemTitle := []rune(TruncateRunes(message.ItemTitle, 40))

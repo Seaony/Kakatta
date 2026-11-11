@@ -22,12 +22,15 @@ var systemNotificationSchema string
 //go:embed migrations/004_finding_seller_checks.sql
 var sellerChecksSchema string
 
+//go:embed migrations/005_delivery_format_level.sql
+var deliveryFormatSchema string
+
 type migration struct {
 	version int
 	sql     string
 }
 
-var migrations = []migration{{version: 1, sql: initialSchema}, {version: 2, sql: businessSchema}, {version: 3, sql: systemNotificationSchema}, {version: 4, sql: sellerChecksSchema}}
+var migrations = []migration{{version: 1, sql: initialSchema}, {version: 2, sql: businessSchema}, {version: 3, sql: systemNotificationSchema}, {version: 4, sql: sellerChecksSchema}, {version: 5, sql: deliveryFormatSchema}}
 
 const migrationTable = `CREATE TABLE schema_migrations (
  version INTEGER NOT NULL PRIMARY KEY CHECK (version > 0),

@@ -44,7 +44,7 @@ func TestBuildProfileProjectsDictionaryAndPreservesUserText(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if req.Kind != client.Profile || req.TaskID != nil || len(req.Images) != 0 || req.System != s.Contents[client.Profile] || req.Schema == nil || req.Schema.Name != "task_profile" || req.Validate == nil {
+	if req.Kind != client.Profile || req.TaskID != nil || len(req.Images) != 0 || req.System != s.Contents[client.Profile]+"\n\n"+SellerDataSystemSuffix || req.Schema == nil || req.Schema.Name != "task_profile" || req.Validate == nil {
 		t.Fatalf("用途或模板配置错误：%+v", req)
 	}
 	if !strings.HasPrefix(req.User, "我想买："+keyword+"\n我的要求："+requirement+"\n\n## 检查项字典\n") {

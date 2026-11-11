@@ -4,9 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"math"
+	"regexp"
+	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/Seaony/Kakatta/internal/locales"
+	"golang.org/x/text/unicode/norm"
 )
 
 type rawObject map[string]json.RawMessage
@@ -76,6 +80,132 @@ func unknownField(field string) locales.Message {
 func missingEvidence(item string) locales.Message {
 	return message("analysis.evidence_missing", map[string]any{"item": item})
 }
+
+var imageReference = regexp.MustCompile(`第([-负]?(?:[0-9]+|[零〇一二两三四五六七八九十百千万亿]+))张图`)
+
+// 只认完整的中文整数，省略“零”产生歧义的写法不猜。
+func chineseImageNumber(text string) (int64, bool) {
+	text = strings.ReplaceAll(strings.ReplaceAll(text, "〇", "零"), "两", "二")
+	if text == "零" {
+		return 0, true
+	}
+	for _, unit := range []struct {
+		name  string
+		value int64
+	}{{"亿", 100000000}, {"万", 10000}} {
+		if !strings.Contains(text, unit.name) {
+			continue
+		}
+		if strings.Count(text, unit.name) != 1 {
+			return 0, false
+		}
+		left, right, _ := strings.Cut(text, unit.name)
+		high, ok := chineseImageNumber(left)
+		if !ok || high == 0 {
+			return 0, false
+		}
+		low := int64(0)
+		if right != "" {
+			remainder, zero := strings.CutPrefix(right, "零")
+			low, ok = chineseImageNumber(remainder)
+			if !ok || low == 0 || low >= unit.value || zero != (low < unit.value/10) {
+				return 0, false
+			}
+		}
+		if high > (math.MaxInt64-low)/unit.value {
+			return 0, false
+		}
+		return high*unit.value + low, true
+	}
+	digits := map[rune]int64{'零': 0, '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9}
+	total, digit, previous := int64(0), int64(-1), int64(10000)
+	used, zero := false, false
+	for _, r := range text {
+		if value, ok := digits[r]; ok {
+			if value == 0 {
+				if !used || digit >= 0 || zero {
+					return 0, false
+				}
+				zero = true
+			} else {
+				if digit >= 0 {
+					return 0, false
+				}
+				digit = value
+			}
+			continue
+		}
+		unit := int64(0)
+		switch r {
+		case '十':
+			unit = 10
+		case '百':
+			unit = 100
+		case '千':
+			unit = 1000
+		}
+		if unit == 0 || unit >= previous || used && zero != (unit < previous/10) {
+			return 0, false
+		}
+		if digit < 0 {
+			if unit != 10 || used {
+				return 0, false
+			}
+			digit = 1
+		}
+		total += digit * unit
+		digit, previous, used, zero = -1, unit, true, false
+	}
+	if digit < 0 {
+		return total, used && !zero
+	}
+	if used && zero != (previous > 10) {
+		return 0, false
+	}
+	return total + digit, true
+}
+
+func imageEvidencePresent(evidence string, count *int) bool {
+	if count == nil {
+		return true
+	}
+	if *count <= 0 {
+		return false
+	}
+	text := strings.Map(func(r rune) rune {
+		if r == '−' {
+			return '-'
+		}
+		if unicode.IsSpace(r) {
+			return -1
+		}
+		return r
+	}, norm.NFKC.String(evidence))
+	maximum := strconv.Itoa(*count)
+	for _, match := range imageReference.FindAllStringSubmatch(text, -1) {
+		index := match[1]
+		if strings.HasPrefix(index, "-") || strings.HasPrefix(index, "负") {
+			return false
+		}
+		if index[0] < '0' || index[0] > '9' {
+			value, ok := chineseImageNumber(index)
+			if !ok {
+				continue
+			}
+			index = strconv.FormatInt(value, 10)
+		}
+		index = strings.TrimLeft(index, "0")
+		if index == "" || len(index) > len(maximum) || len(index) == len(maximum) && index > maximum {
+			return false
+		}
+	}
+	return true
+}
+
+func missingImageEvidence(item string) locales.Message {
+	return message("analysis.image_evidence_missing", map[string]any{"item": item})
+}
+
 func decodeSpecs(b json.RawMessage) ([]SpecValue, bool) {
 	rows, ok := rawArray(b)
 	if !ok {
@@ -207,8 +337,8 @@ func ParseFacts(body []byte, profile Profile, originals EvidenceOriginals) (Fact
 	brand, _ := nullableBool(obj["brand_new"])
 	out.BrandNew = brand
 	out.Specs = ResolveSpecs(profile, values, brand, SpecDetail).Specs
-	out.Musts, warnings = parseRequirements(obj["musts"], profile.Musts, titleText, warnings)
-	out.Bonuses, warnings = parseRequirements(obj["bonuses"], profile.Bonuses, titleText, warnings)
+	out.Musts, warnings = parseRequirements(obj["musts"], profile.Musts, titleText, originals.ImageCount, warnings)
+	out.Bonuses, warnings = parseRequirements(obj["bonuses"], profile.Bonuses, titleText, originals.ImageCount, warnings)
 	allowed := map[string]int64{}
 	for _, r := range profile.Risks {
 		if !strings.HasPrefix(r.ID, "seller_") {
@@ -239,8 +369,13 @@ func ParseFacts(body []byte, profile Profile, originals EvidenceOriginals) (Fact
 		quote, _ := nullableString(fields["evidence"])
 		fact := CheckFact{Key: key, Status: CheckStatus(status), Source: src, Evidence: quote, Rev: rev}
 		validSource := src != nil && (*src == "text" || *src == "image")
-		if fact.Status != CheckUnknown && (!validSource || quote == nil || strings.TrimSpace(*quote) == "" || *src == "text" && !evidencePresent(titleText, *quote)) {
-			warnings = append(warnings, missingEvidence(key))
+		missingImage := src != nil && *src == "image" && quote != nil && !imageEvidencePresent(*quote, originals.ImageCount)
+		if fact.Status != CheckUnknown && (!validSource || quote == nil || strings.TrimSpace(*quote) == "" || *src == "text" && !evidencePresent(titleText, *quote) || missingImage) {
+			if missingImage {
+				warnings = append(warnings, missingImageEvidence(key))
+			} else {
+				warnings = append(warnings, missingEvidence(key))
+			}
 			switch fact.Status {
 			case CheckRisk:
 				fact.Status = CheckSuspect
@@ -310,13 +445,17 @@ func ParseFacts(body []byte, profile Profile, originals EvidenceOriginals) (Fact
 			warnings = append(warnings, missingEvidence(extra.Name))
 			continue
 		}
+		if extra.Source == "image" && !imageEvidencePresent(extra.Evidence, originals.ImageCount) {
+			warnings = append(warnings, missingImageEvidence(extra.Name))
+			continue
+		}
 		if len(out.ExtraFindings) < 5 {
 			out.ExtraFindings = append(out.ExtraFindings, extra)
 		}
 	}
 	return out, warnings, nil
 }
-func parseRequirements(raw json.RawMessage, requirements []Requirement, original string, warnings []locales.Message) ([]RequirementFact, []locales.Message) {
+func parseRequirements(raw json.RawMessage, requirements []Requirement, original string, imageCount *int, warnings []locales.Message) ([]RequirementFact, []locales.Message) {
 	rows, _ := rawArray(raw)
 	byID := map[string]RequirementFact{}
 	allowed := map[string]int64{}
@@ -345,8 +484,13 @@ func parseRequirements(raw json.RawMessage, requirements []Requirement, original
 			continue
 		}
 		validSource := fact.Source != nil && (*fact.Source == "text" || *fact.Source == "image")
-		if fact.Status != ReqUnknown && (!validSource || fact.Evidence == nil || strings.TrimSpace(*fact.Evidence) == "" || *fact.Source == "text" && !evidencePresent(original, *fact.Evidence)) {
-			warnings = append(warnings, missingEvidence(fact.ID))
+		missingImage := fact.Source != nil && *fact.Source == "image" && fact.Evidence != nil && !imageEvidencePresent(*fact.Evidence, imageCount)
+		if fact.Status != ReqUnknown && (!validSource || fact.Evidence == nil || strings.TrimSpace(*fact.Evidence) == "" || *fact.Source == "text" && !evidencePresent(original, *fact.Evidence) || missingImage) {
+			if missingImage {
+				warnings = append(warnings, missingImageEvidence(fact.ID))
+			} else {
+				warnings = append(warnings, missingEvidence(fact.ID))
+			}
 			fact.Status = ReqUnknown
 		}
 		if fact.Status == ReqUnmet && fact.Source != nil && *fact.Source == "image" {

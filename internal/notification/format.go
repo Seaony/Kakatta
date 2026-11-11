@@ -143,7 +143,7 @@ func formatNotificationMoney(cents int64) string {
 	return "¥" + digits
 }
 
-func formatGroup(task service.Task, group messageGroup, channel notify.Type, options formatOptions) (notify.Message, error) {
+func formatGroup(task service.Task, group messageGroup, channel notify.ChannelConfig, options formatOptions) (notify.Message, error) {
 	if task.ID < 1 || task.JudgeMode != analysis.ModeAI && task.JudgeMode != analysis.ModeKeyword || len(group.Members) == 0 || !group.Summary && len(group.Members) != 1 {
 		return notify.Message{}, errFormatMessage
 	}
@@ -157,21 +157,26 @@ func formatGroup(task service.Task, group messageGroup, channel notify.Type, opt
 	r := &messageRenderer{language: options.Language}
 	var message notify.Message
 	var parts titleParts
+	var content *recommendationContent
 	if group.Summary {
 		message, parts = r.summary(task, group, options)
 	} else {
-		message, parts = r.single(task, group.Members[0], options)
+		message, parts, content = r.single(task, group.Members[0], options)
 	}
 	if r.err != nil {
 		return notify.Message{}, r.err
 	}
-	if err := fitNotificationTitle(r, &message, parts, channel); err != nil {
+	if content != nil {
+		if err := fitRecommendation(r, &message, parts, channel, *content); err != nil {
+			return notify.Message{}, err
+		}
+	} else if err := fitNotificationTitle(r, &message, parts, channel.Type); err != nil {
 		return notify.Message{}, err
 	}
 	return message, r.err
 }
 
-func (r *messageRenderer) single(task service.Task, value candidate, options formatOptions) (notify.Message, titleParts) {
+func (r *messageRenderer) single(task service.Task, value candidate, options formatOptions) (notify.Message, titleParts, *recommendationContent) {
 	finding := value.Finding
 	message := notify.Message{Task: task.Name, ItemID: value.Listing.ItemID,
 		ItemTitle:   notify.TruncateRunes(notificationSingleLine(value.Listing.Title), 40),
@@ -198,6 +203,8 @@ func (r *messageRenderer) single(task service.Task, value candidate, options for
 	message.Config = fullConfig
 	parts := titleParts{TaskName: notificationSingleLine(task.Name), AmountCents: value.Intent.Price}
 	var firstLine, summary string
+	var evidence []criticalEvidence
+	var content *recommendationContent
 	switch value.Intent.Kind {
 	case intentRecommended, intentPriceUpgrade:
 		message.Kind = "recommended"
@@ -214,10 +221,15 @@ func (r *messageRenderer) single(task service.Task, value candidate, options for
 			if value.Intent.Kind == intentPriceUpgrade {
 				parts.Action = locales.Message{Code: "notification.action_upgrade", Args: map[string]any{"grade": r.message(parts.Action)}}
 			}
-			firstLine = r.recommendationReason(task, value)
+			firstLine, evidence = r.recommendationText(task, value)
+			content = &recommendationContent{Summary: summary, Evidence: evidence, Compact: notificationJoin(" · ", message.Price, r.gradeScore(finding))}
 		}
 		if value.Intent.Kind == intentPriceUpgrade {
-			firstLine = notificationJoin(" · ", r.text("notification.price_from_to", map[string]any{"previous": r.money(value.Intent.PreviousPrice), "current": message.Price}), firstLine)
+			change := r.text("notification.price_from_to", map[string]any{"previous": r.money(value.Intent.PreviousPrice), "current": message.Price})
+			firstLine = notificationJoin(" · ", change, firstLine)
+			if content != nil {
+				content.Compact = notificationJoin(" · ", change, r.gradeScore(finding))
+			}
 		}
 	case intentNew:
 		message.Kind = "all_new"
@@ -235,8 +247,11 @@ func (r *messageRenderer) single(task service.Task, value candidate, options for
 		firstLine = notificationJoin(" · ", r.text("notification.price_arrow", map[string]any{"previous": r.money(value.Intent.PreviousPrice), "current": message.Price}), r.gradeScore(finding))
 	}
 	message.Body = notificationJoin("\n", firstLine, summary)
+	if content != nil {
+		content.FirstLine = firstLine
+	}
 	message.Reason, _, _ = strings.Cut(message.Body, "\n")
-	return message, parts
+	return message, parts, content
 }
 
 func (r *messageRenderer) configuration(task service.Task, item *service.TaskItemSpecs) (string, string) {
@@ -296,7 +311,7 @@ func findingSummary(finding service.Finding) string {
 	return ""
 }
 
-func (r *messageRenderer) recommendationReason(task service.Task, value candidate) string {
+func (r *messageRenderer) recommendationText(task service.Task, value candidate) (string, []criticalEvidence) {
 	parts := []string{}
 	finding := value.Finding
 	if value.Intent.Price != nil && finding.FairPrice != nil && *finding.FairPrice > 0 {
@@ -327,20 +342,14 @@ func (r *messageRenderer) recommendationReason(task service.Task, value candidat
 		facts = *finding.Analysis
 	}
 	// 复用评分层的有效版本与手动覆盖，待确认数量不套界面五句上限。
-	questions := analysis.Score(analysis.ScoreInput{Profile: task.Profile, Facts: facts, Item: item, Seller: seller, Overrides: finding.UserOverrides}).Questions
+	assessment := analysis.Score(analysis.ScoreInput{Profile: task.Profile, Facts: facts, Item: item, Seller: seller, Overrides: finding.UserOverrides})
+	questions := assessment.Questions
 	if len(questions) > 0 {
 		names := make([]string, 0, min(2, len(questions)))
 		for _, question := range questions[:min(2, len(questions))] {
 			for _, risk := range analysis.ResolveRisks(task.Profile) {
 				if risk.ID == question.Key {
-					name := risk.Name
-					for _, definition := range analysis.RiskDictionary() {
-						if definition.ID == risk.ID {
-							name = r.text("analysis.risk_name."+risk.ID, nil)
-							break
-						}
-					}
-					names = append(names, name)
+					names = append(names, r.riskName(risk))
 					break
 				}
 			}
@@ -351,7 +360,48 @@ func (r *messageRenderer) recommendationReason(task service.Task, value candidat
 		}
 		parts = append(parts, r.text("notification.pending_checks", map[string]any{"count": len(questions), "names": nameText}))
 	}
-	return notificationJoin(" · ", parts...)
+	unverified := map[string]bool{}
+	for _, warning := range finding.AnalysisWarnings {
+		if warning.Code == "analysis.evidence_missing" {
+			if key, ok := warning.Args["item"].(string); ok {
+				unverified[key] = true
+			}
+		}
+	}
+	lines := []criticalEvidence{}
+	for _, requirement := range task.Profile.Musts {
+		current := requirement.Rev
+		if current == 0 {
+			current = 1
+		}
+		for _, fact := range facts.Musts {
+			if fact.ID != requirement.ID || fact.Rev <= 0 || fact.Rev != current || fact.Status != analysis.ReqMet && fact.Status != analysis.ReqUnmet {
+				continue
+			}
+			if !unverified[fact.ID] && fact.Source != nil && *fact.Source == "text" && fact.Evidence != nil && strings.TrimSpace(*fact.Evidence) != "" {
+				lines = append(lines, criticalEvidence{Name: requirement.Text, Status: r.text("notification.requirement_"+string(fact.Status), nil), Quote: *fact.Evidence})
+			}
+			break
+		}
+	}
+	for index, risk := range analysis.ResolveRisks(task.Profile) {
+		check := assessment.Checks[index]
+		if risk.Attitude != analysis.Confirm && risk.Attitude != analysis.Reject || unverified[risk.ID] ||
+			check.Source != analysis.EvidenceText || check.Evidence == nil || strings.TrimSpace(*check.Evidence) == "" {
+			continue
+		}
+		lines = append(lines, criticalEvidence{Name: r.riskName(risk), Status: r.text("notification.check_"+string(check.Status), nil), Quote: *check.Evidence})
+	}
+	return notificationJoin(" · ", parts...), lines
+}
+
+func (r *messageRenderer) riskName(risk analysis.ResolvedRisk) string {
+	for _, definition := range analysis.RiskDictionary() {
+		if definition.ID == risk.ID {
+			return r.text("analysis.risk_name."+risk.ID, nil)
+		}
+	}
+	return risk.Name
 }
 
 func notificationSeller(task service.Task, value candidate) analysis.SellerResult {

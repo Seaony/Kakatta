@@ -94,7 +94,7 @@ var schemaRequiredColumns = map[string]string{
 		http_status:INTEGER error_kind:TEXT json_mode:TEXT input_tokens:INTEGER output_tokens:INTEGER
 		reasoning_tokens:INTEGER finish_reason:TEXT duration_ms:INTEGER`,
 	"deliveries": `
-		id:INTEGER:p1 at:INTEGER channel_id:INTEGER task_id:INTEGER kind:TEXT item_count:INTEGER ok:INTEGER error:TEXT event_id:INTEGER`,
+		id:INTEGER:p1 at:INTEGER channel_id:INTEGER task_id:INTEGER kind:TEXT item_count:INTEGER ok:INTEGER error:TEXT event_id:INTEGER format_level:INTEGER:n`,
 	"delivery_items": `delivery_id:INTEGER:np1 finding_id:INTEGER:np2`,
 	"notification_intents": `id:INTEGER:p1 finding_id:INTEGER:n task_id:INTEGER:n kind:TEXT:n state:TEXT:n
 		created_at:INTEGER:n updated_at:INTEGER:n price:INTEGER previous_price:INTEGER failure_count:INTEGER:n
@@ -130,6 +130,7 @@ var schemaRequiredDefaults = map[string]map[string]string{
 	"run_records":          {"repeat_count": "1"},
 	"notification_intents": {"failure_count": "0"},
 	"system_events":        {"failure_count": "0"},
+	"deliveries":           {"format_level": "0"},
 }
 
 func schemaOpenDB(t *testing.T) *sql.DB {

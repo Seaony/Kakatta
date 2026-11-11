@@ -3762,6 +3762,8 @@ export interface components {
             kind: components["schemas"]["ModelClientKind"];
             required_keys: string[];
             schema: components["schemas"]["ModelClientSchema"] | null;
+            /** @description 构造请求时附加在模板后的固定系统说明，不进入可编辑正文。 */
+            readonly system_suffix: string;
             updated_at: number | null;
         };
         /** @description 创建和 PUT 使用同一完整输入，除 api_key 外各字段必填；preset/text_model 可明确 null，其他字段不接受 null。 */

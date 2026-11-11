@@ -88,7 +88,7 @@ func TestMarketBuildSelectedOverviewOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if request.Kind != client.Market || request.System != system || request.TaskID == nil || *request.TaskID != 7 || request.TaskID == &id || request.Images != nil || request.Schema != nil || request.Validate != nil {
+	if request.Kind != client.Market || request.System != system+"\n\n"+SellerDataSystemSuffix || request.TaskID == nil || *request.TaskID != 7 || request.TaskID == &id || request.Images != nil || request.Schema != nil || request.Validate != nil {
 		t.Fatalf("行情请求配置错误：%+v", request)
 	}
 	payload := marketDecode(t, request.User)
@@ -154,7 +154,7 @@ func TestMarketBuildUnavailableFairAndEmptyStatistics(t *testing.T) {
 	if strings.TrimSpace(request.User) != want {
 		t.Fatalf("无法比价应保留对象、样本和依据，键按字母序：\n%s\n%s", request.User, want)
 	}
-	if request.System != "" || request.TaskID != nil {
+	if request.System != "\n\n"+SellerDataSystemSuffix || request.TaskID != nil {
 		t.Fatal("不能补回默认系统消息或伪造任务编号")
 	}
 	request, err = BuildMarket(marketSnapshot("行情"), nil, analysis.MarketResult{})
@@ -266,7 +266,7 @@ func TestMarketBuildDoesNotAliasOrMutateCallerData(t *testing.T) {
 	*stats.Groups[0].Specs[0].Value = "新型号"
 	*stats.Groups[0].Daily[0].Median = 999
 	*stats.SnapshotAt = 999
-	if request.TaskID == nil || *request.TaskID != 8 || request.System != "原模板" || request.User != originalUser {
+	if request.TaskID == nil || *request.TaskID != 8 || request.System != "原模板\n\n"+SellerDataSystemSuffix || request.User != originalUser {
 		t.Fatalf("请求保留了调用方可变引用：%+v", request)
 	}
 }

@@ -198,7 +198,7 @@ func TestGenerateProfileUsesFormalPromptAndPreservesDraftWithoutSaving(t *testin
 	}
 	messages := calls[0]["messages"].([]any)
 	user := messages[1].(map[string]any)["content"].(string)
-	if messages[0].(map[string]any)["content"] != template || !strings.Contains(user, "我的要求："+requirement) || !strings.Contains(user, `"id":"c11"`) || strings.Contains(user, `"rev"`) || strings.Contains(user, "next_no") || !strings.Contains(user, `"id":"seller_new"`) {
+	if messages[0].(map[string]any)["content"] != template+"\n\n"+prompts.SellerDataSystemSuffix || !strings.Contains(user, "我的要求："+requirement) || !strings.Contains(user, `"id":"c11"`) || strings.Contains(user, `"rev"`) || strings.Contains(user, "next_no") || !strings.Contains(user, `"id":"seller_new"`) {
 		t.Fatalf("模板、原文或输入投影不正确：%s", user)
 	}
 	afterInput, _ := json.Marshal(current)

@@ -40,8 +40,12 @@ func BuildAnalysis(s Snapshot, taskID *int64, p analysis.Profile, item ProductSo
 	if len(dataURLs) == 0 {
 		user += "\n\n" + analysisNoImages
 	}
+	imageCount := len(dataURLs)
+	originals.ImageCount = &imageCount
 	validationOriginals := originals
 	validationOriginals.RecentRateTexts = append([]string(nil), originals.RecentRateTexts...)
+	validationImageCount := imageCount
+	validationOriginals.ImageCount = &validationImageCount
 	return client.Request{
 		Kind: client.Analysis, TaskID: copyTaskID(taskID), System: system, Schema: schema,
 		User: user, Images: append([]string(nil), dataURLs...),

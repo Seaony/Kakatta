@@ -25,7 +25,7 @@ func TestFormat单条只有捡漏设为紧急(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			value := formatCandidate(1, intentRecommended, formatPtr(int64(91)))
 			value.Finding.Grade = tc.grade
-			message, err := formatGroup(formatTask(analysis.ModeAI), messageGroup{Members: []candidate{value}}, notify.Bark, formatOpts(locales.ZhCN))
+			message, err := formatGroup(formatTask(analysis.ModeAI), messageGroup{Members: []candidate{value}}, formatChannel(notify.Bark), formatOpts(locales.ZhCN))
 			if err != nil || message.Urgent != tc.urgent {
 				t.Fatalf("单条通知的紧急标志不符：%+v %v，期望 %t", message, err, tc.urgent)
 			}
@@ -118,7 +118,7 @@ func TestFormat摘要每行保留档位分数和商品标题(t *testing.T) {
 		{locales.En, "A steal 91 · 平板甲\nGood deal 84 · 平板 乙\nFair price 72 · 平板丙\n无法比价丁"},
 	} {
 		t.Run(string(tc.language), func(t *testing.T) {
-			message, err := formatGroup(formatTask(analysis.ModeAI), messageGroup{Members: members, Summary: true}, notify.Bark, formatOpts(tc.language))
+			message, err := formatGroup(formatTask(analysis.ModeAI), messageGroup{Members: members, Summary: true}, formatChannel(notify.Bark), formatOpts(tc.language))
 			if err != nil || message.Body != tc.body {
 				t.Fatalf("摘要没有逐行保留独立的档位、分数和标题：%q %v，期望%q", message.Body, err, tc.body)
 			}

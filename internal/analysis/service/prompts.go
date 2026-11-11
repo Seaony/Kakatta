@@ -73,7 +73,7 @@ func loadPromptViewsTx(ctx context.Context, tx *sql.Tx) ([]PromptView, prompts.S
 	for _, definition := range definitions {
 		_, customized := overrides[definition.Kind]
 		views = append(views, PromptView{Kind: definition.Kind, Content: snapshot.Contents[definition.Kind],
-			Default: definition.Default, Customized: customized, RequiredKeys: definition.RequiredKeys,
+			Default: definition.Default, SystemSuffix: prompts.SellerDataSystemSuffix, Customized: customized, RequiredKeys: definition.RequiredKeys,
 			Schema: definition.Schema, AssetVersion: snapshot.AssetVersion, UpdatedAt: updated[definition.Kind]})
 	}
 	return views, snapshot, nil

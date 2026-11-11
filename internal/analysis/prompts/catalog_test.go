@@ -292,7 +292,7 @@ func TestCatalogDefinitionsAndRequestSchemaAreIndependent(t *testing.T) {
 		before[kind] = content
 	}
 	system, schema, err := requestParts(snapshot, client.TitleScreen)
-	if err != nil || system != before[client.TitleScreen] || schema == nil || schema.Name != "title_screen" {
+	if err != nil || system != before[client.TitleScreen]+"\n\n"+SellerDataSystemSuffix || schema == nil || schema.Name != "title_screen" {
 		t.Fatalf("没有使用有效快照：%s %+v %v", system, schema, err)
 	}
 	schema.JSON[0] = '!'

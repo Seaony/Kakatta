@@ -6,6 +6,42 @@ type wecomSecrets struct {
 	URL string `json:"url"`
 }
 
+type wecomArticle struct {
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	URL         string `json:"url"`
+	PicURL      string `json:"picurl,omitempty"`
+}
+
+type wecomPayload struct {
+	MsgType string `json:"msgtype"`
+	Text    *struct {
+		Content string `json:"content"`
+	} `json:"text,omitempty"`
+	News *struct {
+		Articles []wecomArticle `json:"articles"`
+	} `json:"news,omitempty"`
+}
+
+func buildWeComPayload(message Message) wecomPayload {
+	if message.TextOnly || message.Link == "" {
+		return wecomPayload{MsgType: "text", Text: &struct {
+			Content string `json:"content"`
+		}{Content: withLink(joinNonEmpty("\n", message.Title, plainBody(message)), message.Link)}}
+	}
+	return wecomPayload{MsgType: "news", News: &struct {
+		Articles []wecomArticle `json:"articles"`
+	}{Articles: []wecomArticle{{Title: joinNonEmpty(" · ", message.Title, message.ItemTitle), Description: message.Body, URL: message.Link, PicURL: message.ImageURL}}}}
+}
+
+func wecomPayloadFits(payload wecomPayload) bool {
+	if payload.Text != nil {
+		return len(payload.Text.Content) <= WeComTextBytes
+	}
+	article := payload.News.Articles[0]
+	return len(article.Title) <= WeComTitleBytes && len(article.Description) <= WeComDescriptionBytes
+}
+
 func loadWeCom(config ChannelConfig) (wecomSecrets, error) {
 	var options struct{}
 	var secrets wecomSecrets
@@ -31,36 +67,17 @@ func (s *Sender) sendWeCom(ctx context.Context, config ChannelConfig, message Me
 	if err != nil {
 		return failure("invalid_config")
 	}
-	var payload any
-	if message.Link == "" {
-		payload = struct {
-			MsgType string `json:"msgtype"`
-			Text    struct {
-				Content string `json:"content"`
-			} `json:"text"`
-		}{MsgType: "text", Text: struct {
-			Content string `json:"content"`
-		}{Content: TruncateUTF8(joinNonEmpty("\n", message.Title, plainBody(message)), WeComTextBytes)}}
-	} else {
-		type article struct {
-			Title       string `json:"title"`
-			Description string `json:"description"`
-			URL         string `json:"url"`
-			PicURL      string `json:"picurl,omitempty"`
+	payload := buildWeComPayload(message)
+	if message.TextOnly {
+		if !wecomPayloadFits(payload) {
+			return failure("invalid_message")
 		}
-		payload = struct {
-			MsgType string `json:"msgtype"`
-			News    struct {
-				Articles []article `json:"articles"`
-			} `json:"news"`
-		}{MsgType: "news", News: struct {
-			Articles []article `json:"articles"`
-		}{Articles: []article{{
-			Title:       TruncateUTF8(joinNonEmpty(" · ", message.Title, message.ItemTitle), WeComTitleBytes),
-			Description: TruncateUTF8(message.Body, WeComDescriptionBytes),
-			URL:         message.Link,
-			PicURL:      message.ImageURL,
-		}}}}
+	} else if payload.Text != nil {
+		payload.Text.Content = TruncateUTF8(payload.Text.Content, WeComTextBytes)
+	} else {
+		article := &payload.News.Articles[0]
+		article.Title = TruncateUTF8(article.Title, WeComTitleBytes)
+		article.Description = TruncateUTF8(article.Description, WeComDescriptionBytes)
 	}
 	reply, result := s.sendJSON(ctx, secrets.URL, payload, nil, defaultTimeout)
 	if !result.OK {

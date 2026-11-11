@@ -75,7 +75,7 @@ func TestBuildTitleExactProjectionAndOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Kind != client.TitleScreen || r.Schema == nil || r.Schema.Name != "title_screen" || r.System != s.Contents[client.TitleScreen] || len(r.Images) != 0 || r.TaskID == nil || *r.TaskID != 42 {
+	if r.Kind != client.TitleScreen || r.Schema == nil || r.Schema.Name != "title_screen" || r.System != s.Contents[client.TitleScreen]+"\n\n"+SellerDataSystemSuffix || len(r.Images) != 0 || r.TaskID == nil || *r.TaskID != 42 {
 		t.Fatalf("标题请求元数据不符：%+v", r)
 	}
 	profile, batch := titleBlocks(t, r.User)

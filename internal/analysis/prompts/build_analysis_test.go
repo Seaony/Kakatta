@@ -96,7 +96,7 @@ func TestBuildAnalysisProjectsWhitelistAndPreciseMoney(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if request.Kind != client.Analysis || request.TaskID == nil || *request.TaskID != id || request.System != snapshot.Contents[client.Analysis] || request.Schema == nil || request.Schema.Name != "listing_facts" || request.Validate == nil {
+	if request.Kind != client.Analysis || request.TaskID == nil || *request.TaskID != id || request.System != snapshot.Contents[client.Analysis]+"\n\n"+SellerDataSystemSuffix || request.Schema == nil || request.Schema.Name != "listing_facts" || request.Validate == nil {
 		t.Fatalf("分析请求元数据错误：%+v", request)
 	}
 	wireProfile, product, blocks := analysisTestBlocks(t, request.User)

@@ -551,7 +551,7 @@ func TestPromptSnapshotTxUsesOneRunSnapshot(t *testing.T) {
 	titleTestFinding(t, s, 1, StageTitle, DecisionPending)
 	run.SearchSaved.NewFindingIDs = []int64{1}
 	s.models = titleModelFunc(func(_ context.Context, request client.Request) (client.Result, error) {
-		if request.System != old {
+		if request.System != old+"\n\n"+prompts.SellerDataSystemSuffix {
 			t.Fatal("模板保存影响了已经开始的运行")
 		}
 		return titleTestResponse(t, request, nil), nil

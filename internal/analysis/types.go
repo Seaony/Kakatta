@@ -326,6 +326,8 @@ type EvidenceOriginals struct {
 	Description        string   `json:"description"`
 	SellerIntroduction string   `json:"seller_introduction"`
 	RecentRateTexts    []string `json:"recent_rate_texts"`
+	// 只由请求构造器填写；nil 表示直接解析的旧资料未记录图片数。
+	ImageCount *int `json:"-"`
 }
 type SellerItem struct {
 	Title  string `json:"title"`
