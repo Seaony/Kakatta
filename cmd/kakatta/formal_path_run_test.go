@@ -26,8 +26,7 @@ func formalTaskID(t *testing.T) int64 {
 	return formalScalar(t, "SELECT id FROM tasks WHERE name='正式流程相机监控'")
 }
 
-const formalReadyToRunQuery = `SELECT
-	NOT EXISTS(SELECT 1 FROM run_records WHERE ended_at IS NULL) AND
+const formalReadyToRunQuery = `SELECT NOT EXISTS(SELECT 1 FROM run_records WHERE ended_at IS NULL) AND
 	EXISTS(SELECT 1 FROM accounts a WHERE a.name='本地扫码账号'
 	 AND a.last_run_ended_at IS NOT NULL AND a.next_gap_seconds IS NOT NULL
 	 AND a.last_run_ended_at+a.next_gap_seconds*1000<=?
