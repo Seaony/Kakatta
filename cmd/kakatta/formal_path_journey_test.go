@@ -139,7 +139,7 @@ func TestFormalPathJourney(t *testing.T) {
 			return err
 		}
 		_, err := chromedp.Call(ctx, emulation.SetDeviceMetricsOverride, emulation.SetDeviceMetricsOverrideParams{
-			Width: 1280, Height: 900, DeviceScaleFactor: 1, Mobile: false,
+			Width: 1280, Height: 900, ScreenWidth: 1280, ScreenHeight: 900, DeviceScaleFactor: 1, Mobile: false,
 		})
 		return err
 	}), smokeBrowserLanguage("zh-CN"))
