@@ -3,7 +3,6 @@ package web
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 
@@ -31,7 +30,7 @@ const goofishHome = "https://www.goofish.com/"
 func (s Site) itemURL(webURL string) (string, error) {
 	rest, ok := strings.CutPrefix(webURL, goofishHome)
 	if !ok || !strings.HasPrefix(rest, "item?") {
-		return "", fmt.Errorf("不是闲鱼的商品链接：%q", webURL)
+		return "", errors.New("不是闲鱼的商品链接")
 	}
 	return s.Home + rest, nil
 }

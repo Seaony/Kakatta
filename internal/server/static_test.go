@@ -53,6 +53,9 @@ func TestStaticMarksPublicPlainHTTP(t *testing.T) {
 			if result.Header().Get("Cache-Control") != "no-store" {
 				t.Fatal("不能缓存因连接来源而异的页面")
 			}
+			if item.path != "/assets/a.js" && (result.Header().Get("Content-Security-Policy") != "frame-ancestors 'none'" || result.Header().Get("X-Frame-Options") != "DENY") {
+				t.Fatal("网页入口必须拒绝被嵌入")
+			}
 			marker := `data-kakatta-public-http="false"`
 			if item.want {
 				marker = `data-kakatta-public-http="true"`

@@ -408,6 +408,31 @@ func TestCrossOriginAndTrustedProxy(t *testing.T) {
 	}
 }
 
+func TestWriteOriginMatchesExternalSchemeAndHost(t *testing.T) {
+	f := newServerFixture(t, true)
+	for _, test := range []struct {
+		name, host, origin string
+		status             int
+	}{
+		{"无来源头", "kakatta.test", "", http.StatusUnauthorized},
+		{"同源", "kakatta.test", "https://kakatta.test", http.StatusUnauthorized},
+		{"同源的默认端口", "kakatta.test:443", "https://kakatta.test", http.StatusUnauthorized},
+		{"协议不同", "kakatta.test", "http://kakatta.test", http.StatusForbidden},
+		{"端口不同", "kakatta.test:8080", "https://kakatta.test", http.StatusForbidden},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			result := f.request(http.MethodPatch, "/api/v1/settings", "", false, func(r *http.Request) {
+				r.TLS = &tls.ConnectionState{}
+				r.Host = test.host
+				if test.origin != "" {
+					r.Header.Set("Origin", test.origin)
+				}
+			})
+			requireStatus(t, result, test.status)
+		})
+	}
+}
+
 func TestTOTPAndPasswordFlows(t *testing.T) {
 	f := newServerFixture(t, true)
 	body, _ := json.Marshal(map[string]string{"password": testPassword})

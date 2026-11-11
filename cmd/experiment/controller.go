@@ -341,13 +341,12 @@ func (c *controller) loginReserved(job context.Context) (err error) {
 	}
 	stopBrowser := context.AfterFunc(job, r.chrome.Close)
 	defer stopBrowser()
-	err = r.runner.OpenHome(job)
-	if errors.Is(err, web.ErrNeedVerify) {
-		c.log("登录页面需要验证，请在当前远程画面手动处理", nil)
-		err = nil
-	}
+	err = r.runner.OpenLogin(job)
 	if err == nil {
 		r.runner.BeginVerification()
+		err = r.runner.CheckVerification(job)
+	}
+	if err == nil {
 		c.phase("ready", nil)
 		c.log("请在远程画面里点击登录并扫码", nil)
 		err = r.runner.WaitForLogin(job, 10*time.Minute)
@@ -449,7 +448,12 @@ func (c *controller) flow(ctx context.Context, r *web.Runner) error {
 		return err
 	}
 	for _, item := range items {
-		c.log("搜索商品字段", map[string]any{"编号": item.ID, "标题": item.Title, "价格分": item.PriceCents, "价格已知": item.PriceKnown, "地区": item.Area, "发布时间": item.PublishedAt, "卖家昵称": item.SellerNick, "包邮": item.FreeShip, "主图": item.Image})
+		image := ""
+		if u, err := url.Parse(item.Image); err == nil && (u.Scheme == "https" || u.Scheme == "http") && u.Hostname() != "" {
+			clean := url.URL{Scheme: u.Scheme, Host: u.Host, Path: u.Path}
+			image = clean.String()
+		}
+		c.log("搜索商品字段", map[string]any{"编号": item.ID, "标题": item.Title, "价格分": item.PriceCents, "价格已知": item.PriceKnown, "地区": item.Area, "发布时间": item.PublishedAt, "卖家昵称": item.SellerNick, "包邮": item.FreeShip, "主图": image})
 	}
 	if len(items) < 2 {
 		return errors.New("筛选后不足两件商品，本次未打开详情，请换一个关键词")

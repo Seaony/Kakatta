@@ -3,6 +3,7 @@ package client
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/url"
 	"regexp"
 	"strconv"
@@ -13,10 +14,28 @@ var urlCredentials = regexp.MustCompile(`(?i)\b(?:https?|socks5h?|socks4a?)://[^
 
 func redactText(text string, secrets []string) string {
 	// 先解开合法 JSON，避免转义后的密钥绕过直接替换。
+	decoder := json.NewDecoder(strings.NewReader(text))
+	decoder.UseNumber()
 	var value any
-	if json.Unmarshal([]byte(text), &value) == nil {
+	if decoder.Decode(&value) == nil && decoder.Decode(new(any)) == io.EOF {
 		if clean, err := json.Marshal(redactValue(value, secrets)); err == nil {
 			return string(clean)
+		}
+	}
+	return redactPlain(text, secrets)
+}
+
+func redactStructuredText(text string, secrets []string) string {
+	// 和业务解析一样接受围栏或说明中的第一个 JSON 对象。
+	for start, char := range text {
+		if char != '{' {
+			continue
+		}
+		decoder := json.NewDecoder(strings.NewReader(text[start:]))
+		var object json.RawMessage
+		if decoder.Decode(&object) == nil {
+			end := start + int(decoder.InputOffset())
+			return redactPlain(text[:start], secrets) + redactText(string(object), secrets) + redactPlain(text[end:], secrets)
 		}
 	}
 	return redactPlain(text, secrets)
@@ -45,6 +64,11 @@ func redactValue(value any, secrets []string) any {
 	switch v := value.(type) {
 	case string:
 		return redactPlain(v, secrets)
+	case json.Number:
+		if clean := redactPlain(string(v), secrets); clean != string(v) {
+			return clean
+		}
+		return v
 	case map[string]any:
 		copy := make(map[string]any, len(v))
 		for key, item := range v {

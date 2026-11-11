@@ -121,12 +121,16 @@ func TestSearchAndDetailFlow(t *testing.T) {
 // 详情接口返回人机验证：必须作为风控错误返回，不能被当成普通失败吞掉（CRAWL-POLICY 第四节）。
 func TestDetailVerificationStopsRun(t *testing.T) {
 	f := newFake(t)
-	f.SetDetailRet("FAIL_SYS_USER_VALIDATE::哎哟喂,被挤爆啦")
+	const diagnostic = "仅供假服务端使用的诊断"
+	f.SetDetailRet("FAIL_SYS_USER_VALIDATE::" + diagnostic)
 	r, _, ctx := startRunner(t, f)
 	started := 0
 	_, err := r.OpenDetailWithStart(ctx, xianyu.WebLink("fleamarket://item?id=101"), func() { started++ })
 	if !errors.Is(err, ErrNeedVerify) || !IsStop(err) || started != 1 {
 		t.Fatalf("详情导航后应停止等待人机验证，导航 %d 次，错误 %v", started, err)
+	}
+	if strings.Contains(err.Error(), diagnostic) {
+		t.Fatal("接口原始说明出现在诊断中")
 	}
 	_, err = r.OpenDetailWithStart(ctx, xianyu.WebLink("fleamarket://item?id=102"), func() { started++ })
 	if !errors.Is(err, ErrNeedVerify) || started != 1 {
@@ -139,12 +143,24 @@ func TestDetailSkipsExpiredToken(t *testing.T) {
 	f := newFake(t)
 	f.SetDetailRet("FAIL_SYS_TOKEN_EXOIRED::令牌过期")
 	r, _, ctx := startRunner(t, f)
+	var expired bool
+	r.Log = func(event string, fields map[string]any) {
+		if event == "接口返回" {
+			if _, ok := fields["ret"]; ok {
+				t.Fatal("日志保留了原始接口返回")
+			}
+			expired = expired || fields["结果"] == xianyu.RetTokenExpired.String()
+		}
+	}
 	d, err := r.OpenDetail(ctx, xianyu.WebLink("fleamarket://item?id=101"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if d.SellerID != "998" {
 		t.Fatalf("应该拿到重发后的详情：%+v", d)
+	}
+	if !expired {
+		t.Fatal("日志没有记录已识别的令牌过期状态")
 	}
 }
 

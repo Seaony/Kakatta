@@ -62,6 +62,8 @@ func (s *Server) static(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if name == "index.html" {
+		w.Header().Set("Content-Security-Policy", "frame-ancestors 'none'")
+		w.Header().Set("X-Frame-Options", "DENY")
 		peer := stateOf(r).peer
 		if !peer.Secure && peer.IP.IsGlobalUnicast() && !peer.IP.IsPrivate() && !sharedAddressSpace.Contains(peer.IP) {
 			data = bytes.Replace(data, []byte(`data-kakatta-public-http="false"`), []byte(`data-kakatta-public-http="true"`), 1)

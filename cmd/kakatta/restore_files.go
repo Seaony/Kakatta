@@ -64,9 +64,6 @@ type restoreFiles struct {
 	after            func(string) error
 }
 
-func (f *restoreFiles) String() string   { return "恢复文件事务" }
-func (f *restoreFiles) GoString() string { return f.String() }
-
 func restoreDir(path string, optional bool) error {
 	info, err := os.Lstat(path)
 	if optional && errors.Is(err, os.ErrNotExist) {

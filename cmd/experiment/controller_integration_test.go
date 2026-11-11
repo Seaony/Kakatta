@@ -90,6 +90,60 @@ func TestControllerLoginThenFreshSingleRun(t *testing.T) {
 	}
 }
 
+func TestControllerLoginWaitsWhenHomeReportsExpiredSession(t *testing.T) {
+	c := experimentController(t, 448)
+	c.fixture.RequireLoginOnHome()
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- c.login(ctx) }()
+	r := waitExperimentResource(t, c, done)
+	waitExperiment(t, "等待失效页面上的人工登录", func() bool {
+		select {
+		case err := <-done:
+			t.Fatalf("扫码之前关闭了登录会话：%v", err)
+		default:
+		}
+		if c.snapshot().Phase != "ready" {
+			return false
+		}
+		for _, response := range r.chrome.Capture.DoneAfter(0, browser.Match{URL: "/h5/mtop.fake.login/1.0/"}) {
+			if strings.Contains(string(response.Body), "FAIL_SYS_SESSION_EXPIRED") {
+				return true
+			}
+		}
+		return false
+	})
+	if err := r.chrome.Navigate(c.fixture.Home()+"login-box", 5*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	waitExperiment(t, "等待登录框出现", func() bool {
+		for _, event := range c.snapshot().Events {
+			if event.Event == "登录框已出现" {
+				return true
+			}
+		}
+		return false
+	})
+	button, err := r.runner.H.FirstVisible(ctx, "#finish-login", 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.runner.H.Click(ctx, button); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	assertExperimentReleased(t, c, r)
+	for _, event := range c.snapshot().Events {
+		if event.Event == "登录完成" && event.Fields["昵称"] == "测试号" {
+			return
+		}
+	}
+	t.Fatal("扫码后没有读取我的主页昵称")
+}
+
 func TestControllerVerificationHoldsUntilManualConfirmation(t *testing.T) {
 	c := experimentController(t, 442)
 	c.fixture.SetMaskOnSearch(true)

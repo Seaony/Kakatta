@@ -191,10 +191,6 @@ func (r *Runner) Search(ctx context.Context, keyword string) (*browser.Response,
 	}
 	mark := r.S.Capture.Mark()
 	navMark := r.S.NavigationMark()
-	before, err := r.S.URLContext(ctx)
-	if err != nil {
-		return nil, err
-	}
 	if err := r.H.Press(ctx, "Enter"); err != nil {
 		return nil, err
 	}
@@ -210,7 +206,7 @@ func (r *Runner) Search(ctx context.Context, keyword string) (*browser.Response,
 		if cerr := r.check(ctx, "提交搜索"); cerr != nil {
 			return nil, cerr
 		}
-		return nil, fmt.Errorf("回车后没有进入搜索结果页（原网址 %s）：%w", before, err)
+		return nil, fmt.Errorf("回车后没有进入搜索结果页：%w", err)
 	}
 	resp, err := r.waitAPI(ctx, mark, r.Site.searchAPI(), "搜索结果页", rules.timeout("search_response"))
 	if err != nil {
@@ -219,12 +215,14 @@ func (r *Runner) Search(ctx context.Context, keyword string) (*browser.Response,
 	// 核对关键词：结果页网址的 q 和任务关键词不一致，说明输入出了问题，不拿错误关键词的结果继续。
 	u, err := url.Parse(landed)
 	if err != nil {
-		return nil, fmt.Errorf("搜索结果页网址无效：%w", err)
+		return nil, errors.New("搜索结果页网址无效")
 	}
 	if q := u.Query().Get("q"); normalizeKeyword(q) != normalizeKeyword(keyword) {
-		return nil, fmt.Errorf("结果页的关键词是 %q，和要搜的 %q 不一致", q, keyword)
+		return nil, errors.New("结果页的关键词与本次搜索不一致")
 	}
-	r.Log("进入搜索结果页", map[string]any{"网址": landed})
+	// 只保留诊断需要的路径和用户输入的关键词。
+	loggedURL := url.URL{Scheme: u.Scheme, Host: u.Host, Path: u.Path, RawQuery: url.Values{"q": {keyword}}.Encode()}
+	r.Log("进入搜索结果页", map[string]any{"网址": loggedURL.String()})
 	if _, err := r.H.FirstVisible(ctx, rules.Selectors.SearchReady, rules.timeout("search_ready")); err != nil {
 		if cerr := r.check(ctx, "等筛选栏"); cerr != nil {
 			return nil, cerr

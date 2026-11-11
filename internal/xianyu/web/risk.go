@@ -25,7 +25,7 @@ var (
 type RiskError struct {
 	Kind   error  // 上面四种之一
 	Where  string // 哪一步
-	Signal string // 哪个信号，比如 "ret:FAIL_SYS_USER_VALIDATE"
+	Signal string // 已识别的信号，例如验证遮罩或接口拒绝
 }
 
 func (e *RiskError) Error() string {
@@ -136,20 +136,20 @@ func (r *Runner) checkResponses(where string) error {
 		if resp.Err != nil || len(resp.Body) == 0 {
 			continue
 		}
-		kind, ret, err := xianyu.CheckEnvelope(resp.Body)
+		kind, _, err := xianyu.CheckEnvelope(resp.Body)
 		if err != nil {
 			continue
 		}
 		switch kind {
 		case xianyu.RetNeedVerify:
 			if (resp.BodyOrder == 0 || resp.BodyOrder > r.handledRisks[resp.Seq].body) && pending == nil {
-				pending = &RiskError{Kind: ErrNeedVerify, Where: where, Signal: "ret:" + strings.Join(ret, ",")}
+				pending = &RiskError{Kind: ErrNeedVerify, Where: where, Signal: kind.String()}
 			}
 		case xianyu.RetDenied:
-			return &RiskError{Kind: ErrDenied, Where: where, Signal: "ret:" + strings.Join(ret, ",")}
+			return &RiskError{Kind: ErrDenied, Where: where, Signal: kind.String()}
 		case xianyu.RetSessionExpired:
 			if resp.BodyOrder == 0 || resp.BodyOrder > r.handledRisks[resp.Seq].body {
-				pending = &RiskError{Kind: ErrLoginExpired, Where: where, Signal: "ret:" + strings.Join(ret, ",")}
+				pending = &RiskError{Kind: ErrLoginExpired, Where: where, Signal: kind.String()}
 			}
 		}
 	}
@@ -218,11 +218,11 @@ func (r *Runner) waitAPIResponse(ctx context.Context, mark uint64, m browser.Mat
 		if resp.Status < 200 || resp.Status > 299 {
 			return nil, fmt.Errorf("%s：HTTP 状态码 %d", where, resp.Status)
 		}
-		kind, ret, err := xianyu.CheckEnvelope(resp.Body)
+		kind, _, err := xianyu.CheckEnvelope(resp.Body)
 		if err != nil {
 			return nil, fmt.Errorf("%s：响应不是有效的接口数据：%w", where, err)
 		}
-		r.Log("接口返回", map[string]any{"步骤": where, "ret": ret, "耗时毫秒": time.Since(start).Milliseconds()})
+		r.Log("接口返回", map[string]any{"步骤": where, "结果": kind.String(), "耗时毫秒": time.Since(start).Milliseconds()})
 		switch kind {
 		case xianyu.RetOK:
 			return resp, nil
@@ -231,7 +231,7 @@ func (r *Runner) waitAPIResponse(ctx context.Context, mark uint64, m browser.Mat
 			after = resp.Seq
 			continue
 		default:
-			return nil, fmt.Errorf("%s：接口业务失败：%s", where, strings.Join(ret, ","))
+			return nil, fmt.Errorf("%s：%s", where, kind)
 		}
 	}
 }

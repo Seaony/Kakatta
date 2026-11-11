@@ -17,6 +17,24 @@ type requestPeer struct {
 	Secure bool
 }
 
+func sameOriginHost(r *http.Request, peer requestPeer) string {
+	values := r.Header.Values("Origin")
+	if len(values) != 1 {
+		return ""
+	}
+	origin, err := url.Parse(values[0])
+	scheme, defaultPort := "http", ":80"
+	if peer.Secure {
+		scheme, defaultPort = "https", ":443"
+	}
+	if err != nil || origin.Scheme != scheme || origin.Hostname() == "" || origin.User != nil ||
+		origin.Path != "" || origin.ForceQuery || origin.RawQuery != "" || strings.Contains(values[0], "#") ||
+		!strings.EqualFold(strings.TrimSuffix(origin.Host, defaultPort), strings.TrimSuffix(peer.Host, defaultPort)) {
+		return ""
+	}
+	return origin.Host
+}
+
 var errRequestPeer = errors.New("server.invalid_proxy")
 
 func resolvePeer(r *http.Request, trusted []string) (requestPeer, error) {

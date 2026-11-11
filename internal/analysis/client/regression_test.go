@@ -148,6 +148,61 @@ func TestExtraCredentialsAreRedactedFromInfrastructureErrors(t *testing.T) {
 	}
 }
 
+func TestStructuredResultRedactsDecodedTextAndFinishReason(t *testing.T) {
+	const secret = "fixture-key"
+	const prefix = "说明\n```json\n"
+	const suffix = "\n```\n附注"
+	const body = `{"summary":"本地样例：\u0066ixture-key","evidence":"含有引号\"和反斜线\\","amount":9007199254740993}`
+	_, repo, accounting, _, deps := newContractFixture(t, 1, func(w http.ResponseWriter, _ *http.Request, _ int, _ map[string]any) {
+		fmt.Fprint(w, contractSuccess(prefix+body+suffix, secret, contractUsage()))
+	})
+	repo.providers[0].APIKey = secret
+	job := contractJob(Analysis)
+	job.Validate = func(text string) error {
+		var value struct {
+			Summary  string      `json:"summary"`
+			Evidence string      `json:"evidence"`
+			Amount   json.Number `json:"amount"`
+		}
+		if !strings.HasPrefix(text, prefix) || !strings.HasSuffix(text, suffix) {
+			return errors.New("丢掉了围栏或前后说明")
+		}
+		if err := json.Unmarshal([]byte(text[len(prefix):len(text)-len(suffix)]), &value); err != nil {
+			return err
+		}
+		if value.Summary != "本地样例：[REDACTED]" || value.Evidence != "含有引号\"和反斜线\\" || value.Amount != "9007199254740993" {
+			return errors.New("结构化结果没有正确脱敏或改变了原有数据")
+		}
+		return nil
+	}
+	result, err := newContractClient(t, deps).Complete(t.Context(), job)
+	if err != nil || job.Validate(result.Text) != nil {
+		t.Fatal("业务解析与返回的结构化内容都应已经脱敏")
+	}
+	_, ends, _ := accounting.snapshot()
+	if len(ends) != 1 || ends[0].FinishReason != "[REDACTED]" || result.Calls[0].End.FinishReason != "[REDACTED]" {
+		t.Fatal("记账和调用结果的结束原因都应已经脱敏")
+	}
+}
+
+func TestFailureDetailRedactsNumericCredential(t *testing.T) {
+	const secret = "9147485552310773"
+	_, repo, _, _, deps := newContractFixture(t, 1, func(w http.ResponseWriter, _ *http.Request, _ int, _ map[string]any) {
+		w.WriteHeader(http.StatusUnauthorized)
+		fmt.Fprint(w, `{"credential":`+secret+`,"number":9007199254740993}`)
+	})
+	repo.providers[0].APIKey = secret
+	_, err := newContractClient(t, deps).Complete(t.Context(), contractJob(Profile))
+	var failure *Failure
+	if !errors.As(err, &failure) {
+		t.Fatal("应返回模型鉴权失败")
+	}
+	detail, _ := failure.Last.Args["detail"].(string)
+	if detail != `{"credential":"[REDACTED]","number":9007199254740993}` {
+		t.Fatal("模型错误应遮住数字格式的凭据并保留其他数字的精度")
+	}
+}
+
 type canceledHTTP struct{ calls int }
 
 func (h *canceledHTTP) Do(*http.Request) (*http.Response, error) {

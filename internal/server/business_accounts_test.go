@@ -346,14 +346,14 @@ func TestBusinessRemoteOriginUsesVerifiedPeer(t *testing.T) {
 		r := httptest.NewRequest(http.MethodGet, "http://internal.invalid/vnc", nil)
 		r.Header.Set("Origin", test.origin)
 		r.Header.Set("X-Forwarded-Host", "attacker.invalid")
-		if got := accountViewerOrigin(r, test.peer); got != test.want {
+		if got := sameOriginHost(r, test.peer) != ""; got != test.want {
 			t.Fatalf("Origin校验不符合已核对来源：%v", got)
 		}
 	}
 	r := httptest.NewRequest(http.MethodGet, "http://internal.invalid/vnc", nil)
 	r.Header.Add("Origin", "http://kakatta.test")
 	r.Header.Add("Origin", "http://attacker.invalid")
-	if accountViewerOrigin(r, requestPeer{Host: "kakatta.test"}) {
+	if sameOriginHost(r, requestPeer{Host: "kakatta.test"}) != "" {
 		t.Fatal("多值Origin不能被当成同源")
 	}
 }

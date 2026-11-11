@@ -53,7 +53,7 @@ func (s *Server) RegisterMCP(business *service.Service) error {
 			WriteError(w, r, http.StatusUnauthorized, message("auth.unauthenticated"), nil)
 			return
 		}
-		if len(r.Header.Values("Origin")) != 0 && !accountViewerOrigin(r, stateOf(r).peer) {
+		if len(r.Header.Values("Origin")) != 0 && sameOriginHost(r, stateOf(r).peer) == "" {
 			WriteError(w, r, http.StatusForbidden, message("http.forbidden"), nil)
 			return
 		}

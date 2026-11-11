@@ -83,6 +83,7 @@ type Xianyu struct {
 	searchBodies          []string
 	searchQueries         []string
 	riskWithoutNavigation bool
+	loginRequired         bool
 }
 
 // Start 在本机随机端口启动假闲鱼，用完调用 Close。
@@ -116,7 +117,18 @@ func Start() *Xianyu {
 			fmt.Fprint(w, out)
 		}
 	}
-	mux.HandleFunc("/{$}", page(fakeHome))
+	home := page(fakeHome)
+	mux.HandleFunc("/{$}", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		loginRequired := f.loginRequired
+		f.mu.Unlock()
+		if loginRequired {
+			http.Redirect(w, r, "/mini_login", http.StatusFound)
+			return
+		}
+		home(w, r)
+	})
+	mux.HandleFunc("/mini_login", page(`<!doctype html><meta charset="utf-8"><div>请登录</div><script>fetch('/h5/mtop.fake.login/1.0/?state=expired');</script>`))
 	mux.HandleFunc("/search", page(fakeSearch))
 	mux.HandleFunc("/item", page(fakeItem))
 	mux.HandleFunc("/personal", page(fakePersonal))
@@ -296,6 +308,13 @@ func (f *Xianyu) APIHost() string { return strings.TrimPrefix(f.srv.URL, "http:/
 
 // LoginURL 打开后会写入登录 Cookie，模拟扫码登录成功。
 func (f *Xianyu) LoginURL() string { return f.srv.URL + "/login" }
+
+// RequireLoginOnHome 让首页跳到登录页并报告会话失效。
+func (f *Xianyu) RequireLoginOnHome() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.loginRequired = true
+}
 
 // SetMaskOnSearch 让搜索结果页显示验证遮罩。
 func (f *Xianyu) SetMaskOnSearch(on bool) {

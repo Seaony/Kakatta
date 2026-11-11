@@ -149,7 +149,18 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	check := r.Clone(r.Context())
 	check.Host = state.peer.Host
-	if len(r.Header.Values("Origin")) > 1 || len(r.Header.Values("Sec-Fetch-Site")) > 1 || s.cross.Check(check) != nil {
+	origins := r.Header.Values("Origin")
+	var badOrigin bool
+	switch r.Method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions:
+	default:
+		if len(origins) != 0 {
+			// 先核对完整来源。标准库只比主机，这里兼容默认端口的两种写法。
+			check.Host = sameOriginHost(r, state.peer)
+			badOrigin = check.Host == ""
+		}
+	}
+	if badOrigin || len(origins) > 1 || len(r.Header.Values("Sec-Fetch-Site")) > 1 || s.cross.Check(check) != nil {
 		WriteError(w, r, http.StatusForbidden, message("http.forbidden"), nil)
 		return
 	}

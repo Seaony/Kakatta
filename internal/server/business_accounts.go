@@ -3,8 +3,6 @@ package server
 import (
 	"context"
 	"net/http"
-	"net/url"
-	"strings"
 	"time"
 
 	"github.com/Seaony/Kakatta/internal/auth"
@@ -250,19 +248,6 @@ func (b *businessHandler) testProxy(w http.ResponseWriter, r *http.Request) {
 	b.reply(w, r, http.StatusOK, value, err)
 }
 
-func accountViewerOrigin(r *http.Request, peer requestPeer) bool {
-	if len(r.Header.Values("Origin")) != 1 {
-		return false
-	}
-	origin, err := url.Parse(r.Header.Get("Origin"))
-	scheme := "http"
-	if peer.Secure {
-		scheme = "https"
-	}
-	return err == nil && origin.Scheme == scheme && strings.EqualFold(origin.Host, peer.Host) &&
-		origin.User == nil && origin.Path == "" && origin.RawQuery == "" && origin.Fragment == ""
-}
-
 func (b *businessHandler) accountRemote(w http.ResponseWriter, r *http.Request) {
 	if _, err := queryValues(r); err != nil {
 		b.failure(w, r, err)
@@ -289,13 +274,14 @@ func (b *businessHandler) accountRemote(w http.ResponseWriter, r *http.Request) 
 	}
 	viewer := r.URL.Path == prefix+"/vnc"
 	peer := stateOf(r).peer
-	if viewer && (r.Method != http.MethodGet || !accountViewerOrigin(r, peer)) {
-		WriteError(w, r, http.StatusForbidden, message("http.forbidden"), nil)
-		return
-	}
 	request := r.Clone(r.Context())
 	request.Host = peer.Host
 	if viewer {
+		request.Host = sameOriginHost(r, peer)
+		if r.Method != http.MethodGet || request.Host == "" {
+			WriteError(w, r, http.StatusForbidden, message("http.forbidden"), nil)
+			return
+		}
 		ctx, cancel := context.WithCancel(request.Context())
 		request = request.WithContext(ctx)
 		done := make(chan struct{})

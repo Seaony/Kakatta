@@ -281,7 +281,12 @@ func (c *Client) runProvider(ctx context.Context, provider Provider, req Request
 		cancel()
 		result.Thinking = result.Thinking || decoded.thinking
 		result.JSONMode = mode
-		decoded.text = redactPlain(decoded.text, secrets)
+		end.FinishReason = redactPlain(end.FinishReason, secrets)
+		if structured {
+			decoded.text = redactStructuredText(decoded.text, secrets)
+		} else {
+			decoded.text = redactPlain(decoded.text, secrets)
+		}
 		var next Compat
 		var changed, blocked, retryable bool
 		var failureReason Reason

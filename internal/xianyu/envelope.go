@@ -48,7 +48,7 @@ var tokenExpiredCodes = []string{"FAIL_SYS_TOKEN_EXOIRED", "FAIL_SYS_TOKEN_EXPIR
 var verifyCodes = []string{"FAIL_SYS_USER_VALIDATE", "RGV587"}
 
 // CheckEnvelope 先去掉 JSONP 外壳（2.5 节），再读顶层 ret 和 data.url 判断类型。
-// ret 缺失或正文不是 JSON 时返回 error。ret 原样返回给调用方写日志。
+// ret 缺失或正文不是 JSON 时返回错误。诊断使用判断结果，不记录原始 ret。
 // 判断优先级：拒绝 > 验证 > 登录失效 > 令牌过期 > 成功 > 业务失败。
 // data.url 指向处罚页时，即使 ret 缺失也照样报风控，不报 error，免得调用方把风控当普通解析失败跳过。
 func CheckEnvelope(body []byte) (kind RetKind, ret []string, err error) {

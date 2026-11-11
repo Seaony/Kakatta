@@ -2,7 +2,6 @@ package web
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/Seaony/Kakatta/internal/browser"
 	"github.com/Seaony/Kakatta/internal/xianyu"
@@ -82,7 +81,7 @@ func (r *Runner) loginSignals() ([]loginSignal, uint64, error) {
 			}
 			continue
 		}
-		kind, ret, err := xianyu.CheckEnvelope(response.Body)
+		kind, _, err := xianyu.CheckEnvelope(response.Body)
 		if err != nil {
 			if firstError == nil {
 				firstError = fmt.Errorf("登录期间无法检查接口响应：%w", err)
@@ -90,11 +89,11 @@ func (r *Runner) loginSignals() ([]loginSignal, uint64, error) {
 			continue
 		}
 		if kind == xianyu.RetDenied {
-			return signals, success, &RiskError{Kind: ErrDenied, Where: "等待登录", Signal: "ret:" + strings.Join(ret, ",")}
+			return signals, success, &RiskError{Kind: ErrDenied, Where: "等待登录", Signal: kind.String()}
 		}
 		switch kind {
 		case xianyu.RetNeedVerify, xianyu.RetSessionExpired:
-			signals = append(signals, loginSignal{seq: response.Seq, order: response.BodyOrder, expired: kind == xianyu.RetSessionExpired, signal: "ret:" + strings.Join(ret, ",")})
+			signals = append(signals, loginSignal{seq: response.Seq, order: response.BodyOrder, expired: kind == xianyu.RetSessionExpired, signal: kind.String()})
 		case xianyu.RetOK:
 			if response.Status >= 200 && response.Status < 300 && response.BodyOrder > success {
 				success = response.BodyOrder

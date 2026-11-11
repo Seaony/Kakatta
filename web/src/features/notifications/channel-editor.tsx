@@ -14,7 +14,6 @@ const problemKeys = {
   port: 'web.notify.validation.port', url: 'web.notify.validation.url', send_key: 'web.notify.validation.send_key',
 } as const;
 const selectLabels = { ssl: 'web.notify.smtp.ssl', starttls: 'web.notify.smtp.starttls', none: 'web.notify.smtp.none', GET: 'web.notify.method.get', POST: 'web.notify.method.post', JSON: 'web.notify.content.json', FORM: 'web.notify.content.form' } as const;
-function optionLabel(value: string): keyof typeof selectLabels | null { return Object.hasOwn(selectLabels, value) ? value === 'ssl' ? 'ssl' : value === 'starttls' ? 'starttls' : value === 'none' ? 'none' : value === 'GET' ? 'GET' : value === 'POST' ? 'POST' : value === 'JSON' ? 'JSON' : 'FORM' : null; }
 
 function SecretEditor({ field, edit, stored, error, disabled, onChange }: { field: ChannelField; edit: SecretEdit; stored: boolean; error: string | undefined; disabled: boolean; onChange(edit: SecretEdit): void }) {
   const { t } = useTranslation();
@@ -79,7 +78,10 @@ export function ChannelEditor({ channel, adapter, onSaved, onCancel }: { channel
           const error = fieldError(field.key);
           const disabled = saving || draft.kind === 'webhook' && draft.fields.method === 'GET' && ['body_template', 'content_type'].includes(field.key);
           if (field.secret) return <SecretEditor key={field.key} field={field} edit={draft.secrets[field.key] ?? { mode: 'replace', value: '' }} stored={channel?.kind === draft.kind && !!channel.hasSecret[field.key]} error={error} disabled={disabled} onChange={(edit) => setDraft((old) => ({ ...old, secrets: { ...old.secrets, [field.key]: edit } }))} />;
-          if (field.options) return <SelectField key={field.key} label={t(field.label)} value={draft.fields[field.key] ?? ''} error={error} disabled={disabled} placeholder={t('web.notify.choose_option')} options={field.options.map((value) => { const key = optionLabel(value); return { value, label: key ? t(selectLabels[key]) : value }; })} onValueChange={(value) => update(field.key, value)} />;
+          if (field.options) return <SelectField key={field.key} label={t(field.label)} value={draft.fields[field.key] ?? ''} error={error} disabled={disabled} placeholder={t('web.notify.choose_option')} options={field.options.map((value) => ({
+            value,
+            label: Object.hasOwn(selectLabels, value) ? t(selectLabels[value as keyof typeof selectLabels]) : value,
+          }))} onValueChange={(value) => update(field.key, value)} />;
           if (field.json) return <TextAreaField key={field.key} label={t(field.label)} value={draft.fields[field.key] ?? ''} error={error} disabled={disabled} spellCheck={false} className="font-mono" hint={field.key === 'body_template' ? t('web.notify.webhook_default_json') : undefined} onChange={(event) => update(field.key, event.target.value)} />;
           return <TextField key={field.key} label={t(field.label)} value={draft.fields[field.key] ?? ''} error={error} disabled={disabled} inputMode={field.numeric ? 'numeric' : undefined} onChange={(event) => update(field.key, event.target.value)} />;
         })}

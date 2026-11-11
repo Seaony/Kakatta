@@ -339,7 +339,7 @@ func (r *Runner) selectPrice(ctx context.Context, minimum, maximum *int64) (*bro
 				return nil, fmt.Errorf("未设置的价格边界被页面改动")
 			}
 		} else if value, ok := xianyu.ParsePriceCents(actual); !ok || value != *target {
-			return nil, fmt.Errorf("价格输入结果和目标不一致：%s", actual)
+			return nil, fmt.Errorf("价格输入结果和目标不一致")
 		}
 	}
 	if err := r.wait(ctx, "价格筛选后", r.Pace.Action); err != nil {

@@ -1,5 +1,4 @@
-import { createContext, useContext, useEffect, useId, useMemo, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { Button, Checkbox, ConfirmDialog, Dialog, FormSection, InlineMessage, Skeleton, StatePanel, StatusBadge } from '../../components/ui';
@@ -14,9 +13,11 @@ import { ChannelEditor } from './channel-editor';
 import { useNotificationOperation } from './use-notification-operation';
 import type { ChannelAdapter, ChannelRow, ChannelSetupProps, TestReceipt } from './types';
 
-const AdapterContext = createContext<ChannelAdapter | undefined>(undefined);
-export function NotificationAdapterProvider({ adapter, children }: { adapter: ChannelAdapter; children: ReactNode }) { return <AdapterContext.Provider value={adapter}>{children}</AdapterContext.Provider>; }
-export function useChannelAdapter(supplied?: ChannelAdapter) { const inherited = useContext(AdapterContext); const api = useApi(); const canonical = useMemo(() => createChannelAdapter(api), [api]); return supplied ?? inherited ?? canonical; }
+export function useChannelAdapter(supplied?: ChannelAdapter) {
+  const api = useApi();
+  const canonical = useMemo(() => createChannelAdapter(api), [api]);
+  return supplied ?? canonical;
+}
 export function useChannels(adapter: ChannelAdapter) {
   return useQuery({ queryKey: apiKey('channels'), queryFn: ({ signal }) => adapter.list(signal) });
 }
