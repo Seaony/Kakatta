@@ -189,6 +189,7 @@ func (f *Fixture) control(w http.ResponseWriter, r *http.Request) {
 		f.xianyu.SetMaskOnSearch(command.Mode == "verify")
 		behavior := fake.FilterBehavior{}
 		if command.Mode == "expired" {
+			f.xianyu.ExpireAutomaticLogin()
 			behavior.Ret = "FAIL_SYS_SESSION_EXPIRED::登录失效"
 		}
 		f.xianyu.SetFilterBehavior("personal", behavior)

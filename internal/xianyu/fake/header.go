@@ -2,6 +2,7 @@ package fake
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -49,11 +50,17 @@ func loginHeaderState(r *http.Request) (string, bool) {
 	return "", false
 }
 
-func fixtureLoginCompleted(r *http.Request) bool {
-	_, err := r.Cookie("fixture_login_completed")
-	return err == nil
+func (f *Xianyu) fixtureLoginCompleted(r *http.Request) bool {
+	f.mu.Lock()
+	generation := f.loginGeneration
+	f.mu.Unlock()
+	cookie, err := r.Cookie("fixture_login_completed")
+	return err == nil && cookie.Value == strconv.FormatUint(generation+1, 10)
 }
 
-func markFixtureLoginCompleted(w http.ResponseWriter) {
-	http.SetCookie(w, &http.Cookie{Name: "fixture_login_completed", Value: "1", Path: "/", HttpOnly: true, Expires: time.Now().Add(30 * 24 * time.Hour)})
+func (f *Xianyu) markFixtureLoginCompleted(w http.ResponseWriter) {
+	f.mu.Lock()
+	generation := f.loginGeneration
+	f.mu.Unlock()
+	http.SetCookie(w, &http.Cookie{Name: "fixture_login_completed", Value: strconv.FormatUint(generation+1, 10), Path: "/", HttpOnly: true, Expires: time.Now().Add(30 * 24 * time.Hour)})
 }

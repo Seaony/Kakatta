@@ -88,6 +88,7 @@ type Xianyu struct {
 	riskWithoutNavigation bool
 	loginRequired         bool
 	automaticLogin        bool
+	loginGeneration       uint64
 	loginGateNext         uint64
 	loginGates            map[uint64]chan struct{}
 	sellerProfile         bool
@@ -121,7 +122,7 @@ func Start() *Xianyu {
 			switch r.URL.Path {
 			case "/", "/search", "/item", "/personal":
 				nick := "login"
-				if fixtureLoginCompleted(r) {
+				if f.fixtureLoginCompleted(r) {
 					nick = "valid"
 				}
 				out = pageWithLoginHeader(out, nick)
@@ -152,7 +153,7 @@ func Start() *Xianyu {
 		}
 		if automaticLogin {
 			http.SetCookie(w, &http.Cookie{Name: "unb", Value: "1", Path: "/", Expires: time.Now().Add(30 * 24 * time.Hour)})
-			if !fixtureLoginCompleted(r) {
+			if !f.fixtureLoginCompleted(r) {
 				page(f.automaticLoginPage())(w, r)
 				return
 			}
@@ -277,7 +278,7 @@ func Start() *Xianyu {
 		}
 		if r.URL.Query().Get("state") == "success" && r.URL.Query().Get("after_scan") == "1" {
 			if nick, ok := loginHeaderState(r); ok && nick == "valid" {
-				markFixtureLoginCompleted(w)
+				f.markFixtureLoginCompleted(w)
 			}
 		}
 		json.NewEncoder(w).Encode(map[string]any{"ret": []string{ret}, "data": data})
@@ -434,6 +435,13 @@ func (f *Xianyu) EnableAutomaticLogin() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.automaticLogin = true
+}
+
+// ExpireAutomaticLogin 让旧的假登录标记失效，清除风险时也不能恢复它。
+func (f *Xianyu) ExpireAutomaticLogin() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.loginGeneration++
 }
 
 // RequireLoginOnHome 让首页跳到登录页并报告会话失效。

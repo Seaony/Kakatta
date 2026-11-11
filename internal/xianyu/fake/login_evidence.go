@@ -82,7 +82,7 @@ func (f *Xianyu) registerLoginEvidence(mux *http.ServeMux, page func(string) htt
 			return
 		}
 		if nick == "valid" {
-			markFixtureLoginCompleted(w)
+			f.markFixtureLoginCompleted(w)
 		}
 		page(pageWithLoginHeader(`<!doctype html><meta charset="utf-8"><title>扫码后页面</title><div>已完成扫码后的主框架导航</div>`, nick))(w, r)
 	})
@@ -102,7 +102,7 @@ func (f *Xianyu) registerLoginEvidence(mux *http.ServeMux, page func(string) htt
 		}()
 		select {
 		case <-gate:
-			markFixtureLoginCompleted(w)
+			f.markFixtureLoginCompleted(w)
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(`{"completed":true}`))
 		case <-r.Context().Done():
