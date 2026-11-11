@@ -7,8 +7,6 @@ x-formal: &formal
       VCS_REF: "${KAKATTA_FORMAL_COMMIT:?缺少源码版本}"
       VERSION: "${KAKATTA_FORMAL_VERSION:?缺少测试镜像版本}"
   environment: &environment
-    PUID: "${KAKATTA_FORMAL_UID:?缺少宿主用户编号}"
-    PGID: "${KAKATTA_FORMAL_GID:?缺少宿主组编号}"
     TZ: Asia/Shanghai
     HTTP_PROXY: ""
     HTTPS_PROXY: ""

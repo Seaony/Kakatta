@@ -20,9 +20,7 @@ import (
 
 func formalSetup(t *testing.T, browser context.Context, events *webSmokeEvents, m formalMetadata) {
 	t.Helper()
-	events.mu.Lock()
-	events.allowSignedOut = true
-	events.mu.Unlock()
+	formalNetworkPhase(browser, "01初始化")
 	formalSetupVisit(t, browser, events, "/", "web.setup.title")
 	log, err := os.ReadFile("/work/service.log")
 	if err != nil {
@@ -41,18 +39,28 @@ func formalSetup(t *testing.T, browser context.Context, events *webSmokeEvents, 
 	if token == "" {
 		t.Fatal("正式服务没有输出合成初始化令牌")
 	}
+	tokenPath := filepath.Join(os.Getenv("KAKATTA_FORMAL_DATA"), "初始化令牌.txt")
+	fileToken, err := formalInitialToken(tokenPath)
+	if err != nil || fileToken != token {
+		t.Fatal("初始化令牌文件必须是权限0600的普通文件，并与本次启动日志一致", err)
+	}
 	formalSetupInput(t, browser, events, `input[name=token]`, token)
 	formalSetupInput(t, browser, events, `input[name=username]`, formalUsername)
 	formalSetupInput(t, browser, events, `input[name=password]`, formalPassword)
+	formalInitializationSubmission(browser)
 	formalSetupButton(t, browser, events, "//main", "web.setup.submit")
 	waitWebSmoke(t, browser, events, `() => location.pathname === '/onboarding' && !!document.querySelector('main input[name=name]')`)
 	if formalScalar(t, "SELECT count(*) FROM admin WHERE username=?", formalUsername) != 1 {
 		t.Fatal("网页初始化后没有建立管理员")
 	}
+	if _, err := os.Lstat(tokenPath); !os.IsNotExist(err) {
+		t.Fatal("建立管理员后初始化令牌文件没有删除")
+	}
 	formalFastSettings(t, browser, events)
 	formalSnapshot(t, browser, events, "01-onboarding")
-	formalRecord(t, 1, "网页使用初始化令牌建立管理员并进入引导；只在本测试目录通过设置页关闭更新和缩短抓取等待")
+	formalRecord(t, 1, "权限0600的初始化令牌文件与启动日志一致，网页建立管理员后文件删除并进入引导；只在本测试目录通过设置页缩短等待")
 
+	formalNetworkPhase(browser, "02账号扫码")
 	formalSetupFillLabel(t, browser, events, "accounts.name", "本地扫码账号")
 	formalSetupButton(t, browser, events, "//main", "accounts.save")
 	waitWebSmoke(t, browser, events, `(name, login) => document.querySelector('main')?.innerText.includes(name) && [...document.querySelectorAll('main button')].some(node => node.textContent.trim() === login && node.getClientRects().length)`, "本地扫码账号", smokeTranslation(t, locales.ZhCN, "accounts.login"))
@@ -77,6 +85,7 @@ func formalSetup(t *testing.T, browser context.Context, events *webSmokeEvents, 
 	waitWebSmoke(t, browser, events, `(label) => [...document.querySelectorAll('main label')].some(node => node.textContent.trim() === label && node.getClientRects().length)`, smokeTranslation(t, locales.ZhCN, "web.ai.base_url"))
 	formalRecord(t, 2, "真实远程iframe和noVNC画布已连接；正式日志出现本次登录框后才模拟手机扫码，账号转为已登录且会话结束")
 
+	formalNetworkPhase(browser, "03模型配置")
 	formalSetupFillLabel(t, browser, events, "web.ai.name", "本地模型")
 	formalSetupFillLabel(t, browser, events, "web.ai.base_url", m.ModelBaseURL)
 	formalSetupFillLabel(t, browser, events, "web.ai.api_key", "wrong-local-formal-key")
@@ -98,6 +107,7 @@ func formalSetup(t *testing.T, browser context.Context, events *webSmokeEvents, 
 	formalSetupButton(t, browser, events, "//main", "web.onboarding.continue")
 	formalRecord(t, 3, "网页保存服务商，错误Key显示认证原因和修正办法，编辑为合成正确Key后文字与图片试分析均通过")
 
+	formalNetworkPhase(browser, "04推送配置")
 	formalSetupButton(t, browser, events, "//main", "web.notify.add_channel")
 	formalSetupSelect(t, browser, events, "web.notify.channel_type", "webhook")
 	formalSetupFillLabel(t, browser, events, "web.notify.channel_name", "本地Webhook")
@@ -120,6 +130,7 @@ func formalSetup(t *testing.T, browser context.Context, events *webSmokeEvents, 
 	formalSetupButton(t, browser, events, "//main", "web.onboarding.continue")
 	formalRecord(t, 4, "网页保存Webhook后显式发送测试；服务端503显示可读原因，恢复本地渠道后再次测试成功")
 
+	formalNetworkPhase(browser, "05任务配置")
 	formalSetupFillLabel(t, browser, events, "tasks.field.name", "正式流程相机监控")
 	formalSetupFillLabel(t, browser, events, "tasks.field.keyword", "MacBook Pro")
 	formalSetupFillLabel(t, browser, events, "tasks.field.min_price", "5000")
@@ -146,6 +157,24 @@ func formalSetup(t *testing.T, browser context.Context, events *webSmokeEvents, 
 	waitWebSmoke(t, browser, events, `(name, next) => [...document.querySelectorAll('main article')].some(node => node.innerText.includes(name) && node.innerText.includes(next))`, "正式流程相机监控", strings.TrimSpace(smokeTranslationWithArgs(t, locales.ZhCN, "tasks.runtime.next", map[string]any{"time": ""})))
 	formalSnapshot(t, browser, events, "05-task-saved")
 	formalRecord(t, 5, "网页生成画像并保存已启用监控任务，关键词、5000–15000元筛选、两页和1分钟频率均落盘，任务列表显示下次运行")
+}
+
+func formalInitialToken(path string) (string, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return "", err
+	}
+	if !info.Mode().IsRegular() || info.Mode().Perm() != 0600 {
+		return "", fmt.Errorf("令牌文件类型或权限错误")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	if len(data) != 44 || data[len(data)-1] != '\n' {
+		return "", fmt.Errorf("令牌文件格式错误")
+	}
+	return strings.TrimSpace(string(data)), nil
 }
 
 func formalFastSettings(t *testing.T, browser context.Context, events *webSmokeEvents) {

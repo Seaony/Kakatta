@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/chromedp/cdproto/cdp"
+	"github.com/chromedp/cdproto/debugger"
 	"github.com/chromedp/cdproto/emulation"
 	"github.com/chromedp/cdproto/log"
 	"github.com/chromedp/cdproto/network"
@@ -66,8 +67,32 @@ func TestFormalPathJourney(t *testing.T) {
 		append(chromedp.DefaultExecAllocatorOptions[:], chromedp.ExecPath("/usr/bin/google-chrome-stable"), chromedp.UserDataDir("/work/client-browser"))...)
 	browser, stopBrowser := chromedp.NewContext(allocator)
 	var events webSmokeEvents
-	events.base, events.page, events.allowSignedOut = formalBaseURL, "正式网页/"+stage, true
+	events.base, events.page = formalBaseURL, "正式网页/"+stage
+	if err := os.MkdirAll("/work/reports", 0700); err != nil {
+		t.Fatal(err)
+	}
+	trace, err := os.OpenFile("/work/reports/"+stage+"-requests.jsonl", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		t.Fatal("打开正式请求记录失败", err)
+	}
+	audit := newFormalRequestAudit(stage, trace, &events, func(id network.RequestID) ([]byte, error) { return formalReadResponseBody(browser, id) })
+	browser = context.WithValue(browser, formalNetworkKey{}, audit)
+	listening, stopListening := context.WithCancel(browser)
 	defer func() {
+		stopListening()
+		audit.finish()
+		if err := trace.Sync(); err != nil {
+			t.Error("保存正式请求记录失败", err)
+		}
+		if err := trace.Close(); err != nil {
+			t.Error(err)
+		}
+		events.mu.Lock()
+		issues := append([]string{}, events.issues...)
+		events.mu.Unlock()
+		if len(issues) != 0 {
+			t.Errorf("正式请求或控制台错误：\n%s", strings.Join(issues, "\n"))
+		}
 		closing, cancel := context.WithTimeout(context.WithoutCancel(browser), 10*time.Second)
 		defer cancel()
 		if t.Failed() {
@@ -100,11 +125,14 @@ func TestFormalPathJourney(t *testing.T) {
 	if _, err := chromedp.Run(browser, chromedp.Evaluate[string](`navigator.userAgent`)); err != nil {
 		t.Fatal(err)
 	}
-	if err := chromedp.Listen(browser, events.receive); err != nil {
+	if err := chromedp.Listen(listening, audit.receive); err != nil {
 		t.Fatal(err)
 	}
 	runWebSmoke(t, browser, &events, chromedp.Func(func(ctx context.Context, _ *chromedp.Target) error {
 		if _, err := chromedp.Call(ctx, network.Enable, network.EnableParams{}); err != nil {
+			return err
+		}
+		if _, err := chromedp.Call(ctx, debugger.Enable, debugger.EnableParams{}); err != nil {
 			return err
 		}
 		if _, err := chromedp.Call(ctx, log.Enable, cdp.Empty{}); err != nil {

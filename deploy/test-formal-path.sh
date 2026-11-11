@@ -109,7 +109,7 @@ def select_image(source, revision, phase):
     environment.update({"KAKATTA_FORMAL_SOURCE": str(source), "KAKATTA_FORMAL_COMMIT": revision,
                         "KAKATTA_FORMAL_VERSION": f"v0.0.{0 if phase == 'base' else 1}-formal+{revision[:12]}",
                         "KAKATTA_FORMAL_IMAGE": f"kakatta:formal-{phase}-{revision[:12]}-{work.name[4:]}",
-                        "KAKATTA_FORMAL_WORK": str(work), "KAKATTA_FORMAL_UID": str(os.getuid()), "KAKATTA_FORMAL_GID": str(os.getgid())})
+                        "KAKATTA_FORMAL_WORK": str(work)})
     _, config = command(compose("--profile", "driver", "config", "--format", "json"), phase + "-compose-config")
     config = json.loads(config)
     services = config["services"]
@@ -118,6 +118,7 @@ def select_image(source, revision, phase):
         require(service["network_mode"] == ("none" if name == "fixtures" else "service:fixtures") and not service.get("ports") and not service.get("networks"), "测试 Compose 出现了外部网络或宿主端口")
         require(service["build"]["context"] == str(source) and service["build"]["target"] == "formal-test", "测试镜像没有使用指定提交的源码归档")
         require(service["environment"]["KAKATTA_FORMAL_PATH"] == "1", "测试开关未启用")
+        require(all(key not in service["environment"] for key in ["PUID", "PGID"]), "测试 Compose 不能显式设置运行编号，必须验证数据目录属主推导")
         require(all(service["environment"].get(k, "") == "" for k in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "all_proxy", "no_proxy"]), "测试容器继承了宿主代理")
         mounts = {entry["target"]: entry["source"] for entry in service["volumes"]}
         require(mounts == {"/data": str(work / "data"), "/work": str(work)}, "测试目录挂载不符")
@@ -128,6 +129,7 @@ def build_image(phase):
     command(compose("build", "app"), phase + "-compose-build", limit=20 * 60)
     _, image = command(["docker", "image", "inspect", environment["KAKATTA_FORMAL_IMAGE"], "--format", "{{json .}}"], phase + "-image-inspect")
     image = json.loads(image)
+    require(not any(value.split("=", 1)[0] in ["PUID", "PGID"] for value in image["Config"]["Env"]), "测试镜像预设了运行编号，掩盖数据目录属主推导")
     identity = {"phase": phase, "tag": environment["KAKATTA_FORMAL_IMAGE"], "id": image["Id"], "architecture": image["Architecture"], "revision": environment["KAKATTA_FORMAL_COMMIT"], "version": environment["KAKATTA_FORMAL_VERSION"]}
     report["images"].append(identity)
     save("meta/" + phase + "-image.json", identity)
@@ -141,6 +143,32 @@ def ids():
     require(all(re.fullmatch(r"[0-9a-f]{64}", cid) for cid in found), "未取得精确项目容器编号")
     observed.update(found)
     return found
+
+
+def runtime_identity(cid, name):
+    probe = r'''
+printf 'data %s\n' "$(stat -c '%u %g' /data)"
+for path in /proc/[0-9]*/cmdline; do
+    [ -r "$path" ] || continue
+    executable=$(tr '\000' '\n' < "$path" | head -n 1)
+    [ "$executable" = /tests/formal-path.test ] || continue
+    directory=${path%/cmdline}
+    awk -v pid="${directory##*/}" '
+        /^Uid:/ { uid=$2 " " $3 " " $4 " " $5 }
+        /^Gid:/ { gid=$2 " " $3 " " $4 " " $5 }
+        END { print "process " pid " " uid " " gid }
+    ' "$directory/status"
+done
+'''
+    _, output = command(["docker", "exec", cid, "/bin/sh", "-ec", probe], name + "-runtime-identity")
+    lines = [line.split() for line in output.splitlines()]
+    owners = [line[1:] for line in lines if line[0] == "data"]
+    processes = [line[1:] for line in lines if line[0] == "process"]
+    require(len(owners) == len(processes) == 1 and len(owners[0]) == 2 and len(processes[0]) == 9, "没有取得唯一正式服务进程和数据目录身份")
+    owner_uid, owner_gid = map(int, owners[0])
+    pid, *identity = map(int, processes[0])
+    require(owner_uid > 0 and owner_gid > 0 and identity == [owner_uid] * 4 + [owner_gid] * 4, "正式服务没有以数据目录对应的非 root 用户和组运行")
+    return {"data_uid": owner_uid, "data_gid": owner_gid, "process_pid": pid, "process_uids": identity[:4], "process_gids": identity[4:], "passed": True}
 
 
 def snapshot(name):
@@ -161,7 +189,11 @@ def snapshot(name):
             networks["none"].get(key) for key in ["IPAddress", "GlobalIPv6Address", "Gateway", "IPv6Gateway", "MacAddress"])
         require(not container["HostConfig"].get("PortBindings") and isolated, "实际测试容器接入了外部网络或映射端口")
         require(not container["State"]["OOMKilled"], "测试容器发生 OOM")
-        result.append({"id": container["Id"], "role": role, "image": container["Image"], "state": container["State"], "network_mode": mode})
+        entry = {"id": container["Id"], "role": role, "image": container["Image"], "state": container["State"], "network_mode": mode}
+        if role == "app" and container["State"]["Running"]:
+            require(not any(value.split("=", 1)[0] in ["PUID", "PGID"] for value in container["Config"]["Env"]), "正式服务容器显式设置了运行编号")
+            entry["runtime_identity"] = runtime_identity(container["Id"], name)
+        result.append(entry)
     save("meta/" + name + "-containers.json", result)
     report["snapshots"].append({"name": name, "file": "meta/" + name + "-containers.json"})
     return result

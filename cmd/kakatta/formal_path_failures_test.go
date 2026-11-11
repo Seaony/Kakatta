@@ -18,6 +18,7 @@ import (
 )
 
 func formalFailures(t *testing.T, browser context.Context, events *webSmokeEvents, _ formalMetadata) {
+	formalNetworkPhase(browser, "07故障")
 	taskID := formalTaskID(t)
 	formalControl(t, "model", map[string]any{"mode": "timeout"})
 	formalSearchWithNewItem(t, "107", "MacBook Pro 模型超时样本")
@@ -27,13 +28,19 @@ func formalFailures(t *testing.T, browser context.Context, events *webSmokeEvent
 	}
 	findingID := formalScalar(t, "SELECT id FROM findings WHERE task_id=? AND item_id='107'", taskID)
 	detailAt := formalScalar(t, "SELECT detail_fetched_at FROM listings WHERE item_id='107'")
+	failedCall := formalScalar(t, "SELECT COALESCE(max(id),0) FROM ai_calls WHERE task_id=? AND purpose='analysis' AND ok=0 AND error_kind='timeout'", taskID)
+	if failedCall == 0 || formalScalar(t, "SELECT count(*) FROM notification_intents WHERE finding_id=? AND state='sent'", findingID) != 0 {
+		t.Fatal("模型超时必须留下真实失败调用，不能把失败发现当已通知")
+	}
 	formalFinding(t, browser, events, findingID)
 	waitWebSmoke(t, browser, events, `() => document.querySelector('main').innerText.includes('请求超时')`)
 	formalSnapshot(t, browser, events, "07-model-timeout")
 	formalControl(t, "model", map[string]any{"mode": "ok"})
 	formalRunOnce(t, browser, events)
 	if formalScalar(t, "SELECT count(*) FROM findings WHERE id=? AND decision='scored' AND retryable=0", findingID) != 1 ||
-		formalScalar(t, "SELECT detail_fetched_at FROM listings WHERE item_id='107'") != detailAt {
+		formalScalar(t, "SELECT detail_fetched_at FROM listings WHERE item_id='107'") != detailAt ||
+		formalScalar(t, "SELECT count(*) FROM ai_calls WHERE id=? AND ok=0 AND error_kind='timeout'", failedCall) != 1 ||
+		formalScalar(t, "SELECT count(*) FROM ai_calls WHERE task_id=? AND id>? AND purpose='analysis' AND ok=1", taskID, failedCall) < 1 {
 		t.Fatal("模型恢复没有继续原发现或重复抓取了已缓存详情")
 	}
 
@@ -43,6 +50,9 @@ func formalFailures(t *testing.T, browser context.Context, events *webSmokeEvent
 	formalWait(t, browser, "失败推送回执落盘", 30*time.Second, func() bool {
 		return formalScalar(t, `SELECT count(*) FROM deliveries d JOIN delivery_items di ON di.delivery_id=d.id JOIN findings f ON f.id=di.finding_id WHERE f.item_id='108' AND d.ok=0`) > 0
 	})
+	pushFinding := formalScalar(t, "SELECT id FROM findings WHERE task_id=? AND item_id='108'", taskID)
+	intentID := formalScalar(t, "SELECT id FROM notification_intents WHERE finding_id=? AND state='pending' AND failure_count>0", pushFinding)
+	failedDelivery := formalScalar(t, `SELECT max(d.id) FROM deliveries d JOIN delivery_intents di ON di.delivery_id=d.id WHERE di.intent_id=? AND d.ok=0`, intentID)
 	formalVisit(t, browser, events, "/settings/notifications", "web.notify.title")
 	clickWebSmokeButton(t, browser, events, smokeTranslation(t, locales.ZhCN, "web.notify.history_recent"))
 	waitWebSmoke(t, browser, events, `() => document.querySelector('[role=dialog]')?.innerText.includes('503') && document.querySelector('[role=dialog]').innerText.includes('失败')`)
@@ -53,6 +63,12 @@ func formalFailures(t *testing.T, browser context.Context, events *webSmokeEvent
 	formalWait(t, browser, "原推送意图恢复送达", 90*time.Second, func() bool {
 		return formalScalar(t, `SELECT count(*) FROM deliveries d JOIN delivery_items di ON di.delivery_id=d.id JOIN findings f ON f.id=di.finding_id WHERE f.item_id='108' AND d.ok=1`) == 1
 	})
+	if formalScalar(t, "SELECT count(*) FROM notification_intents WHERE finding_id=?", pushFinding) != 1 ||
+		formalScalar(t, "SELECT count(*) FROM notification_intents WHERE id=? AND finding_id=? AND state='sent' AND sent_at IS NOT NULL", intentID, pushFinding) != 1 ||
+		formalScalar(t, "SELECT count(*) FROM deliveries WHERE id=? AND ok=0", failedDelivery) != 1 ||
+		formalScalar(t, `SELECT count(*) FROM deliveries d JOIN delivery_intents di ON di.delivery_id=d.id WHERE di.intent_id=? AND d.ok=1`, intentID) != 1 {
+		t.Fatal("渠道恢复必须重试原通知意图并保留失败历史，不能另造意图或重复送达")
+	}
 
 	formalControl(t, "risk", map[string]any{"mode": "expired"})
 	runID := formalRunOnce(t, browser, events)
@@ -63,7 +79,13 @@ func formalFailures(t *testing.T, browser context.Context, events *webSmokeEvent
 	waitWebSmoke(t, browser, events, `(label) => document.querySelector('main').innerText.includes('已失效') && [...document.querySelectorAll('main button')].some(button => button.textContent.trim() === label)`, smokeTranslation(t, locales.ZhCN, "accounts.relogin"))
 	formalSnapshot(t, browser, events, "07-login-expired")
 	formalControl(t, "risk", map[string]any{"mode": "none"})
+	previousLogin := formalSetupAccountSequence(t, 1, "")
 	clickWebSmokeButton(t, browser, events, smokeTranslation(t, locales.ZhCN, "accounts.relogin"))
+	formalRemoteConnected(t, browser, events)
+	formalWait(t, browser, "重新登录已观察到本次登录框", 45*time.Second, func() bool {
+		return formalSetupAccountSequence(t, 1, "登录框已出现") > previousLogin
+	})
+	formalControl(t, "login_complete", nil)
 	formalWait(t, browser, "网页重新登录完成", 45*time.Second, func() bool {
 		return formalScalar(t, "SELECT count(*) FROM accounts WHERE id=1 AND state='active'") == 1 &&
 			formalScalar(t, "SELECT count(*) FROM meta WHERE key='runtime.session.1'") == 0
@@ -99,11 +121,15 @@ func formalFailures(t *testing.T, browser context.Context, events *webSmokeEvent
 		return formalScalar(t, "SELECT count(*) FROM accounts WHERE id=1 AND state='cooling'") == 1 &&
 			formalScalar(t, "SELECT count(*) FROM meta WHERE key='runtime.session.1'") == 0
 	})
+	cooldownUntil := formalScalar(t, "SELECT cooldown_until FROM accounts WHERE id=1")
+	if cooldownUntil <= time.Now().UnixMilli() || formalScalar(t, "SELECT verify_level FROM accounts WHERE id=1") < 1 || formalScalar(t, "SELECT cooldown_manual_used FROM accounts WHERE id=1") != 0 {
+		t.Fatal("人工验证必须产生仍有效的真实冷却和等级保护")
+	}
 	waitWebSmoke(t, browser, events, `() => document.querySelector('main').innerText.includes('冷却')`)
 	formalSnapshot(t, browser, events, "07-verified-cooling")
 	formalDiagnostics(t, browser, events)
 	formalWait(t, browser, "保持真实时钟等待测试配置的一分钟冷却结束", 90*time.Second, func() bool {
-		return formalScalar(t, "SELECT COALESCE(cooldown_until,0) FROM accounts WHERE id=1") <= time.Now().UnixMilli()
+		return formalScalar(t, "SELECT count(*) FROM accounts WHERE id=1 AND state='active' AND cooldown_until IS NULL AND last_cooldown_end_at=?", cooldownUntil) == 1
 	})
 	formalRecord(t, 7, "网页可定位登录失效、模型请求超时、推送503和风控停手；重新登录、缓存分析重试、原推送重试与远程手动验证走通，冷却未绕过，真实故障诊断ZIP可下载")
 }
