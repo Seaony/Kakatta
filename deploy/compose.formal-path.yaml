@@ -1,0 +1,76 @@
+x-formal: &formal
+  image: "${KAKATTA_FORMAL_IMAGE:?请用 deploy/test-formal-path.sh 启动}"
+  build:
+    context: "${KAKATTA_FORMAL_SOURCE:?缺少已提交源码归档}"
+    target: formal-test
+    args:
+      VCS_REF: "${KAKATTA_FORMAL_COMMIT:?缺少源码版本}"
+      VERSION: "${KAKATTA_FORMAL_VERSION:?缺少测试镜像版本}"
+  environment: &environment
+    PUID: "${KAKATTA_FORMAL_UID:?缺少宿主用户编号}"
+    PGID: "${KAKATTA_FORMAL_GID:?缺少宿主组编号}"
+    TZ: Asia/Shanghai
+    HTTP_PROXY: ""
+    HTTPS_PROXY: ""
+    ALL_PROXY: ""
+    NO_PROXY: ""
+    http_proxy: ""
+    https_proxy: ""
+    all_proxy: ""
+    no_proxy: ""
+    KAKATTA_FORMAL_PATH: "1"
+    KAKATTA_FORMAL_DIR: /work
+    KAKATTA_FORMAL_DATA: /data
+    KAKATTA_FORMAL_APP_URL: http://127.0.0.1:18080
+    KAKATTA_FORMAL_CONTROL: http://127.0.0.1:19090
+    KAKATTA_FORMAL_STAGE: "${KAKATTA_FORMAL_STAGE:-first}"
+    KAKATTA_FORMAL_COMMIT: "${KAKATTA_FORMAL_COMMIT}"
+  volumes:
+    - type: bind
+      source: "${KAKATTA_FORMAL_WORK:?缺少独立运行目录}/data"
+      target: /data
+    - type: bind
+      source: "${KAKATTA_FORMAL_WORK}"
+      target: /work
+  security_opt:
+    - seccomp=unconfined
+  stop_grace_period: 30s
+  pull_policy: never
+
+services:
+  fixtures:
+    <<: *formal
+    network_mode: none
+    command: [/tests/formal-path.test, -test.v, -test.run, ^TestFormalPathFixtures$, -test.timeout, 50m]
+    healthcheck:
+      test: [CMD, curl, --noproxy, "*", -fsS, http://127.0.0.1:19090/healthz]
+      interval: 1s
+      timeout: 2s
+      retries: 60
+      start_period: 2s
+  app:
+    <<: *formal
+    network_mode: service:fixtures
+    depends_on:
+      fixtures:
+        condition: service_healthy
+    command: [/tests/formal-path.test, -test.v, -test.run, ^TestFormalPathServer$, -test.timeout, 50m]
+    healthcheck:
+      test: [CMD, curl, --noproxy, "*", -fsS, http://127.0.0.1:18080/healthz]
+      interval: 1s
+      timeout: 2s
+      retries: 60
+      start_period: 2s
+  driver:
+    <<: *formal
+    profiles: [driver]
+    network_mode: service:fixtures
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      <<: *environment
+      KAKATTA_FORMAL_STAGE: "${KAKATTA_FORMAL_STAGE:-first}"
+    command: [/tests/formal-path.test, -test.v, -test.run, ^TestFormalPathJourney$, -test.timeout, 15m]
+    healthcheck:
+      disable: true

@@ -52,6 +52,10 @@ func run(ctx context.Context, args []string, input io.Reader, output io.Writer, 
 }
 
 func serve(ctx context.Context, cfg config.Config, lookup config.Lookup, logger *slog.Logger) (result error) {
+	return serveWithGraphFactory(ctx, cfg, lookup, logger, newRuntimeGraph)
+}
+
+func serveWithGraphFactory(ctx context.Context, cfg config.Config, lookup config.Lookup, logger *slog.Logger, factory runtimeGraphFactory) (result error) {
 	if err := os.MkdirAll(cfg.DataDir, 0700); err != nil {
 		return err
 	}
@@ -120,7 +124,7 @@ func serve(ctx context.Context, cfg config.Config, lookup config.Lookup, logger 
 		return fmt.Errorf("无法监听 %s，请检查端口是否已被占用；可用 --listen 127.0.0.1:18080 换端口：%w", cfg.Listen, err)
 	}
 	defer listener.Close()
-	runtime, err := newRuntimeManager(ctx, cfg, paths, key, source, keyFile, logger)
+	runtime, err := newRuntimeManagerWithGraphFactory(ctx, cfg, paths, key, source, keyFile, logger, factory)
 	clear(key[:])
 	if err != nil {
 		return err

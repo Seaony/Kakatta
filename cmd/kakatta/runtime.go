@@ -22,15 +22,16 @@ import (
 )
 
 type runtimeManager struct {
-	ctx     context.Context
-	cancel  context.CancelFunc
-	cfg     config.Config
-	paths   config.Paths
-	keyFile string
-	logger  *slog.Logger
-	backups *backup.Service
-	failed  chan error
-	fatal   sync.Once
+	ctx          context.Context
+	cancel       context.CancelFunc
+	cfg          config.Config
+	paths        config.Paths
+	keyFile      string
+	logger       *slog.Logger
+	backups      *backup.Service
+	failed       chan error
+	fatal        sync.Once
+	graphFactory runtimeGraphFactory
 
 	switchMu     sync.Mutex
 	mu           sync.Mutex
@@ -47,10 +48,17 @@ type runtimeManager struct {
 
 type runtimeBackupGenerationKey struct{}
 
+type runtimeGraphFactory func(context.Context, config.Config, config.Paths, [backup.MasterKeyBytes]byte, backup.KeySource, string) (*runtimeGraph, error)
+
 func newRuntimeManager(life context.Context, cfg config.Config, paths config.Paths, key [backup.MasterKeyBytes]byte, source backup.KeySource, keyFile string, logger *slog.Logger) (_ *runtimeManager, err error) {
 	defer clear(key[:])
+	return newRuntimeManagerWithGraphFactory(life, cfg, paths, key, source, keyFile, logger, newRuntimeGraph)
+}
+
+func newRuntimeManagerWithGraphFactory(life context.Context, cfg config.Config, paths config.Paths, key [backup.MasterKeyBytes]byte, source backup.KeySource, keyFile string, logger *slog.Logger, factory runtimeGraphFactory) (_ *runtimeManager, err error) {
+	defer clear(key[:])
 	ctx, cancel := context.WithCancel(life)
-	m := &runtimeManager{ctx: ctx, cancel: cancel, cfg: cfg, paths: paths, keyFile: keyFile, logger: logger, failed: make(chan error, 1), drained: make(chan struct{})}
+	m := &runtimeManager{ctx: ctx, cancel: cancel, cfg: cfg, paths: paths, keyFile: keyFile, logger: logger, graphFactory: factory, failed: make(chan error, 1), drained: make(chan struct{})}
 	close(m.drained)
 	defer func() {
 		if err != nil {
@@ -86,7 +94,7 @@ func newRuntimeManager(life context.Context, cfg config.Config, paths config.Pat
 
 func (m *runtimeManager) buildGraph(key [backup.MasterKeyBytes]byte, source backup.KeySource) (*runtimeGraph, error) {
 	defer clear(key[:])
-	g, err := newRuntimeGraph(m.ctx, m.cfg, m.paths, key, source, rand.Text())
+	g, err := m.graphFactory(m.ctx, m.cfg, m.paths, key, source, rand.Text())
 	if err != nil {
 		return nil, err
 	}

@@ -50,6 +50,14 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=15s --retries=3 CMD curl 
 WORKDIR /data
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/kakatta-entrypoint"]
 
+FROM build AS formal-test-build
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go test -c -trimpath -ldflags="-s -w -X github.com/Seaony/Kakatta/internal/buildinfo.Version=${VERSION} -X github.com/Seaony/Kakatta/internal/buildinfo.Commit=${VCS_REF}" -o /out/formal-path.test ./cmd/kakatta
+
+FROM runtime AS formal-test
+COPY --from=build /out/kakatta /usr/local/bin/kakatta
+COPY --from=build /out/experiment /usr/local/bin/experiment
+COPY --from=formal-test-build /out/formal-path.test /tests/formal-path.test
+
 FROM runtime AS final
 COPY --from=build /out/kakatta /usr/local/bin/kakatta
 COPY --from=build /out/experiment /usr/local/bin/experiment
