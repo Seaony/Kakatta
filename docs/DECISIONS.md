@@ -123,7 +123,7 @@
     - **去掉 `--disable-dev-shm-usage`**：Chromium 在 Linux 上已经改用 memfd 共享内存，不再依赖 `/dev/shm`（`platform_shared_memory_region_posix.cc` 的注释说正是为了容器里 `/dev/shm` 只有 64MB 的问题）。实测加了这个参数反而多占约 175MB 内存，所以也不需要设 `shm_size`。实验时再确认一次。
     - **内存**：实测打开京东首页（一个很重的电商页），浏览器约 330–400MB 私有内存加约 260MB 共享内存，容器峰值约 0.9–1GB；限制在 600MB 时页面进程被杀，800MB 能跑。所以文档写明：容器至少给 1GB，2GB 的 NAS 能跑但比较紧，同时只开一个页面（默认值本来就是 1）。闲鱼页面的实际数字在实验里量。分辨率影响很小，1366×768 只比 1920×1080 少约 30MB。
     - **虚拟屏幕**：Xvfb 设 `1920x1080x24`；每个 Chrome 一个独立的显示（第 61 条）；浏览器语言固定 `--lang=zh-CN`，Chrome 的时区（`TZ`）按设置项来，这是配置运行环境，不是改指纹。
-    - **WebGL**：从 Chrome 138 起，没有显卡的机器上 WebGL 默认完全不可用，而反爬资料把 SwiftShader、llvmpipe 这类软件渲染器当成服务器环境的明显特征。三种选择都不伪造任何东西，不违背「不改浏览器指纹」：不开 WebGL（默认）、用 Mesa 的 llvmpipe 软件渲染、NAS 有 Intel 核显时把 `/dev/dri` 映射进来用真显卡。哪种被闲鱼拦得少，在实验里对比「不开」和「llvmpipe」；不用 SwiftShader。
+    - **WebGL**：当前固定版本的断网容器实测，未映射显卡时默认 WebGL 不可用；自动软件回退的版本与安全背景见第 121 条，不按一个历史版本号推断所有平台。三种选择都不伪造任何东西，不违背「不改浏览器指纹」：不开 WebGL（默认）、用 Mesa 的 llvmpipe 软件渲染、NAS 有 Intel 核显时把 `/dev/dri` 映射进来用真显卡。哪种被闲鱼拦得少，在实验里对比「不开」和「llvmpipe」；不用 SwiftShader。
 39. **网页端里的远程画面**（扫码、过验证时用）：
     - 需要时才启动 x11vnc，只监听容器内的 127.0.0.1，平时不运行；网页端通过已登录的 Kakatta 会话连到它，VNC 端口绝不对外暴露。x11vnc 用 X 服务器的 XTEST 把操作送进浏览器，用户的操作和真人一样走 X 服务器，不经过 CDP。
     - 用 noVNC 的核心库，但触摸操作自己处理。noVNC 默认在手指移动 50 像素后才按下鼠标，拖滑块时起点会突然跳 50 像素，轨迹不自然；双指缩放会变成 Ctrl+滚轮，把网页放大。所以：手指一碰就按下鼠标；禁止双指缩放网页；服务端知道验证码在页面上的位置，画面自动放大到验证码附近，手机上按 1:1 或更大显示。
@@ -346,3 +346,11 @@
 ## 2026-11-11（主流程回归）
 
 120. **失败暂停结束后保留真正能运行的时间**。清除已到期的失败暂停时，同事务把 `next_run_at` 保持在原计划和暂停结束时间的较晚者；更晚的原计划不提前，失败计数仍在运行成功后清零。否则先清掉暂停会让两小时前的旧计划，排在一小时前就能运行的任务前面，违背 `DOMAIN.md` 6.2 的实际可运行时间排序。已用两个账号竞争唯一页面名额的失败回归核对，并覆盖没有计划和原计划更晚的情况。
+
+121. **浏览器减负不改变原生能力，进程参数只做可选对照**。沿用第 38、39、66 条的有界面 Chrome、每账号独立 Xvfb 和按需 x11vnc，正式启动参数不因外部项目的内存数字而改变。
+    - 不用无头模式，也不靠改 UA 或 Client Hints 保证可用。[voltwake 的 2026-02-25 报告](https://x.com/voltwake/status/2026721347410243715)称 baxia 升级后无头 Chrome 返回非法访问；本轮从 X 官方 oEmbed 取到这部分正文，后面的有界面导航与输入框对照未取到全文，不写成本项目实测。参考项目 [#473](https://github.com/usagi-org/ai-goofish-monitor/issues/473)、[#516](https://github.com/usagi-org/ai-goofish-monitor/issues/516)仍有验证报告；[#339](https://github.com/usagi-org/ai-goofish-monitor/issues/339)还包含有本地修改的部署历史。这些缺少单变量对照，不能据此保证或否定某一环境的可用性，真实结果仍由作者实验确认。
+    - TigerVNC 的 Xvnc 能整合 X 与 VNC，[openlegion #161](https://github.com/openlegion-ai/openlegion/pull/161)采用过；本项目 x11vnc 平时不运行，不能直接套用常驻双进程换单进程的收益，不更换。首字丢失已有本地 GTK 键盘映射缓存的诊断证据，不归因于 VNC 种类。以后若重新评估 Xvnc，必须只监听回环并设置密码；[openclaw #49618](https://github.com/openclaw/openclaw/pull/49618)暴露过缺回环绑定的问题，该方案未合并，不能当作已经验证安全的替代实现。
+    - WebGL 实验仍只比默认和 llvmpipe，不加 SwiftShader。[2024 年逆向样本](https://www.1997.pro/archives/1706062664709)会读 WebGL 渲染器和架构，但不能证明 2026 年仍用同一脚本或一定拒绝某种硬件。[Chrome 官方文档](https://chromium.googlesource.com/chromium/src/+/main/docs/gpu/swiftshader.md)已弃用自动 SwiftShader WebGL 回退，显式启用不安全回退会降低安全保证；官方称临时的是 [M139 起的企业策略](https://raw.githubusercontent.com/chromium/chromium/main/components/policy/resources/templates/policy_definitions/Miscellaneous/EnableUnsafeSwiftShader.yaml)，不能混称命令行参数临时，也不写统一的 137 起点。
+    - 平台、UA 和 Client Hints 保持 Chrome 原生值。当前 Linux Chrome 的 [`navigator.platform` 固定简化为 `Linux x86_64`](https://raw.githubusercontent.com/chromium/chromium/157.0.8103.50/third_party/blink/renderer/core/execution_context/navigator_base.cc)；真实 arm 架构可在网站主动请求的[高熵 Client Hints](https://developer.chrome.com/docs/privacy-security/user-agent-client-hints)中提供，不伪装架构。作者 Mac Docker 的实验在 arm64 上进行，结论不能替代 amd64 的真实风控表现，后者留给发布后的真实反馈。
+    - 不增加 `shm_size`，依据仍为第 38 条；不关闭[站点隔离](https://www.chromium.org/Home/chromium-security/site-isolation/)，不为省内存改变 GPU 能力或 JavaScript 堆上限。`--renderer-process-limit=2` 与 `--process-per-site` 只进入可选内存实验，量过再决定；[Anthias #3178](https://github.com/Screenly/Anthias/pull/3178)的约 225→147 MB 是树莓派上的 QtWebEngine、五个参数组合和十分钟试验，不能当作正式 Chrome 或这两个参数的单独收益。
+    - 当前镜像只保留 `zh-CN`、`en-US`、`en-GB` 三份语言资源，合计约 1.8 MB，不再删减；不删除 Widevine。网页可通过 [EME](https://w3c.github.io/encrypted-media/#dom-navigator-requestmediakeysystemaccess)查询密钥系统能力，不能把删除浏览器组件当作没有网页可见影响的优化。
