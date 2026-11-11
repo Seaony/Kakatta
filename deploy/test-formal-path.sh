@@ -156,7 +156,10 @@ def snapshot(name):
         role = container["Config"]["Labels"]["com.docker.compose.service"]
         mode = container["HostConfig"]["NetworkMode"]
         require(mode == ("none" if role == "fixtures" else "container:" + fixture), "实际容器没有限制在同一断网回环")
-        require(not container["HostConfig"].get("PortBindings") and not container["NetworkSettings"].get("Networks"), "实际测试容器接入了外部网络或映射端口")
+        networks = container["NetworkSettings"].get("Networks") or {}
+        isolated = not networks or role == "fixtures" and set(networks) == {"none"} and not any(
+            networks["none"].get(key) for key in ["IPAddress", "GlobalIPv6Address", "Gateway", "IPv6Gateway", "MacAddress"])
+        require(not container["HostConfig"].get("PortBindings") and isolated, "实际测试容器接入了外部网络或映射端口")
         require(not container["State"]["OOMKilled"], "测试容器发生 OOM")
         result.append({"id": container["Id"], "role": role, "image": container["Image"], "state": container["State"], "network_mode": mode})
     save("meta/" + name + "-containers.json", result)

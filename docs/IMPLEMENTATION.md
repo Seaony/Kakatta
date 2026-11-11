@@ -380,6 +380,8 @@ Go 全量测试、构建、静态检查通过；解析、网页抓取、实验�
 
 构建支撑已通过 Go 全量测试、构建、静态检查及命令包完整竞态；构造缝和夹具支持真实提供商测试、画像生成、详情超时。首次全量中的新测试未排空旧运行代就打开同一库，产生写锁；仅修测试布置后，单例重复 25 次和相关三个竞态用例各 5 次通过，再次全量通过，生产规则未改。语法、ShellCheck、Compose 三角色配置及默认最终镜像保持检查通过。日志为 `build/formal-foundation-final-{go-test,go-build,go-vet,targeted}.log`、`build/formal-foundation-race.log`、`build/_formal-factory-{repeat,race-repeat}.log`；角色实际运行仍以下表为准。
 
+首次 Compose 在拉取构建前端时遇到 Docker Hub EOF，没有启动应用或写入数据；重试完成镜像构建及两个服务的健康检查。第二次只因脚本将无地址的 `none` 网络记录误判为外网而停止，已修正此判据，继续拒绝 bridge、非空地址和端口映射；两次原始结果在 `build/_formal-path/run-otocnp9c/`、`run-bxmu5s20/`。第二次的清理报告被同一误判影响，但已另核对该项目没有残留容器；尚未进入网页步骤，不算八步验收完成。
+
 | 步骤 | 本轮结果 |
 |---|---|
 | 1. 初始化与下一步引导 | 待正式路径实跑 |
