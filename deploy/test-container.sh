@@ -3,14 +3,20 @@ set -euo pipefail
 
 usage() {
     printf '%s\n' \
-        '用法：deploy/test-container.sh [--seccomp 规则文件]' \
+        '用法：deploy/test-container.sh [--image 本地镜像] [--seccomp 规则文件]' \
         '默认使用本地 kakatta:local 镜像和 seccomp=unconfined。' \
         '所有包在宿主编译，测试容器断网，缺少本地依赖或镜像时直接停止。'
 }
 
 seccomp=unconfined
+image=kakatta:local
 while [ "$#" -gt 0 ]; do
     case "$1" in
+        --image)
+            [ "$#" -ge 2 ] || { usage >&2; exit 2; }
+            image=$2
+            shift 2
+            ;;
         --seccomp)
             [ "$#" -ge 2 ] || { usage >&2; exit 2; }
             seccomp=$2
@@ -34,7 +40,7 @@ fi
 
 repo_root=$(cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$repo_root"
-architecture=$(docker image inspect kakatta:local --format '{{.Architecture}}')
+architecture=$(docker image inspect "$image" --format '{{.Architecture}}')
 case "$architecture" in
     amd64|arm64) ;;
     *) printf '镜像架构不支持：%s\n' "$architecture" >&2; exit 1 ;;
@@ -87,7 +93,7 @@ if docker run --rm --pull=never --network none --no-healthcheck \
     --cidfile "$run_dir/container.id" \
     --mount "type=bind,src=$repo_root,dst=/source,readonly" \
     --mount "type=bind,src=$run_dir,dst=/tests,readonly" \
-    kakatta:local /bin/sh /source/deploy/test-container-run.sh 2>&1 | tee "$run_dir/tests.log"; then
+    "$image" /bin/sh /source/deploy/test-container-run.sh 2>&1 | tee "$run_dir/tests.log"; then
     printf '全部容器测试通过，日志：%s/tests.log\n' "$run_dir"
 else
     status=$?

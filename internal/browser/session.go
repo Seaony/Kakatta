@@ -121,7 +121,9 @@ func Start(parent context.Context, o Options) (*Session, error) {
 		chromedp.Flag("disk-cache-size", strconv.FormatInt(int64(o.CacheMB)<<20, 10)),
 		chromedp.Flag("crash-dumps-dir", crash),
 		chromedp.WindowSize(o.Width, o.Height),
-		chromedp.Env(append(o.Env, "HOME="+home, "XDG_CONFIG_HOME="+filepath.Join(home, "config"), "TZ="+o.TimeZone)...),
+		// 用本地 XIM 读取键盘映射，避免 GTK 的旧缓存丢字。
+		chromedp.Env(append(o.Env, "HOME="+home, "XDG_CONFIG_HOME="+filepath.Join(home, "config"), "TZ="+o.TimeZone,
+			"GTK_IM_MODULE=xim", "XMODIFIERS=@im=none")...),
 		chromedp.ModifyCmdFunc(func(cmd *exec.Cmd) {
 			configureProcessGroup(cmd)
 			s.cmd = cmd

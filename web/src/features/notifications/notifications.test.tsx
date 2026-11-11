@@ -9,7 +9,7 @@ import { ApiProvider, useApi } from '../../api/hooks';
 import { ApiError } from '../../api/errors';
 import { AuthenticationContext } from '../../app/auth-state';
 import type { components } from '../../api/schema.gen';
-import { createI18n, I18nProvider } from '../../i18n';
+import { createI18n, I18nProvider, type Locale } from '../../i18n';
 import { ChannelSetup, TaskChannelPicker } from './channels';
 import { ChannelEditor } from './channel-editor';
 import { NotificationsPage, readNotificationRules } from './rules';
@@ -31,11 +31,11 @@ function fixture(initial: ChannelRow[] = []) {
   return { adapter, list, save, send, history, deliveryItems };
 }
 const defaultFetch: ApiFetch = async (request) => { const path = new URL(request.url).pathname; if (path === '/api/v1/channels') return Response.json([]); if (path === '/api/v1/settings') return Response.json(snapshot); if (path === '/api/v1/settings/definitions') return Response.json([]); throw new Error('测试禁止访问未声明地址'); };
-async function mount(element: ReactNode, fetch: ApiFetch = defaultFetch) {
+async function mount(element: ReactNode, fetch: ApiFetch = defaultFetch, locale: Locale = 'zh-CN') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } } }); const api = createApiClient({ fetch });
   const root = createRootRoute({ component: () => element }); const router = createRouter({ routeTree: root, history: createMemoryHistory({ initialEntries: ['/'] }) });
   await act(async () => { await router.load(); });
-  return render(<I18nProvider instance={createI18n('zh-CN')}><ApiProvider api={api}><QueryClientProvider client={queryClient}><RouterProvider router={router} /></QueryClientProvider></ApiProvider></I18nProvider>);
+  return render(<I18nProvider instance={createI18n(locale)}><ApiProvider api={api}><QueryClientProvider client={queryClient}><RouterProvider router={router} /></QueryClientProvider></ApiProvider></I18nProvider>);
 }
 
 describe('通知表单草稿', () => {
@@ -46,6 +46,16 @@ describe('通知表单草稿', () => {
 
 describe('通知组件', () => {
   test('完整11类型使用正式保存入口，非法空表单不假保存', async () => { const saved = mock(() => {}); await mount(<ChannelSetup onSaved={saved} />); await userEvent.setup().click(screen.getByRole('button', { name: '添加渠道' })); expect(within(screen.getByRole('combobox', { name: '渠道类型' })).getAllByRole('option')).toHaveLength(11); await userEvent.setup().click(screen.getByRole('button', { name: '保存渠道' })); expect(screen.getAllByText('请填写这一项。').length).toBeGreaterThan(0); expect(saved).not.toHaveBeenCalled(); });
+  for (const [locale, label, help] of [
+    ['zh-CN', '渠道类型', '钉钉逐步限制新建自定义机器人，已有机器人仍可使用。关键词安全设置请填 Kakatta。同一目标至少间隔 3 秒。'],
+    ['en', 'Channel type', 'DingTalk restricts new custom bots; existing bots can still be used. Use Kakatta for keyword security. Deliveries to one target are spaced at least 3 seconds apart.'],
+  ] as const) test(`钉钉设置实际显示机器人限制和安全关键词说明（${locale}）`, async () => {
+    const f = fixture();
+    await mount(<ChannelEditor channel={null} adapter={f.adapter} onSaved={() => {}} onCancel={() => {}} />, defaultFetch, locale);
+    await userEvent.setup().selectOptions(screen.getByRole('combobox', { name: label }), 'dingtalk');
+    expect(screen.getByText(help)).toBeDefined();
+    expect(f.save).not.toHaveBeenCalled(); expect(f.send).not.toHaveBeenCalled();
+  });
   test('保存失败保留新密钥，确认后才回调且不自动发送测试', async () => {
     const f = fixture(); const saved = mock(() => {}); f.save.mockImplementationOnce(async () => { throw new ApiError(422, { code: 'settings.invalid', args: {} }, [{ key: 'secrets.token', reason: { code: 'notify.error.invalid_config', args: {} } }], 'fixture-request'); });
     await mount(<ChannelEditor channel={channel()} adapter={f.adapter} onSaved={saved} onCancel={() => {}} />); const user = userEvent.setup(); await user.click(screen.getByRole('radio', { name: '重新填写' })); const input = screen.getByLabelText('访问令牌', { selector: 'input' }); await user.type(input, 'fixture-secret'); await user.click(screen.getByRole('button', { name: '保存渠道' }));

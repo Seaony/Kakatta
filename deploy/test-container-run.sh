@@ -83,6 +83,7 @@ start_display() {
 
 export KAKATTA_BROWSER_TESTS=1 KAKATTA_REMOTE_X11_TEST=1
 export KAKATTA_EXPERIMENT_TESTS=1 KAKATTA_WEBGL_TESTS=1 KAKATTA_REMOTE_INPUT_TEST=1
+export KAKATTA_CORE_FLOW_TESTS=1
 tab=$(printf '\t')
 failures=0
 packages=0
@@ -100,8 +101,10 @@ while IFS="$tab" read -r binary relative_dir package; do
             ;;
         *) unset DISPLAY ;;
     esac
-    # 按包目录运行，保证源码检查和相对路径资源也真正参与验证。
-    if (cd "/source/$relative_dir" && "/tests/$binary" -test.v -test.timeout=5m); then
+    timeout=5m
+    [ "$relative_dir" != cmd/kakatta ] || timeout=10m
+    # 按包目录运行，正式入口还包含真实浏览器的完整主流程。
+    if (cd "/source/$relative_dir" && "/tests/$binary" -test.v "-test.timeout=$timeout"); then
         :
     else
         failures=$((failures + 1))

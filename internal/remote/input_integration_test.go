@@ -35,7 +35,7 @@ func TestRFBInputAgainstLocalChrome(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
-	page := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	page := inputPage(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		fmt.Fprint(w, `<!doctype html><meta charset="utf-8"><title>本地远程输入测试</title><textarea id="target" aria-label="输入目标" style="position:fixed;inset:0;width:100vw;height:100vh;box-sizing:border-box;font:24px sans-serif"></textarea>`)
 	}))
@@ -45,7 +45,7 @@ func TestRFBInputAgainstLocalChrome(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer display.Close()
-	chrome, err := browser.Start(ctx, browser.Options{ProfileDir: t.TempDir(), AccountID: 460, Env: []string{"DISPLAY=" + display.Name()}})
+	chrome, err := browser.Start(ctx, browser.Options{ExecPath: inputChromePath(t, false), ProfileDir: t.TempDir(), AccountID: 460, Env: []string{"DISPLAY=" + display.Name()}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,6 +53,8 @@ func TestRFBInputAgainstLocalChrome(t *testing.T) {
 	if err := chrome.Navigate(page.URL, 10*time.Second); err != nil {
 		t.Fatal(err)
 	}
+	keyups := 0
+	finishContract := recordInput(t, chrome, "raw-rfb", remoteInputText+"\n", &keyups)
 	human := browser.NewHuman(chrome, pacer.New(nil), pacer.Range{})
 	target, err := human.FirstVisible(ctx, "#target", 5*time.Second)
 	if err != nil {
@@ -82,7 +84,11 @@ func TestRFBInputAgainstLocalChrome(t *testing.T) {
 	click(0)
 	click(1)
 	click(0)
+	defer finishContract()
 	key := func(keysym uint32, down bool) {
+		if !down {
+			keyups++
+		}
 		packet := make([]byte, 8)
 		packet[0] = 4
 		if down {
@@ -126,10 +132,9 @@ func TestRFBInputAgainstLocalChrome(t *testing.T) {
 	key(0xffe3, false)
 	press(0xff08)
 	assertValue("")
-	text("相机123")
-	assertValue("相机123")
+	text(remoteInputText)
 	press(0xff0d)
-	assertValue("相机123\n")
+	assertValue(remoteInputText + "\n")
 }
 
 func TestNoVNCViewerInputAgainstLocalChrome(t *testing.T) {
@@ -144,7 +149,7 @@ func TestNoVNCViewerInputAgainstLocalChrome(t *testing.T) {
 func testNoVNCViewerInput(t *testing.T, width, height int64) {
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
-	page := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	page := inputPage(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		fmt.Fprint(w, `<!doctype html><meta charset="utf-8"><textarea id="target" style="position:fixed;inset:0;width:100vw;height:100vh;box-sizing:border-box;background:#fff;color:#111;font:24px sans-serif"></textarea>`)
 	}))
@@ -154,7 +159,7 @@ func testNoVNCViewerInput(t *testing.T, width, height int64) {
 		t.Fatal(err)
 	}
 	defer targetDisplay.Close()
-	targetChrome, err := browser.Start(ctx, browser.Options{ProfileDir: t.TempDir(), AccountID: 460, Env: []string{"DISPLAY=" + targetDisplay.Name()}})
+	targetChrome, err := browser.Start(ctx, browser.Options{ExecPath: inputChromePath(t, false), ProfileDir: t.TempDir(), AccountID: 460, Env: []string{"DISPLAY=" + targetDisplay.Name()}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,6 +167,8 @@ func testNoVNCViewerInput(t *testing.T, width, height int64) {
 	if err := targetChrome.Navigate(page.URL, 10*time.Second); err != nil {
 		t.Fatal(err)
 	}
+	keyups := 7 + len([]rune(remoteInputText+"Z")) + 2 + 1 // x11vnc 为大写 Z 合成一对 Shift。
+	finishContract := recordInput(t, targetChrome, fmt.Sprintf("novnc-%dx%d", width, height), remoteInputText+"\n", &keyups)
 	remoteSession, err := remote.Start(ctx, targetDisplay.Name())
 	if err != nil {
 		t.Fatal(err)
@@ -174,7 +181,7 @@ func testNoVNCViewerInput(t *testing.T, width, height int64) {
 		t.Fatal(err)
 	}
 	defer clientDisplay.Close()
-	client, err := browser.Start(ctx, browser.Options{ProfileDir: t.TempDir(), AccountID: 461, Env: []string{"DISPLAY=" + clientDisplay.Name()}, Width: 900, Height: 1000})
+	client, err := browser.Start(ctx, browser.Options{ExecPath: inputChromePath(t, true), ProfileDir: t.TempDir(), AccountID: 461, Env: []string{"DISPLAY=" + clientDisplay.Name()}, Width: 900, Height: 1000})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -259,12 +266,14 @@ func testNoVNCViewerInput(t *testing.T, width, height int64) {
 			t.Fatal(err)
 		}
 	}
+	defer finishContract()
+	viewerShortcuts(t, client)
 	click("#text-toggle")
 	click("#text-input")
-	if err := clientHuman.Type(ctx, "相机123"); err != nil {
-		t.Fatal(err)
-	}
+	viewerComposition(t, client, targetChrome)
 	click("#text-send")
+	click("#text-backspace")
+	click("#text-enter")
 	targetHuman := browser.NewHuman(targetChrome, pacer.New(nil), pacer.Range{})
 	target, err := targetHuman.FirstVisible(ctx, "#target", 3*time.Second)
 	if err != nil {
@@ -277,12 +286,12 @@ func testNoVNCViewerInput(t *testing.T, width, height int64) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got == "相机123" {
+		if got == remoteInputText+"\n" {
 			return
 		}
 		time.Sleep(25 * time.Millisecond)
 	}
-	t.Fatalf("实际 noVNC viewer 输入不一致：得到 %q，期望 相机123", got)
+	t.Fatalf("实际 noVNC viewer 输入不一致：得到 %q，期望 %q", got, remoteInputText+"\n")
 }
 
 func rfbWrite(t *testing.T, conn net.Conn, data []byte) {

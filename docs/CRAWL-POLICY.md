@@ -37,6 +37,7 @@
   - **不加** `--disable-dev-shm-usage`：Chromium 在 Linux 上已经改用 memfd，不依赖 `/dev/shm`，实测加了反而多占约 175MB 内存（`DECISIONS.md` 第 38 条）。
   - **不加** `--no-sandbox`：会出现网页能看到的警告条；容器里靠 seccomp 设置让沙盒正常工作（`DECISIONS.md` 第 38 条）。
   - 加 `--lang=zh-CN`，固定不变，不跟 Kakatta 的界面语言走：浏览器语言会出现在请求头和页面能读到的 `navigator.language` 里，用户切换界面语言时，闲鱼看到的环境不该跟着变。启动 Chrome 时把它的 `TZ` 环境变量设成设置项 `general.timezone`。
+  - Chrome 子进程固定 `GTK_IM_MODULE=xim`、`XMODIFIERS=@im=none`，让远程 Unicode 输入使用本地 XIM，避免 GTK 动态键盘映射缓存尚未刷新时丢字。沿用镜像已有模块，不添加输入等待、重发或 CDP 输入；本地按键和 Navigator 对照见第 123 条。
   - 加 `--hide-crash-restore-bubble`：上次没正常退出时，不弹「恢复页面」的提示条。
   - `chrome_crashpad_handler` 在 Linux 上用参数关不掉，不去关它，改为保证它不出问题：给它可写的目录，关浏览器时把残留进程一起结束（`DECISIONS.md` 第 59 条）。
   - 另加 `--disk-cache-size`，按配置项限制每个账号浏览器的磁盘缓存（`DOMAIN.md` 第 3 节，默认 256MB）。
