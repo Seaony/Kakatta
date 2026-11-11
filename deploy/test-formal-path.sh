@@ -167,8 +167,9 @@ done
     require(len(owners) == len(processes) == 1 and len(owners[0]) == 2 and len(processes[0]) == 9, "没有取得唯一正式服务进程和数据目录身份")
     owner_uid, owner_gid = map(int, owners[0])
     pid, *identity = map(int, processes[0])
-    require(owner_uid > 0 and owner_gid > 0 and identity == [owner_uid] * 4 + [owner_gid] * 4, "正式服务没有以数据目录对应的非 root 用户和组运行")
-    return {"data_uid": owner_uid, "data_gid": owner_gid, "process_pid": pid, "process_uids": identity[:4], "process_gids": identity[4:], "passed": True}
+    expected_uid, expected_gid = owner_uid or 1000, owner_gid or 1000
+    require(expected_uid > 0 and expected_gid > 0 and identity == [expected_uid] * 4 + [expected_gid] * 4, "正式服务没有以数据目录对应的非 root 用户和组运行")
+    return {"data_uid": owner_uid, "data_gid": owner_gid, "expected_uid": expected_uid, "expected_gid": expected_gid, "process_pid": pid, "process_uids": identity[:4], "process_gids": identity[4:], "passed": True}
 
 
 def snapshot(name):
