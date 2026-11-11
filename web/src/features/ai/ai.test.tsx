@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from 'bun:test';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
@@ -150,5 +150,45 @@ describe('真实设置接口接线', () => {
     expect((field as HTMLInputElement).value).toBe('6');
     expect(writes).toBe(1);
     expect(screen.queryByText('已保存')).toBeNull();
+  });
+});
+
+
+describe('模型设置的简述和当前值警告', () => {
+  test('代理只显示用途说明，数量和额度仍保留默认值推荐及风险', async () => {
+    const fetch: ApiFetch = async (request) => {
+      const path = new URL(request.url).pathname;
+      if (path.endsWith('/definitions')) return Response.json(definitions());
+      if (path.endsWith('/proxies')) return Response.json({ items: [], next_cursor: null, total: 0 });
+      return Response.json(settings());
+    };
+    renderLocalized(<AISettingsPanel />, fetch);
+    const proxy = await screen.findByRole('combobox', { name: '模型专用代理' });
+    const field = proxy.closest('div.min-w-0.space-y-sm')?.parentElement;
+    expect(field?.querySelectorAll(':scope > p')).toHaveLength(0);
+    expect(field?.textContent?.includes(createI18n('zh-CN').t('settings.ai.proxy_id.why'))).toBe(true);
+    expect(screen.getAllByText(/^默认值：/)).toHaveLength(5);
+    expect(screen.getByText(createI18n('zh-CN').t('settings.ai.image_count.risk'))).toBeTruthy();
+  });
+
+  test('已保存的超范围值继续编辑只显示一条警告，改回推荐值即清除旧警告', async () => {
+    const current = settings(); current.values['ai.image_count'] = 5;
+    current.warnings = [{ key: 'ai.image_count', reason: { code: 'settings.outside_recommendation', args: { min: 1, max: 4 } } }];
+    const configured = definitions();
+    configured.find((item) => item.key === 'ai.image_count')!.recommendation = { min: 1, max: 4, text: { code: 'settings.ai.image_count.recommendation', args: {} } };
+    const fetch: ApiFetch = async (request) => {
+      const path = new URL(request.url).pathname;
+      if (path.endsWith('/definitions')) return Response.json(configured);
+      if (path.endsWith('/proxies')) return Response.json({ items: [], next_cursor: null, total: 0 });
+      return Response.json(current);
+    };
+    renderLocalized(<AISettingsPanel />, fetch);
+    const input = await screen.findByRole('textbox', { name: '每件商品发送的图片数' });
+    const warning = '超出推荐范围，请查看此项的风险说明；仍可保存。';
+    expect(screen.getAllByText(warning)).toHaveLength(1);
+    fireEvent.change(input, { target: { value: '6' } });
+    expect(screen.getAllByText(warning)).toHaveLength(1);
+    fireEvent.change(input, { target: { value: '4' } });
+    expect(screen.queryAllByText(warning)).toHaveLength(0);
   });
 });

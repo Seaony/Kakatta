@@ -9,6 +9,7 @@ import { useTranslation } from '../../i18n';
 import { aiSettingKeys, parseSettingInteger, type AISettingKey, type AISettingsDraft } from './draft';
 import { AIErrorNotice, useAIErrorDescription } from './error-notice';
 import { useUnsavedChanges } from '../../app/unsaved-changes';
+import { fieldWarnings } from '../settings-general/model';
 
 export function AISettingsPanel() {
   const api = useApi();
@@ -81,11 +82,7 @@ export function AISettingsPanel() {
           const fieldError = localErrors[key] ?? fieldIssues.find((issue) => issue.key === key)?.reason;
           const error = typeof fieldError === 'string' ? fieldError : fieldError ? messageText(fieldError) : undefined;
           const disabled = save.isPending || settings.sources[key] === 'environment';
-          const number = Number(value);
-          const recommendation = definition.recommendation;
-          const outsideRecommendation = key !== 'ai.proxy_id' && /^\d+$/.test(value) && Number.isSafeInteger(number) && (
-            recommendation.min !== null && number < recommendation.min || recommendation.max !== null && number > recommendation.max
-          );
+          const warnings = fieldWarnings(definition, { kind: 'scalar', text: value }, draft[key] === undefined ? settings.warnings.filter((warning) => warning.key === key).map((warning) => warning.reason) : []);
           const common = { label: messageText(definition.label), hint: messageText(definition.why), ...(error ? { error } : {}) };
           const defaultValue = definition.default === null ? t('web.ai.no_proxy') : `${String(definition.default)}${definition.unit ? ` ${messageText({ code: `units.${definition.unit}`, args: { count: typeof definition.default === 'number' ? definition.default : 2 } })}` : ''}`;
           return <div key={key} className="min-w-0 space-y-sm">
@@ -98,11 +95,12 @@ export function AISettingsPanel() {
               {proxies.isError && <p role="alert" className="text-body text-danger">{errorText(proxies.error)} <Button onClick={() => { void proxies.refetch(); }}>{t('common.retry')}</Button></p>}
               {proxies.hasNextPage && <Button busy={proxies.isFetchingNextPage} onClick={() => { void proxies.fetchNextPage(); }}>{t('web.ai.load_more_proxies')}</Button>}
             </> : <TextField {...common} {...(key === 'ai.daily_token_limit' ? { id: 'ai-daily-token-limit' } : {})} value={value} inputMode="numeric" autoComplete="off" disabled={disabled} onChange={(event) => update(key, event.target.value)} />}
+            {key !== 'ai.proxy_id' && <>
             <p className="text-caption text-text-secondary">{t('web.ai.default_value', { value: defaultValue })}</p>
             <p className="text-caption text-text-secondary">{messageText(definition.recommendation.text)}</p>
             <p className="text-caption text-text-secondary">{messageText(definition.risk)}</p>
-            {draft[key] !== undefined && outsideRecommendation && <p role="status" className="text-body text-warning">{messageText({ code: 'settings.outside_recommendation', args: {} })}</p>}
-            {settings.warnings.filter((warning) => warning.key === key).map((warning, index) => <p key={index} role="status" className="text-body text-warning">{messageText(warning.reason)}</p>)}
+            </>}
+            {warnings.map((warning) => <p key={warning.code} role="status" className="text-body text-warning">{messageText(warning)}</p>)}
           </div>;
         })}
         {save.isError && <AIErrorNotice error={save.error} />}

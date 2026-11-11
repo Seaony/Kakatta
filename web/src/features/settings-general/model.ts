@@ -113,6 +113,10 @@ export function draftWarnings(definition: Definition, draft: Draft): Message[] {
   return warnings;
 }
 
+export function fieldWarnings(definition: Definition, draft: Draft, saved: readonly Message[]): Message[] {
+  return [...saved, ...draftWarnings(definition, draft)].filter((message, index, all) => all.findIndex((item) => item.code === message.code) === index);
+}
+
 export function buildPatch(definitions: readonly Definition[], drafts: Drafts, snapshot: Snapshot): { values: components['schemas']['SettingValues']; fields: FieldIssue[] } {
   const values: components['schemas']['SettingValues'] = {};
   const fields: FieldIssue[] = [];

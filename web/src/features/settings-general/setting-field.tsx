@@ -4,7 +4,7 @@ import { StatusBadge } from '../../components/ui/status-badge';
 import { useMessageText } from '../../api/hooks';
 import { useTranslation } from '../../i18n';
 import type { Definition, Draft, JsonValue, Message, Snapshot } from './model';
-import { draftWarnings } from './model';
+import { fieldWarnings } from './model';
 
 export function fieldID(key: string) { return `setting-${key.replaceAll('.', '-')}`; }
 
@@ -25,7 +25,8 @@ export function SettingField({ definition, draft, source, errors, warnings, disa
   const error = errors.length ? errors.map(text).join(' ') : undefined;
   const readOnly = source === 'environment';
   const locked = disabled || readOnly;
-  const notices = [...warnings, ...draftWarnings(definition, draft)].filter((message, index, all) => all.findIndex((item) => item.code === message.code && JSON.stringify(item.args) === JSON.stringify(message.args)) === index);
+  const notices = fieldWarnings(definition, draft, warnings);
+  const detailed = ['integer', 'range', 'quiet_hours'].includes(definition.kind);
 
   function optionLabel(value: JsonValue): string {
     if (definition.key === 'general.language') {
@@ -80,12 +81,12 @@ export function SettingField({ definition, draft, source, errors, warnings, disa
       </div>
       <p className="text-body text-text-secondary">{t('web.settings.quiet_cross_midnight')}</p>
     </fieldset>}
-    <dl className="grid min-w-0 gap-x-lg gap-y-sm text-body sm:grid-cols-[max-content_minmax(0,1fr)]">
+    {detailed ? <dl className="grid min-w-0 gap-x-lg gap-y-sm text-body sm:grid-cols-[max-content_minmax(0,1fr)]">
       <dt className="font-medium text-text-label">{t('web.settings.default_label')}</dt><dd className="min-w-0 break-words tabular-nums">{displayDefault()}</dd>
       <dt className="font-medium text-text-label">{t('web.settings.recommendation_label')}</dt><dd className="min-w-0 break-words">{text(definition.recommendation.text)}</dd>
       <dt className="font-medium text-text-label">{t('web.settings.why_label')}</dt><dd className="min-w-0 break-words">{text(definition.why)}</dd>
       <dt className="font-medium text-text-label">{t('web.settings.risk_label')}</dt><dd className="min-w-0 break-words">{text(definition.risk)}</dd>
-    </dl>
+    </dl> : <p className="max-w-prose break-words text-body text-text-secondary">{text(definition.why)}</p>}
     {notices.map((message) => <p key={`${message.code}-${JSON.stringify(message.args)}`} role="status" className="rounded-control bg-warning-fill px-md py-sm text-body font-medium text-warning">{text(message)}</p>)}
   </div>;
 }

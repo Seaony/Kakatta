@@ -36,7 +36,7 @@ function RulesForm({ initial, definitions, adapter }: { initial: Snapshot; defin
   useEffect(() => { if (operation.authenticated === false) { setSaving(false); setError(null); setSaved(false); } }, [operation.authenticated]);
   const fields = error instanceof ApiError ? error.fields : [];
   const fieldError = (key: string) => { const found = fields.find((issue) => issue.key === key); return found ? messageText(found.reason) : undefined; };
-  const hint = (key: string) => { const definition = definitions.find((item) => item.key === key); return definition ? [messageText(definition.why), messageText(definition.recommendation.text), messageText(definition.risk)].join(' ') : ''; };
+  const hint = (key: string) => { const definition = definitions.find((item) => item.key === key); return definition ? (definition.kind === 'integer' ? [messageText(definition.why), messageText(definition.recommendation.text), messageText(definition.risk)].join(' ') : messageText(definition.why)) : ''; };
   function change(patch: Partial<RulesDraft>) { setDraft((old) => ({ ...old, ...patch })); setSaved(false); }
   async function save() {
     if (saving || operation.authenticated === false) return;
