@@ -125,6 +125,33 @@ const csvPath = '/api/v1/tasks/7/findings/export';
 const csvHeader = '\uFEFF标题,价格,配置,合理价,分数,档位,结论,主要风险,理由,卖家,地区,发现时间,链接\r\n';
 const csvMedia = 'text/csv; charset=utf-8';
 
+describe('商品发布时间', () => {
+  for (const locale of ['zh-CN', 'en', 'ja'] as const) {
+    test.each([null, 1794355200000])(`${locale} 卡片和独立详情的发布时间 %j 只显示一次标签`, async (publishedAt) => {
+      const saved = { ...listing({ published_at: publishedAt }), findings: [], prices: [], seller: null } satisfies Schema<'ListingView'>;
+      const api = createApiClient({ fetch: async (request) => {
+        const common = base(request); if (common) return common;
+        return new URL(request.url).pathname.endsWith('/prices') ? json({ items: [], next_cursor: null, total: 0 }) : json(saved);
+      } });
+      const client = createAppQueryClient();
+      clients.push(client);
+      const i18n = createI18n(locale);
+      render(<QueryClientProvider client={client}><I18nProvider instance={i18n}><ApiProvider api={api}>
+        <FindingCard finding={finding({ listing: saved })} selected={false} selectionFull={false} busy={false} onSelect={() => {}} onOpen={() => {}} onAction={() => {}} timeZone="Asia/Singapore" />
+        <ListingPanel itemId={saved.item_id} />
+      </ApiProvider></I18nProvider></QueryClientProvider>);
+      await screen.findByRole('heading', { name: saved.title });
+      const expected = publishedAt === null ? i18n.t('results.published_unknown')
+        : i18n.t('results.card.published', { time: resultTime(publishedAt, locale, 'Asia/Singapore') });
+      expect(screen.getAllByText(expected, { exact: true })).toHaveLength(2);
+      if (publishedAt === null) {
+        const repeated = i18n.t('results.card.published', { time: expected });
+        expect(screen.queryByText(repeated, { exact: true })).toBeNull();
+      }
+    });
+  }
+});
+
 describe('卖家昵称缺失的展示', () => {
   for (const locale of ['zh-CN', 'en'] as const) {
     test.each([null, '', ' \t', '真实卖家'])(`${locale} 收藏卡片和独立详情的昵称 %j 不依赖卖家编号`, async (nick) => {

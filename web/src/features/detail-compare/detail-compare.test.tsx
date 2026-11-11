@@ -527,8 +527,8 @@ describe('比较和局部阅读', () => {
     const title = locale === 'zh-CN' ? '详情中的卖家指标' : 'Seller metrics from item details';
     const unknown = locale === 'zh-CN' ? '未知' : 'Unknown';
     const labels = locale === 'zh-CN'
-      ? ['原始商品数', '原始已售数', '近 30 天回复指标原值', '好评指标原文', '最近访问原文', '闲鱼信用等级原值', '芝麻认证标记']
-      : ['Raw item count', 'Raw sold count', 'Raw 30-day reply metric', 'Raw positive-review metric', 'Last-visit text', 'Raw Xianyu credit level', 'Zhima authentication flag'];
+      ? ['原始商品数', '原始已售数', '近 30 天回复指标原值', '好评指标原文', '最近访问原文', '闲鱼信用等级原值', '芝麻认证']
+      : ['Raw item count', 'Raw sold count', 'Raw 30-day reply metric', 'Raw positive-review metric', 'Last-visit text', 'Raw Xianyu credit level', 'Zhima verification'];
     const note = locale === 'zh-CN' ? '原始指标的含义或单位待确认，不参与评分。' : 'The meaning or units of these raw metrics are unconfirmed. They do not affect scoring.';
     const cases: { name: string; metrics: Schema<'SellerDetailMetrics'>; values: string[] }[] = [
       { name: '保留原值', metrics: { item_count: 42, has_sold_num_integer: 13, avg_reply_30d_long: 32.56789, new_good_ratio_rate: '98.7%', last_visit_time: ' 近日来过 ', idle_fish_credit_level: 'L5', zhima_auth: true }, values: ['42', '13', '32.56789', '98.7%', ' 近日来过 ', 'L5', locale === 'zh-CN' ? '是' : 'Yes'] },

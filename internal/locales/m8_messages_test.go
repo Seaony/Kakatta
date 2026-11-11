@@ -32,7 +32,7 @@ func TestM8ActualMessagesHaveBothLanguages(t *testing.T) {
 		{"tasks.import_profile_next_no", "已更新清单的后续编号起点", "Updated the starting identifier for new checklist items.", "条件リストの新しい項目に使うIDの開始値を更新しました。"},
 		{"tasks.import_override_removed", "等待或频率覆盖值明显无效，已去掉", "Removed an invalid timing or frequency override.", "待機時間または実行頻度の上書き値が無効なため、除去しました。"},
 		{"settings.number_required", "请输入数字", "Enter a number.", "数値を入力してください。"},
-		{"settings.whole_cents_required", "金额必须能精确换算成整数分", "The amount must convert exactly to whole cents.", "金額は通貨の補助単位「分」の整数に正確に換算できる値を指定してください。"},
+		{"settings.whole_cents_required", "金额最多保留两位小数。", "Amounts can have at most two decimal places.", "金額は小数点以下2桁以内で入力してください。"},
 		{"update.check_failed", "检查更新失败，稍后会自动重试。", "Could not check for updates. The server will try again later.", "アップデートを確認できませんでした。後ほど自動で再試行します。"},
 	} {
 		for _, lang := range []Language{ZhCN, En, Ja} {

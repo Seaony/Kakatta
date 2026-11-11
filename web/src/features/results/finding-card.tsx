@@ -121,7 +121,7 @@ export function FindingCard({ finding, selected, selectionFull, onSelect, onOpen
             {sellerReviewSummary && <> · {sellerReviewSummary}</>}
           </p>
           <div className="flex flex-wrap gap-x-lg gap-y-sm text-caption text-text-secondary">
-            <span>{t('results.card.published', { time: listing.published_at === null ? t('results.published_unknown') : resultTime(listing.published_at, locale, timeZone) })}</span>
+            <span>{listing.published_at === null ? t('results.published_unknown') : t('results.card.published', { time: resultTime(listing.published_at, locale, timeZone) })}</span>
             <span>{t('results.card.found', { time: resultTime(finding.found_at, locale, timeZone) })}</span>
             <span>{finding.task.name}</span>
           </div>

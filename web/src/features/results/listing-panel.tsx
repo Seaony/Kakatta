@@ -84,7 +84,7 @@ export function ListingPanel({ itemId }: { itemId: string }) {
           <h2 className="break-words text-section font-semibold">{listing.title || t('results.card.untitled')}</h2>
           <p className="text-section font-semibold tabular-nums">{listing.price === null ? t('results.price_unknown') : formatMoney(listing.price, locale)}</p>
           <p className="break-words text-body text-text-label">{formatSellerName(listing.seller?.nick, locale, listing.seller_nick)} {listing.area}</p>
-          <p className="text-body text-text-secondary">{t('results.card.published', { time: listing.published_at === null ? t('results.published_unknown') : resultTime(listing.published_at, locale, timeZone) })}</p>
+          <p className="text-body text-text-secondary">{listing.published_at === null ? t('results.published_unknown') : t('results.card.published', { time: resultTime(listing.published_at, locale, timeZone) })}</p>
           <div className="flex flex-wrap gap-sm">
             <Button busy={mutation.isPending} onClick={() => mutation.mutate({ is_favorite: !listing.is_favorite })}>{t(listing.is_favorite ? 'results.action.unfavorite' : 'results.action.favorite')}</Button>
             <Button busy={mutation.isPending} onClick={() => mutation.mutate({ is_dismissed: !listing.is_dismissed })}>{t(listing.is_dismissed ? 'results.action.restore' : 'results.action.dismiss')}</Button>
