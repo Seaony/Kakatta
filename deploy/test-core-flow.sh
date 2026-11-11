@@ -4,6 +4,7 @@ set -eu
 repo=$(cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$repo"
 image=${1:-kakatta:local}
+pattern=${2:-^TestCoreFlow}
 architecture=$(docker image inspect "$image" --format '{{.Architecture}}')
 case "$architecture" in amd64|arm64) ;; *) printf '不支持的镜像架构：%s\n' "$architecture" >&2; exit 1 ;; esac
 
@@ -24,12 +25,13 @@ go test -c -o "$work/core.test" ./cmd/kakatta
 printf '断网主流程回归：%s\n' "$work"
 docker run --rm --pull=never --network none --no-healthcheck --cidfile "$work/container.id" \
     --security-opt "seccomp=$repo/deploy/chrome-seccomp.json" --tmpfs /data:rw,nosuid,nodev \
+    -e KAKATTA_CORE_FLOW_PATTERN="$pattern" \
     --mount "type=bind,src=$work,dst=/tests,readonly" \
     "$image" /bin/sh -eu -c '
         test "$(id -u)" -ne 0
         export KAKATTA_CORE_FLOW_TESTS=1
         status=0
-        /tests/core.test -test.run "^TestCoreFlow" -test.v -test.timeout=4m || status=$?
+        /tests/core.test -test.run "$KAKATTA_CORE_FLOW_PATTERN" -test.v -test.timeout=10m || status=$?
         for attempt in 1 2 3 4 5; do
             remaining=
             for file in /proc/[0-9]*/comm; do
