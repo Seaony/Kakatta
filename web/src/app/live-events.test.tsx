@@ -11,11 +11,99 @@ import { useLiveEvents } from './live-events';
 class LocalEventStream extends EventTarget {
   static instances: LocalEventStream[] = [];
   closed = false;
+  closeCount = 0;
   onopen: ((event: Event) => void) | null = null;
   onerror: ((event: Event) => void) | null = null;
   constructor(readonly url: string) { super(); LocalEventStream.instances.push(this); }
-  close() { this.closed = true; }
+  close() { this.closed = true; this.closeCount++; }
 }
+
+function pageTransition(type: 'pagehide' | 'pageshow', persisted: boolean) {
+  const event = new Event(type);
+  Object.defineProperty(event, 'persisted', { value: persisted });
+  return event;
+}
+
+test('缓存页面离开时关闭事件流并取消身份读取，恢复一次只连接一条并重读全部API缓存', async () => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'EventSource');
+  Object.defineProperty(globalThis, 'EventSource', { configurable: true, value: LocalEventStream });
+  LocalEventStream.instances = [];
+  const queryClient = createAppQueryClient();
+  const signals: AbortSignal[] = [];
+  const api = createApiClient({ fetch: async (request) => {
+    signals.push(request.signal);
+    return new Promise<Response>((_resolve, reject) => request.signal.addEventListener('abort', () => reject(new DOMException('已取消', 'AbortError')), { once: true }));
+  } });
+  const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={queryClient}><ApiProvider api={api}>{children}</ApiProvider></QueryClientProvider>;
+  const hook = renderHook(() => useLiveEvents(true), { wrapper });
+  try {
+    for (const key of [apiKey('settings'), apiKey('tasks'), apiKey('security-tokens'), ['local-draft']]) queryClient.setQueryData(key, { keep: true });
+    const first = LocalEventStream.instances[0]!;
+    const lateError = first.onerror, lateOpen = first.onopen;
+    act(() => first.onerror?.(new Event('error')));
+    await waitFor(() => expect(signals.length).toBe(1));
+    act(() => { window.dispatchEvent(pageTransition('pagehide', true)); window.dispatchEvent(pageTransition('pagehide', true)); });
+    expect(first.closed).toBe(true); expect(first.closeCount).toBe(1); expect(signals[0]?.aborted).toBe(true);
+    act(() => { lateOpen?.(new Event('open')); lateError?.(new Event('error')); first.dispatchEvent(new Event('reset')); first.dispatchEvent(new Event('task.changed')); });
+    expect(signals.length).toBe(1);
+    expect(queryClient.getQueryState(apiKey('tasks'))?.isInvalidated).toBe(false);
+    expect(queryClient.getQueryState(apiKey('security-tokens'))?.isInvalidated).toBe(false);
+    act(() => window.dispatchEvent(pageTransition('pageshow', false)));
+    expect(LocalEventStream.instances.length).toBe(1);
+    act(() => { window.dispatchEvent(pageTransition('pageshow', true)); window.dispatchEvent(pageTransition('pageshow', true)); });
+    expect(LocalEventStream.instances.length).toBe(2);
+    expect(LocalEventStream.instances.filter((stream) => !stream.closed).length).toBe(1);
+    for (const key of [apiKey('settings'), apiKey('tasks'), apiKey('security-tokens')]) expect(queryClient.getQueryState(key)?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(['local-draft'])?.isInvalidated).toBe(false);
+    hook.unmount();
+    expect(LocalEventStream.instances[1]?.closeCount).toBe(1);
+    act(() => window.dispatchEvent(pageTransition('pageshow', true)));
+    expect(LocalEventStream.instances.length).toBe(2);
+  } finally {
+    hook.unmount(); queryClient.clear();
+    if (previous) Object.defineProperty(globalThis, 'EventSource', previous); else Reflect.deleteProperty(globalThis, 'EventSource');
+  }
+});
+
+test('关闭旧流后迟到的身份响应不能登出新流，当前身份失效后缓存恢复不能重新连接', async () => {
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'EventSource');
+  Object.defineProperty(globalThis, 'EventSource', { configurable: true, value: LocalEventStream });
+  LocalEventStream.instances = [];
+  const queryClient = createAppQueryClient();
+  let finish = (_response: Response) => {}, calls = 0, lost = 0;
+  const signals: AbortSignal[] = [];
+  const unauthorized = () => Response.json({ error: { code: 'auth.unauthenticated', args: {} }, fields: [], request_id: 'local' }, { status: 401 });
+  const api = createApiClient({ fetch: async (request) => {
+    calls++; signals.push(request.signal);
+    return calls === 1 ? new Promise<Response>((resolve) => { finish = resolve; }) : unauthorized();
+  } });
+  api.subscribeAuthenticationLost(() => { lost++; });
+  const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={queryClient}><ApiProvider api={api}>{children}</ApiProvider></QueryClientProvider>;
+  const hook = renderHook(({ authenticated }) => useLiveEvents(authenticated), { wrapper, initialProps: { authenticated: true } });
+  try {
+    act(() => LocalEventStream.instances[0]?.onerror?.(new Event('error')));
+    await waitFor(() => expect(calls).toBe(1));
+    act(() => { window.dispatchEvent(pageTransition('pagehide', false)); window.dispatchEvent(pageTransition('pageshow', true)); });
+    expect(signals[0]?.aborted).toBe(true);
+    expect(LocalEventStream.instances.length).toBe(2);
+    await act(async () => { finish(unauthorized()); await new Promise<void>((resolve) => setTimeout(resolve, 0)); });
+    expect(lost).toBe(0); expect(LocalEventStream.instances[1]?.closed).toBe(false);
+    act(() => LocalEventStream.instances[1]?.onerror?.(new Event('error')));
+    await waitFor(() => expect(lost).toBe(1));
+    expect(signals[1]?.aborted).toBe(true); expect(LocalEventStream.instances[1]?.closed).toBe(true);
+    act(() => window.dispatchEvent(pageTransition('pageshow', true)));
+    expect(LocalEventStream.instances.length).toBe(2);
+    hook.rerender({ authenticated: false });
+    act(() => window.dispatchEvent(pageTransition('pageshow', true)));
+    expect(LocalEventStream.instances.length).toBe(2);
+    api.restoreAuthentication(); hook.rerender({ authenticated: true });
+    expect(LocalEventStream.instances.length).toBe(3);
+    expect(LocalEventStream.instances.filter((stream) => !stream.closed).length).toBe(1);
+  } finally {
+    hook.unmount(); queryClient.clear();
+    if (previous) Object.defineProperty(globalThis, 'EventSource', previous); else Reflect.deleteProperty(globalThis, 'EventSource');
+  }
+});
 
 for (const event of ['ai.providers.changed', 'ai.usage.changed', 'ai.prompts.changed'] as const) test(`${event}重读活跃查询及相关状态，保留本地草稿且不发写请求`, async () => {
   const previous = Object.getOwnPropertyDescriptor(globalThis, 'EventSource');
