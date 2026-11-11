@@ -26,11 +26,17 @@ func formalTaskID(t *testing.T) int64 {
 	return formalScalar(t, "SELECT id FROM tasks WHERE name='正式流程相机监控'")
 }
 
+const formalReadyToRunQuery = `SELECT
+	NOT EXISTS(SELECT 1 FROM run_records WHERE ended_at IS NULL) AND
+	EXISTS(SELECT 1 FROM accounts a WHERE a.name='本地扫码账号'
+	 AND a.last_run_ended_at IS NOT NULL AND a.next_gap_seconds IS NOT NULL
+	 AND a.last_run_ended_at+a.next_gap_seconds*1000<=?
+	 AND NOT EXISTS(SELECT 1 FROM meta WHERE key='runtime.session.'||a.id))`
+
 func formalReadyToRun(t *testing.T, browser context.Context) {
 	t.Helper()
 	formalWait(t, browser, "账号自然间隔和当前运行结束", 90*time.Second, func() bool {
-		return formalScalar(t, "SELECT count(*) FROM run_records WHERE ended_at IS NULL") == 0 &&
-			formalScalar(t, "SELECT COALESCE(last_run_ended_at,0)+COALESCE(next_gap_seconds,0)*1000 FROM accounts WHERE name='本地扫码账号'") <= time.Now().UnixMilli()
+		return formalScalar(t, formalReadyToRunQuery, time.Now().UnixMilli()) == 1
 	})
 }
 
