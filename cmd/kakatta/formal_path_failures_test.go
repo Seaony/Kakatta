@@ -92,11 +92,18 @@ func formalFailures(t *testing.T, browser context.Context, events *webSmokeEvent
 			formalScalar(t, "SELECT count(*) FROM meta WHERE key='runtime.session.1'") == 0
 	})
 
-	formalControl(t, "risk", map[string]any{"mode": "verify"})
+	formalReadyToRun(t, browser)
+	if formalScalar(t, "SELECT count(*) FROM run_records WHERE task_id=? AND failure_kind='risk_verify'", taskID) != 0 {
+		t.Fatal("风控注入前已有验证运行")
+	}
 	before := formalFixtureState(t)
 	beforeModels := formalModelCalls(t, before)
 	beforeDetails := formalCountFromState(t, before, "detail_count")
-	runID = formalRunOnce(t, browser, events)
+	formalControl(t, "risk", map[string]any{"mode": "verify"})
+	formalWait(t, browser, "真实定时运行触发风控并保留人工验证", 90*time.Second, func() bool {
+		return formalScalar(t, "SELECT count(*) FROM run_records r JOIN accounts a ON a.id=r.account_id WHERE r.task_id=? AND r.trigger='auto' AND r.failure_kind='risk_verify' AND r.ended_at IS NOT NULL AND a.state='needs_verification'", taskID) == 1
+	})
+	runID = formalScalar(t, "SELECT id FROM run_records WHERE task_id=? AND trigger='auto' AND failure_kind='risk_verify' AND ended_at IS NOT NULL", taskID)
 	if formalText(t, "SELECT failure_kind FROM run_records WHERE id=?", runID) != "risk_verify" ||
 		formalScalar(t, "SELECT count(*) FROM accounts WHERE id=1 AND state='needs_verification'") != 1 {
 		t.Fatal("风控没有停手并保留人工验证状态")
