@@ -1,9 +1,24 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdir, readdir } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { mkdir, readFile, readdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const imageName = 'kakatta:dev';
+const imageLabel = 'io.github.seaony.kakatta.dev-inputs';
+
+export async function developmentImageHash(projectRoot = root) {
+  // 管理进程及其依赖编进镜像；普通后端和网页由挂载源码热更新。
+  const packages = ['cmd/devhost', 'internal/development', 'internal/devfixture', 'internal/diagnostics', 'internal/xianyu/fake', 'internal/analysis', 'internal/limits', 'internal/locales'];
+  const sources = await Promise.all(packages.map(async path => (await readdir(resolve(projectRoot, path), { withFileTypes: true }))
+    .filter(file => file.isFile() && (file.name.endsWith('.go') && !file.name.endsWith('_test.go') || file.name.endsWith('.json')))
+    .map(file => `${path}/${file.name}`)));
+  const inputs = ['Dockerfile', '.dockerignore', 'compose.dev.yaml', 'go.mod', 'go.sum', 'deploy/entrypoint.sh', 'deploy/dev-entrypoint.sh', ...sources.flat()].sort();
+  const hash = createHash('sha256');
+  for (const path of inputs) hash.update(path).update('\0').update(await readFile(resolve(projectRoot, path))).update('\0');
+  return hash.digest('hex');
+}
 
 export function developmentPlan(mode: string, projectRoot = root) {
   if (mode !== 'fake' && mode !== 'real') throw new Error('开发模式只能是 fake 或 real');
@@ -36,11 +51,12 @@ export async function needsSeed(data: string) {
 
 type OwnedProcess = { process: ChildProcess; exited: Promise<number> };
 
-function start(command: string[], cwd = root, env: NodeJS.ProcessEnv = process.env): OwnedProcess {
-  const child = spawn(command[0], command.slice(1), { cwd, env, stdio: 'inherit', detached: true });
+function start(command: string[], cwd = root, env: NodeJS.ProcessEnv = process.env, stderr?: (text: string) => void): OwnedProcess {
+  const child = spawn(command[0], command.slice(1), { cwd, env, stdio: ['inherit', 'inherit', stderr ? 'pipe' : 'inherit'], detached: true });
+  if (stderr) child.stderr?.on('data', chunk => { const text = chunk.toString(); process.stderr.write(text); stderr(text); });
   const exited = new Promise<number>((done, failed) => {
     child.once('error', failed);
-    child.once('exit', (code, signal) => done(code ?? (signal ? 1 : 0)));
+    child.once(stderr ? 'close' : 'exit', (code, signal) => done(code ?? (signal ? 1 : 0)));
   });
   return { process: child, exited };
 }
@@ -97,9 +113,9 @@ export async function main(mode: string, projectRoot = root) {
     return id;
   }
 
-  async function step(command: string[], cwd = projectRoot, env = process.env) {
+  async function step(command: string[], cwd = projectRoot, env = process.env, stderr?: (text: string) => void) {
     if (stopRequested) throw new Error('开发启动已取消');
-    setup = start(command, cwd, env);
+    setup = start(command, cwd, env, stderr);
     const code = await setup.exited;
     setup = undefined;
     if (code !== 0) throw new Error(`命令未成功：${command[0]} ${command[1] ?? ''}`);
@@ -156,8 +172,31 @@ export async function main(mode: string, projectRoot = root) {
       if (stopRequested) return;
       manager = start([plan.manager, '--mode', 'fake', '--root', projectRoot, '--state', plan.state, '--data', plan.data, '--air', air], projectRoot);
     } else {
+      const inputs = await developmentImageHash(projectRoot);
+      const inspect = ['docker', 'image', 'ls', '--quiet', '--no-trunc', imageName];
+      const previous = await capture(inspect, projectRoot);
+      const label = previous ? await capture(['docker', 'image', 'inspect', '--format', `{{ index .Config.Labels "${imageLabel}" }}`, previous], projectRoot) : '';
+      if (!previous || label !== inputs) {
+        let details = '';
+        try {
+          await step([...plan.compose, 'build', '--build-arg', `KAKATTA_DEV_INPUT_HASH=${inputs}`, 'dev'], projectRoot, process.env,
+            text => { details = (details + text).slice(-32_768); });
+        } catch (error) {
+          if (stopRequested) throw error;
+          let imageState: string;
+          try {
+            const current = await capture(inspect, projectRoot);
+            imageState = previous && current === previous ? '旧镜像仍在，未被覆盖。' : current ? '已有开发镜像仍在。' : '当前没有可用的开发镜像。';
+          } catch { imageState = '无法确认旧镜像状态，请检查 Docker 是否仍在运行。'; }
+          const pullFailure = /auth\.docker\.io|registry-1\.docker\.io|load metadata|fetch.*token|resolve.*metadata/i.test(details)
+            && /EOF|timeout|timed out|no such host|connection|network|TLS handshake/i.test(details);
+          const reason = pullFailure ? '拉取基础镜像时网络连接失败。' : '开发镜像构建失败，请查看上方具体错误。';
+          const action = pullFailure ? '检查 Docker 网络或代理，恢复后重试 bun run dev:real。' : '修正上方构建错误后重试 bun run dev:real。';
+          throw new Error(reason + imageState + action);
+        }
+      }
       composeStarted = true;
-      await step([...plan.compose, 'up', '--build', '--detach', 'dev']);
+      await step([...plan.compose, 'up', '--detach', '--no-build', 'dev']);
       if (stopRequested) return;
       manager = start([...plan.compose, 'attach', '--sig-proxy=false', '--no-stdin', 'dev'], projectRoot);
     }

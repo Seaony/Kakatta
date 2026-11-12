@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1
 ARG GO_VERSION=1.27.3
 
 FROM --platform=$BUILDPLATFORM oven/bun:1.3.14-slim AS web-build
@@ -68,6 +67,8 @@ COPY . .
 RUN CGO_ENABLED=0 go build -tags kakatta_dev -buildvcs=false -trimpath -o /out/devhost ./cmd/devhost
 
 FROM runtime AS dev
+ARG KAKATTA_DEV_INPUT_HASH
+LABEL io.github.seaony.kakatta.dev-inputs="${KAKATTA_DEV_INPUT_HASH}"
 COPY --from=dev-tools /usr/local/go /usr/local/go
 COPY --from=dev-tools /out/air /usr/local/bin/air
 COPY --from=dev-tools /out/devhost /usr/local/bin/devhost
