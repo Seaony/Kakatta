@@ -19,7 +19,6 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/Seaony/Kakatta/internal/auth"
 	"github.com/Seaony/Kakatta/internal/backup"
 	"github.com/Seaony/Kakatta/internal/config"
 	"github.com/Seaony/Kakatta/internal/devfixture"
@@ -132,11 +131,14 @@ func runDevelopment(ctx context.Context, args []string, output io.Writer, lookup
 				return nil, errors.Join(err, g.close(context.Background()))
 			}
 		}
-		if options.mode == "fake" && g.bootstrap.Token != "" {
-			if _, err := g.authentication.Initialize(life, g.bootstrap.Token, "开发者", rand.Text(), "本机假数据开发"); err != nil {
+		if options.mode == "fake" {
+			status, err := g.authentication.Setup(life)
+			if err == nil && !status.Initialized {
+				_, err = g.authentication.Initialize(life, "开发者", rand.Text(), "本机假数据开发")
+			}
+			if err != nil {
 				return nil, errors.Join(err, g.close(context.Background()))
 			}
-			g.bootstrap = auth.Bootstrap{}
 		}
 		return g, nil
 	}

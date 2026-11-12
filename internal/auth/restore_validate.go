@@ -9,7 +9,7 @@ import (
 	"github.com/Seaony/Kakatta/internal/security"
 )
 
-// ValidateStoredTx 只读认证数据，不初始化令牌、代数或会话。
+// ValidateStoredTx 只读认证数据，不修改代数或会话。
 func ValidateStoredTx(ctx context.Context, tx *sql.Tx, cipher *security.Cipher) (hasAdmin bool, err error) {
 	if tx == nil {
 		return false, ErrInvalidInput

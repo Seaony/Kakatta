@@ -1,5 +1,3 @@
-const login = document.querySelector('#login');
-const controls = document.querySelector('#controls');
 const remote = document.querySelector('#remote');
 const viewer = remote.querySelector('iframe');
 const error = document.querySelector('#error');
@@ -21,15 +19,12 @@ let previousViewport = 'null';
 function showError(message) { error.textContent = message || ''; error.hidden = !message; }
 function stopPoll() { clearTimeout(timer); timer = null; }
 function requestPoll() { stopPoll(); if (pageActive) timer = setTimeout(refresh, 2000); }
-function authNeeded() { stopPoll(); login.hidden = false; controls.hidden = true; remote.hidden = true; viewer.src = 'about:blank'; }
 function showHint(id, prefix, value) {
     const node = document.querySelector(id);
     node.hidden = !value;
     node.textContent = value ? prefix + value : '';
 }
 function show(state) {
-    login.hidden = true;
-    controls.hidden = false;
     const phase = state.phase || 'idle';
     if (phase !== previousPhase) document.querySelector('#phase').textContent = labels[phase] || '等待下一步';
     previousPhase = phase;
@@ -77,7 +72,6 @@ async function refresh() {
     stopPoll();
     try {
         const response = await fetch('/status', { credentials: 'same-origin' });
-        if (response.status === 401) { authNeeded(); return; }
         if (!response.ok) throw new Error('读取实验状态失败，请刷新页面重试。');
         show(await response.json());
     } catch (failure) { showError(failure.message); }
@@ -89,7 +83,6 @@ async function action(path) {
     let message = '';
     try {
         const response = await fetch(path, { method: 'POST', credentials: 'same-origin' });
-        if (response.status === 401) { authNeeded(); return; }
         if (!response.ok) {
             const reason = response.status === 409 ? (await response.text()).trim() : '';
             throw new Error(reason || '操作未完成，请查看实验记录后重试。');
@@ -97,19 +90,6 @@ async function action(path) {
     } catch (failure) { message = failure.message; }
     finally { busy = false; await refresh(); if (message) showError(message); }
 }
-document.querySelector('#auth-form').addEventListener('submit', async event => {
-    event.preventDefault();
-    const button = event.currentTarget.querySelector('button');
-    button.disabled = true;
-    showError('');
-    try {
-        const response = await fetch('/auth', { method: 'POST', body: new URLSearchParams(new FormData(event.currentTarget)), credentials: 'same-origin' });
-        if (!response.ok) throw new Error('令牌不对或已经过期，请检查容器日志。');
-        document.querySelector('#token').value = '';
-        await refresh();
-    } catch (failure) { showError(failure.message); }
-    finally { button.disabled = false; }
-});
 session.addEventListener('click', () => action('/session'));
 run.addEventListener('click', () => action('/run'));
 close.addEventListener('click', () => action('/close'));

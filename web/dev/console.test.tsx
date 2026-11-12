@@ -41,7 +41,7 @@ test('首启后端未就绪时调度未知且禁用，管理器错误和日志�
   await mount(async (_path, init) => {
     if (init?.method === 'POST') writes++;
     return Response.json({ ...status({ generation: 0, phase: 'error', scheduler_paused: false,
-      last_error: '新后端启动时退出', logs: [{ seq: 1, at: 1794397920000, stream: 'stderr', text: '初始化令牌长度校验失败' }] }),
+      last_error: '新后端启动时退出', logs: [{ seq: 1, at: 1794397920000, stream: 'stderr', text: '数据目录不可写' }] }),
       backend_ready: false });
   });
   expand();
@@ -51,7 +51,7 @@ test('首启后端未就绪时调度未知且禁用，管理器错误和日志�
   fireEvent.click(button);
   expect(writes).toBe(0);
   expect(screen.getByText('新后端启动时退出')).toBeTruthy();
-  expect(screen.getByText('初始化令牌长度校验失败')).toBeTruthy();
+  expect(screen.getByText('数据目录不可写')).toBeTruthy();
   expect(screen.getAllByText('后端出错').length).toBeGreaterThan(0);
   expect(screen.queryByText('无法读取开发状态，将自动重试。')).toBeNull();
   expect(screen.queryByText('正在连接开发管理器')).toBeNull();

@@ -8,12 +8,9 @@
 <style>{{style}}</style>
 </head>
 <body>
-<header><div><h1>Kakatta 可行性实验</h1><p>一次搜索，最多三个详情。登录和验证由你自己完成。</p></div><span id="phase" role="status">请先登录</span></header>
+<header><div><h1>Kakatta 可行性实验</h1><p>一次搜索，最多三个详情。登录和验证由你自己完成。</p></div><span id="phase" role="status">正在读取状态</span></header>
 <main>
-<section id="login" aria-label="实验访问令牌">
-    <form id="auth-form"><label for="token">容器日志里的访问令牌</label><div class="form-row"><input id="token" name="token" type="password" autocomplete="off" required><button type="submit">进入实验</button></div></form>
-</section>
-<section id="controls" hidden aria-label="实验操作">
+<section id="controls" aria-label="实验操作">
     <div class="actions"><button id="session">打开登录画面</button><button id="run" class="primary" disabled>跑一次流程</button><button id="verify" hidden>打开验证画面</button><button id="confirm" hidden>验证已完成</button><button id="close" disabled>结束并关闭浏览器</button></div>
     <p id="hint">登录与搜索分开进行。先打开画面，自己点击登录并扫码。不要用主力账号。</p>
     <p id="reason" hidden></p><p id="next-allowed" hidden></p>

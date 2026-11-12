@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -14,23 +16,18 @@ import (
 )
 
 const (
-	setupLifetime     = 30 * time.Minute
 	challengeLifetime = 5 * time.Minute
 	sessionIdle       = 30 * 24 * time.Hour
 	sessionAbsolute   = 90 * 24 * time.Hour
 )
 
 type Service struct {
-	db             *sql.DB
-	cipher         *security.Cipher
-	now            func() time.Time
-	dataDir        string
-	mu             sync.Mutex
-	initialHash    [32]byte
-	initialExpires int64
-	initialSet     bool
-	challenges     map[[32]byte]challenge
-	setups         map[[32]byte]pendingSetup
+	db         *sql.DB
+	cipher     *security.Cipher
+	now        func() time.Time
+	mu         sync.Mutex
+	challenges map[[32]byte]challenge
+	setups     map[[32]byte]pendingSetup
 }
 
 func (*Service) String() string   { return "认证服务" }
@@ -74,42 +71,34 @@ func (a adminRecord) version() [32]byte {
 	return out
 }
 
-func New(ctx context.Context, deps Dependencies) (*Service, Bootstrap, error) {
+func New(ctx context.Context, deps Dependencies) (*Service, error) {
 	if deps.DB == nil {
-		return nil, Bootstrap{}, ErrInvalidInput
+		return nil, ErrInvalidInput
 	}
 	if deps.Now == nil {
 		deps.Now = time.Now
 	}
 	s := &Service{
-		db: deps.DB, cipher: deps.Cipher, now: deps.Now, dataDir: deps.DataDir,
+		db: deps.DB, cipher: deps.Cipher, now: deps.Now,
 		challenges: make(map[[32]byte]challenge), setups: make(map[[32]byte]pendingSetup),
 	}
 	generation, _ := security.NewToken()
 	if _, err := s.db.ExecContext(ctx, "INSERT INTO meta (key, value) VALUES ('auth.generation', ?) ON CONFLICT (key) DO NOTHING", generation); err != nil {
-		return nil, Bootstrap{}, stored(err)
+		return nil, stored(err)
 	}
 	if _, err := readGeneration(ctx, s.db); err != nil {
-		return nil, Bootstrap{}, stored(err)
+		return nil, stored(err)
 	}
-	_, err := s.admin(ctx)
-	if err == nil {
-		if err := s.removeInitialTokenFile(); err != nil {
-			return nil, Bootstrap{}, err
+	if _, err := s.admin(ctx); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, stored(err)
+	}
+	if deps.DataDir != "" {
+		// 旧文件已不再使用，只删除文件本身，不读取内容。
+		if err := os.Remove(filepath.Join(deps.DataDir, "初始化令牌.txt")); err != nil && !os.IsNotExist(err) {
+			return nil, stored(err)
 		}
-		return s, Bootstrap{}, nil
 	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return nil, Bootstrap{}, stored(err)
-	}
-	token, hash := security.NewToken()
-	s.initialHash, s.initialSet = hash, true
-	s.initialExpires = s.now().Add(setupLifetime).UnixMilli()
-	expires := s.initialExpires
-	if err := s.writeInitialTokenFile(token); err != nil {
-		return nil, Bootstrap{}, err
-	}
-	return s, Bootstrap{Token: token, ExpiresAt: &expires}, nil
+	return s, nil
 }
 
 func (s *Service) Setup(ctx context.Context) (SetupStatus, error) {
@@ -120,25 +109,18 @@ func (s *Service) Setup(ctx context.Context) (SetupStatus, error) {
 	if !errors.Is(err, sql.ErrNoRows) {
 		return SetupStatus{}, stored(err)
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if !s.initialSet {
-		return SetupStatus{}, nil
-	}
-	expires := s.initialExpires
-	return SetupStatus{TokenExpiresAt: &expires}, nil
+	return SetupStatus{}, nil
 }
 
-func (s *Service) Initialize(ctx context.Context, token, username, password, userAgent string) (Session, error) {
+func (s *Service) Initialize(ctx context.Context, username, password, userAgent string) (Session, error) {
 	username = strings.TrimSpace(username)
 	if username == "" || password == "" {
 		return Session{}, ErrInvalidInput
 	}
-	s.mu.Lock()
-	err := s.checkInitial(token)
-	s.mu.Unlock()
-	if err != nil {
-		return Session{}, err
+	if _, err := s.admin(ctx); err == nil {
+		return Session{}, ErrAlreadyInitialized
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return Session{}, stored(err)
 	}
 	phc, err := security.HashPassword(ctx, password)
 	if err != nil {
@@ -146,9 +128,6 @@ func (s *Service) Initialize(ctx context.Context, token, username, password, use
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err := s.checkInitial(token); err != nil {
-		return Session{}, err
-	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return Session{}, stored(err)
@@ -172,23 +151,7 @@ func (s *Service) Initialize(ctx context.Context, token, username, password, use
 	if err := tx.Commit(); err != nil {
 		return Session{}, stored(err)
 	}
-	s.initialHash, s.initialSet = [32]byte{}, false
-	// 管理员已建好，旧令牌已作废；删除失败留到重启重试，不能误报初始化失败。
-	_ = s.removeInitialTokenFile()
 	return session, nil
-}
-
-func (s *Service) checkInitial(token string) error {
-	if !s.initialSet {
-		return ErrAlreadyInitialized
-	}
-	if s.now().UnixMilli() >= s.initialExpires {
-		return ErrSetupExpired
-	}
-	if !security.TokenMatches(token, s.initialHash) {
-		return ErrInvalidCredentials
-	}
-	return nil
 }
 
 func (s *Service) PasswordLogin(ctx context.Context, username, password, userAgent string) (LoginResult, error) {

@@ -2,9 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/subtle"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -17,7 +14,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
@@ -37,7 +33,7 @@ func parseOptions(args []string, errOut io.Writer) (options, string, error) {
 	flags := flag.NewFlagSet("experiment", flag.ContinueOnError)
 	flags.SetOutput(errOut)
 	flags.StringVar(&o.Data, "data", "/data", "数据目录")
-	flags.StringVar(&o.Listen, "listen", ":8080", "实验网页监听地址")
+	flags.StringVar(&o.Listen, "listen", "127.0.0.1:8080", "实验网页监听地址")
 	flags.StringVar(&o.Keyword, "keyword", "相机", "只搜索这一个关键词")
 	flags.IntVar(&o.Account, "account", 1, "实验账号编号")
 	flags.IntVar(&o.Details, "details", 3, "单次打开两到三个详情")
@@ -156,17 +152,12 @@ func runCommand(args []string, out, errOut io.Writer) (result error) {
 	if o.Once {
 		return c.run(context.Background())
 	}
-	auth, err := newAccess()
-	if err != nil {
-		return err
-	}
 	listener, err := net.Listen("tcp", o.Listen)
 	if err != nil {
-		return fmt.Errorf("无法监听 %s，端口可能已被占用；请换成 --listen :8180：%w", o.Listen, err)
+		return fmt.Errorf("无法监听 %s，端口可能已被占用；请换成 --listen 127.0.0.1:8180：%w", o.Listen, err)
 	}
 	defer listener.Close()
-	fmt.Fprintln(out, "实验页面初始化令牌（30分钟有效，只显示一次）：", auth.token)
-	handler := experimentHandler(c, auth)
+	handler := experimentHandler(c)
 	server := &http.Server{Addr: o.Listen, Handler: handler, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -186,68 +177,7 @@ func runCommand(args []string, out, errOut io.Writer) (result error) {
 	return nil
 }
 
-type access struct {
-	mu             sync.Mutex
-	token, session string
-	tokenExpires   time.Time
-	sessionExpires time.Time
-	used           bool
-}
-
-func randomToken() (string, error) {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(b), nil
-}
-func newAccess() (*access, error) {
-	token, err := randomToken()
-	if err != nil {
-		return nil, err
-	}
-	session, err := randomToken()
-	if err != nil {
-		return nil, err
-	}
-	return &access{token: token, session: session, tokenExpires: time.Now().Add(30 * time.Minute)}, nil
-}
-func (a *access) authorized(r *http.Request) bool {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	cookie, err := r.Cookie("kakatta_experiment")
-	if err != nil || !a.used || !time.Now().Before(a.sessionExpires) || subtle.ConstantTimeCompare([]byte(cookie.Value), []byte(a.session)) != 1 {
-		return false
-	}
-	a.sessionExpires = time.Now().Add(30 * time.Minute)
-	return true
-}
-
-func (a *access) setCookie(w http.ResponseWriter, r *http.Request) {
-	http.SetCookie(w, &http.Cookie{Name: "kakatta_experiment", Value: a.session, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: r.TLS != nil, MaxAge: 1800})
-}
-func (a *access) login(w http.ResponseWriter, r *http.Request) {
-	controller := http.NewResponseController(w)
-	controller.SetReadDeadline(time.Now().Add(10 * time.Second))
-	defer controller.SetReadDeadline(time.Time{})
-	r.Body = http.MaxBytesReader(w, r.Body, 4096)
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "令牌格式不对", 400)
-		return
-	}
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.used || !time.Now().Before(a.tokenExpires) || subtle.ConstantTimeCompare([]byte(r.PostForm.Get("token")), []byte(a.token)) != 1 {
-		http.Error(w, "令牌不对、已使用或已过期，请重启实验工具", 401)
-		return
-	}
-	a.used = true
-	a.token = ""
-	a.sessionExpires = time.Now().Add(30 * time.Minute)
-	a.setCookie(w, r)
-	w.WriteHeader(http.StatusNoContent)
-}
-func experimentHandler(c *controller, a *access) http.Handler {
+func experimentHandler(c *controller) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -258,29 +188,18 @@ func experimentHandler(c *controller, a *access) http.Handler {
 		}
 		fmt.Fprintln(w, "ok")
 	})
-	mux.HandleFunc("POST /auth", a.login)
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Content-Security-Policy", remote.ControlPagePolicy())
 		w.Write(remote.ControlPage())
 	})
-	protect := func(next http.HandlerFunc) http.HandlerFunc {
-		return func(w http.ResponseWriter, r *http.Request) {
-			if !a.authorized(r) {
-				http.Error(w, "请先填初始化令牌", 401)
-				return
-			}
-			a.setCookie(w, r)
-			next(w, r)
-		}
-	}
-	mux.HandleFunc("GET /status", protect(func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /status", func(w http.ResponseWriter, r *http.Request) {
 		c.checkManual(r.Context())
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(c.snapshot())
-	}))
+	})
 	start := func(mode string) http.HandlerFunc {
-		return protect(func(w http.ResponseWriter, r *http.Request) {
+		return func(w http.ResponseWriter, r *http.Request) {
 			if mode == "verify" {
 				if err := c.verify(r.Context()); err != nil {
 					c.log("操作停止", map[string]any{"步骤": "打开验证画面", "分类": experimentErrorClass(err), "原因": diagnosticReason(err)})
@@ -308,21 +227,21 @@ func experimentHandler(c *controller, a *access) http.Handler {
 				}
 			}()
 			w.WriteHeader(http.StatusAccepted)
-		})
+		}
 	}
 	mux.HandleFunc("POST /session", start("login"))
 	mux.HandleFunc("POST /run", start("run"))
 	mux.HandleFunc("POST /verify", start("verify"))
-	mux.HandleFunc("POST /confirm", protect(func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /confirm", func(w http.ResponseWriter, r *http.Request) {
 		if err := c.confirm(r.Context()); err != nil {
 			c.log("操作停止", map[string]any{"步骤": "确认验证完成", "分类": experimentErrorClass(err), "原因": diagnosticReason(err)})
 			http.Error(w, diagnosticReason(err), 409)
 			return
 		}
 		w.WriteHeader(204)
-	}))
-	mux.HandleFunc("POST /close", protect(func(w http.ResponseWriter, r *http.Request) { c.closeSession(); w.WriteHeader(204) }))
-	mux.HandleFunc("/remote/", protect(func(w http.ResponseWriter, r *http.Request) {
+	})
+	mux.HandleFunc("POST /close", func(w http.ResponseWriter, r *http.Request) { c.closeSession(); w.WriteHeader(204) })
+	mux.HandleFunc("/remote/", func(w http.ResponseWriter, r *http.Request) {
 		c.mu.Lock()
 		res := c.res
 		c.mu.Unlock()
@@ -330,12 +249,12 @@ func experimentHandler(c *controller, a *access) http.Handler {
 			http.Error(w, "还没有打开浏览器", 409)
 			return
 		}
-		view := res.remote.HandlerWithViewer(a.authorized, func(context.Context) error {
+		view := res.remote.HandlerWithViewer(func(*http.Request) bool { return true }, func(context.Context) error {
 			c.viewing(res)
 			return nil
 		})
 		http.StripPrefix("/remote", view).ServeHTTP(w, r)
-	}))
+	})
 	return new(http.CrossOriginProtection).Handler(noCache(mux))
 }
 func noCache(next http.Handler) http.Handler {

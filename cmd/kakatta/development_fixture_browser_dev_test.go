@@ -236,7 +236,7 @@ func TestDevelopmentFakeSeedOpensOverviewAtRealEntry(t *testing.T) {
 	if _, err := chromedp.Run(observer, chromedp.Navigate(base+"/")); err != nil {
 		t.Fatal(err)
 	}
-	waitWebSmoke(t, observer, events, `() => location.pathname === '/overview' && !!document.querySelector('main h1') && !document.querySelector('main input[name=token]')`)
+	waitWebSmoke(t, observer, events, `() => location.pathname === '/overview' && !!document.querySelector('main h1') && !document.querySelector('main input[name=password]')`)
 	events.mu.Lock()
 	observedRequests := !events.lastActivity.IsZero()
 	events.mu.Unlock()

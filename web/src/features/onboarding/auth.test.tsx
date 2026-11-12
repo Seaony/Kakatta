@@ -1,8 +1,8 @@
-import { expect, test } from 'bun:test';
+import { expect, spyOn, test } from 'bun:test';
 import type { ReactNode } from 'react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { createMemoryHistory, createRootRoute, createRouter, RouterProvider } from '@tanstack/react-router';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createApiClient } from '../../api/client';
 import type { ApiFetch } from '../../api/client';
@@ -10,6 +10,7 @@ import { ApiProvider } from '../../api/hooks';
 import { apiKey } from '../../api/keys';
 import type { Schema } from '../../api/types';
 import { createAppQueryClient } from '../../app/query-client';
+import { AuthenticationContext } from '../../app/auth-state';
 import { createI18n, I18nProvider, type Locale } from '../../i18n';
 import { LoginForm } from './login';
 import { SetupPage } from './setup';
@@ -34,11 +35,113 @@ async function mount(node: ReactNode, transport: ApiFetch, locale: Locale = 'zh-
   return { queryClient, view, close() { view.unmount(); queryClient.clear(); } };
 }
 
-test.each(['zh-CN', 'en', 'ja'] as const)('%s 初始化页明确说明令牌文件位置与容器日志命令', async (locale) => {
-  const page = await mount(<SetupPage />, async () => Response.json({ initialized: false, token_expires_at: Date.now() + 1_800_000 }), locale);
+test.each(['zh-CN', 'en', 'ja'] as const)('%s 新实例只设置用户名和密码，随后可用同一账号正常登录', async (locale) => {
+  const bodies: unknown[] = [], users: Schema<'Me'>[] = [];
+  const i18n = createI18n(locale);
+  const transport: ApiFetch = async (request) => {
+    if (request.method === 'GET') return Response.json({ initialized: false });
+    bodies.push(await request.json());
+    return Response.json(new URL(request.url).pathname.endsWith('/login') ? { status: 'authenticated', user: identity } : identity);
+  };
+  const page = await mount(<SetupPage onAuthenticated={(user) => users.push(user)} />, transport, locale);
   try {
-    const help = await screen.findByText(/data\/初始化令牌.txt/);
-    expect(help.textContent).toContain('docker compose logs kakatta');
+    const username = await screen.findByLabelText(i18n.t('web.auth.username'));
+    const password = screen.getByLabelText(i18n.t('web.auth.password'));
+    expect([...username.closest('form')!.querySelectorAll('input')].map(input => input.name)).toEqual(['username', 'password']);
+    await userEvent.type(username, 'local-admin'); await userEvent.type(password, '  unchanged password  ');
+    await userEvent.click(screen.getByRole('button', { name: i18n.t('web.setup.submit') }));
+    await waitFor(() => expect(users).toEqual([identity]));
+    expect(bodies).toEqual([{ username: 'local-admin', password: '  unchanged password  ' }]);
+    expect(page.queryClient.getQueryData<Schema<'SetupStatus'>>(apiKey('setup'))).toEqual({ initialized: true });
+    expect(page.queryClient.getMutationCache().getAll()).toHaveLength(0);
+  } finally { page.close(); }
+  const login = await mount(<LoginForm onAuthenticated={(user) => users.push(user)} />, transport, locale);
+  try {
+    await userEvent.type(screen.getByLabelText(i18n.t('web.auth.username')), 'local-admin');
+    await userEvent.type(screen.getByLabelText(i18n.t('web.auth.password')), '  unchanged password  ');
+    await userEvent.click(screen.getByRole('button', { name: i18n.t('web.auth.sign_in') }));
+    await waitFor(() => expect(users).toEqual([identity, identity]));
+    expect(bodies).toEqual(Array(2).fill({ username: 'local-admin', password: '  unchanged password  ' }));
+  } finally { login.close(); }
+});
+
+function backupPreview(): Schema<'BackupRestorePreview'> {
+  return {
+    ticket: 'local-first-restore-ticket', expires_at: Date.now() + 60_000,
+    manifest: {
+      format: 'kakatta.backup', version: 1, app_version: '1.2.3', schema_version: 4, created_at: '2026-11-11T00:00:00Z',
+      kdf: { name: 'argon2id', salt: 'bG9jYWxmaXh0dXJlMTIzNA==', time: 3, memory_kib: 65536, threads: 1 },
+    },
+  };
+}
+
+test.each(['zh-CN', 'en', 'ja'] as const)('%s 新实例可匿名验证备份，保留覆盖确认后转普通登录', async (locale) => {
+  const i18n = createI18n(locale), calls: Request[] = [];
+  const navigate = spyOn(window.location, 'replace').mockImplementation(() => {});
+  const page = await mount(<AuthenticationContext.Provider value={{ authenticated: false, user: undefined, complete() {}, refresh() {} }}>
+    <SetupPage />
+  </AuthenticationContext.Provider>, async (request) => {
+    calls.push(request.clone());
+    const path = new URL(request.url).pathname;
+    if (path === '/api/v1/setup') return Response.json({ initialized: false });
+    if (path === '/api/v1/backup/restore') return Response.json(backupPreview());
+    if (path === '/api/v1/backup/confirm') return Response.json({ restored: true });
+    throw new Error('未声明的本机假请求：' + path);
+  }, locale);
+  try {
+    await userEvent.type(await screen.findByLabelText(i18n.t('web.auth.password')), 'discarded-new-password');
+    await userEvent.click(screen.getByRole('button', { name: i18n.t('web.setup.restore_backup') }));
+    expect(Boolean(screen.queryByRole('heading', { name: i18n.t('admin.backup.export') }))).toBe(false);
+    await userEvent.click(screen.getByRole('button', { name: i18n.t('web.setup.back_to_account') }));
+    expect(screen.getByLabelText<HTMLInputElement>(i18n.t('web.auth.password')).value).toBe('');
+    await userEvent.click(screen.getByRole('button', { name: i18n.t('web.setup.restore_backup') }));
+    page.queryClient.setQueryData(['api', 'findings'], { old: '旧数据' });
+    const file = screen.getByLabelText<HTMLInputElement>(i18n.t('admin.backup.file'));
+    const password = screen.getByLabelText<HTMLInputElement>(i18n.t('admin.backup.restore_password'));
+    await userEvent.upload(file, new File(['local-first-restore-fixture'], 'first-backup.zip', { type: 'application/zip' }));
+    await userEvent.type(password, 'original-backup-password');
+    await userEvent.click(screen.getByRole('button', { name: i18n.t('admin.backup.validate') }));
+    const dialog = await screen.findByRole('dialog', { name: i18n.t('admin.backup.preview_title') });
+    expect(within(dialog).getByText(i18n.t('admin.backup.overwrite'))).toBeTruthy();
+    expect(within(dialog).getByText(i18n.t('admin.backup.confirm_usage'))).toBeTruthy();
+    expect(within(dialog).getByText(i18n.t('admin.backup.step_sign_in'))).toBeTruthy();
+    expect(within(dialog).getAllByText(/\(UTC\)/)).toHaveLength(2);
+    expect(file.files?.length).toBe(0);
+    expect(password.value).toBe('');
+    const upload = calls.find(request => new URL(request.url).pathname === '/api/v1/backup/restore');
+    const body = await upload!.formData();
+    expect([...body.keys()].sort()).toEqual(['file', 'password']);
+    expect(body.get('password')).toBe('original-backup-password');
+    const uploaded = body.get('file') as File;
+    expect(uploaded.name).toBe('first-backup.zip');
+    expect(await uploaded.text()).toBe('local-first-restore-fixture');
+    expect(calls.filter(request => new URL(request.url).pathname === '/api/v1/backup/confirm')).toHaveLength(0);
+    expect(JSON.stringify(page.queryClient.getQueryCache().getAll().map(query => query.state.data))).not.toContain('local-first-restore-ticket');
+    await userEvent.click(within(dialog).getByRole('button', { name: i18n.t('admin.backup.confirm_action') }));
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith('/login'));
+    const confirms = calls.filter(request => new URL(request.url).pathname === '/api/v1/backup/confirm');
+    expect(confirms).toHaveLength(1);
+    expect(await confirms[0]!.json()).toEqual({ ticket: 'local-first-restore-ticket' });
+    expect(page.queryClient.getQueryData(['api', 'findings'])).toBeUndefined();
+    expect(calls.every(request => ['/api/v1/setup', '/api/v1/backup/restore', '/api/v1/backup/confirm'].includes(new URL(request.url).pathname))).toBe(true);
+  } finally { page.close(); navigate.mockRestore(); }
+});
+
+test('匿名恢复时管理员已在别处建立，会重查初始化状态并转登录', async () => {
+  let initialized = false;
+  const page = await mount(<SetupPage />, async (request) => {
+    if (new URL(request.url).pathname === '/api/v1/setup') return Response.json({ initialized });
+    initialized = true;
+    return failure(401, 'auth.unauthenticated');
+  });
+  try {
+    await userEvent.click(await screen.findByRole('button', { name: '从备份恢复' }));
+    await userEvent.upload(screen.getByLabelText('加密备份 ZIP 文件'), new File(['local'], 'first-backup.zip', { type: 'application/zip' }));
+    await userEvent.type(screen.getByLabelText('此备份的解密密码'), 'original-backup-password');
+    await userEvent.click(screen.getByRole('button', { name: '验证备份' }));
+    await screen.findByRole('link', { name: '登录' });
+    expect(Boolean(screen.queryByLabelText('此备份的解密密码'))).toBe(false);
+    expect(Boolean(screen.queryByLabelText('用户名'))).toBe(false);
   } finally { page.close(); }
 });
 
@@ -164,42 +267,19 @@ test('取消不宣称回滚，只读核实会话后可继续，不重发凭据',
   } finally { page.close(); }
 });
 
-test('初始化严格提交三字段，真实响应后直接登录且清除秘密', async () => {
-  const bodies: unknown[] = [];
-  const users: Schema<'Me'>[] = [];
-  const page = await mount(<SetupPage onAuthenticated={(user) => users.push(user)} />, async (request) => {
-    if (request.method === 'GET') return Response.json({ initialized: false, token_expires_at: Date.now() + 1_800_000 });
-    bodies.push(await request.json());
-    return Response.json(identity);
-  });
-  try {
-    await userEvent.type(await screen.findByLabelText('一次性初始化令牌'), 'token-local-52');
-    await userEvent.type(screen.getByLabelText('用户名'), 'local-admin');
-    await userEvent.type(screen.getByLabelText('登录密码'), '  unchanged password  ');
-    await userEvent.click(screen.getByRole('button', { name: '建立管理员并继续' }));
-    await waitFor(() => expect(users).toEqual([identity]));
-    expect(bodies).toEqual([{ token: 'token-local-52', username: 'local-admin', password: '  unchanged password  ' }]);
-    expect(screen.queryByLabelText('一次性初始化令牌')).toBeNull();
-    expect(screen.queryByLabelText('登录密码')).toBeNull();
-    expect(page.queryClient.getQueryData<Schema<'SetupStatus'>>(apiKey('setup'))).toEqual({ initialized: true, token_expires_at: null });
-    expect(JSON.stringify(page.queryClient.getQueryCache().getAll().map((query) => query.state.data))).not.toContain('token-local-52');
-  } finally { page.close(); }
-});
-
 test('初始化状态读取失败不是未初始化，显式重查后才显示表单', async () => {
   let calls = 0;
   const page = await mount(<SetupPage />, async () => {
     calls++;
-    return calls === 1 ? failure(503, 'private.unknown') : Response.json({ initialized: false, token_expires_at: null });
+    return calls === 1 ? failure(503, 'private.unknown') : Response.json({ initialized: false });
   });
   try {
     await screen.findByText('请求未完成，请重试。');
-    expect(screen.queryByLabelText('一次性初始化令牌')).toBeNull();
+    expect(screen.queryByLabelText('用户名')).toBeNull();
     expect(calls).toBe(1);
     await userEvent.click(screen.getByRole('button', { name: '重试' }));
-    await screen.findByLabelText('一次性初始化令牌');
+    await screen.findByLabelText('用户名');
     expect(calls).toBe(2);
-    expect(screen.getByText('暂时无法取得令牌到期时间，提交时会由服务端检查。')).toBeTruthy();
   } finally { page.close(); }
 });
 
@@ -209,34 +289,19 @@ test('并发初始化冲突可重新检查并转普通登录，不覆盖已有�
   const page = await mount(<SetupPage />, async (request) => {
     const path = new URL(request.url).pathname;
     if (path === '/api/v1/me') return failure(401, 'auth.unauthenticated');
-    if (request.method === 'GET') return Response.json({ initialized, token_expires_at: initialized ? null : Date.now() + 1_800_000 });
+    if (request.method === 'GET') return Response.json({ initialized });
     initialized = true; writes++;
     return failure(409, 'auth.already_initialized');
   });
   try {
-    await userEvent.type(await screen.findByLabelText('一次性初始化令牌'), 'token-local-52');
-    await userEvent.type(screen.getByLabelText('用户名'), 'local-admin');
+    await userEvent.type(await screen.findByLabelText('用户名'), 'local-admin');
     await userEvent.type(screen.getByLabelText('登录密码'), 'password-local-86');
     await userEvent.click(screen.getByRole('button', { name: '建立管理员并继续' }));
     await screen.findByText('已经完成初始化');
     await userEvent.click(screen.getByRole('button', { name: '重新检查状态' }));
     await screen.findByRole('link', { name: '登录' });
-    expect(screen.queryByLabelText('一次性初始化令牌')).toBeNull();
+    expect(screen.queryByLabelText('用户名')).toBeNull();
     expect(writes).toBe(1);
-  } finally { page.close(); }
-});
-
-test('过期初始化令牌禁用提交，只提供重新检查而不自动获取新令牌', async () => {
-  let requests = 0;
-  const page = await mount(<SetupPage />, async () => {
-    requests++;
-    return Response.json({ initialized: false, token_expires_at: Date.now() - 50_000 });
-  });
-  try {
-    await screen.findByText('初始化令牌已过期，请重启容器后重试');
-    expect(screen.getByRole('button', { name: '建立管理员并继续' }).hasAttribute('disabled')).toBe(true);
-    expect(screen.getByLabelText('一次性初始化令牌').hasAttribute('disabled')).toBe(true);
-    expect(requests).toBe(1);
   } finally { page.close(); }
 });
 

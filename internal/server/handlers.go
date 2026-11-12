@@ -51,17 +51,16 @@ func (s *Server) setup(w http.ResponseWriter, r *http.Request) {
 	}
 	defer attempt.finish(r.Context(), attemptNeutral)
 	var body struct {
-		Token    string `json:"token"`
 		Username string `json:"username"`
 		Password string `json:"password"`
 	}
 	err := decodeJSON(w, r, &body)
 	if err == nil {
-		err = required(map[string]string{"token": body.Token, "username": body.Username, "password": body.Password})
+		err = required(map[string]string{"username": body.Username, "password": body.Password})
 	}
 	var session auth.Session
 	if err == nil {
-		session, err = s.auth.Initialize(r.Context(), body.Token, body.Username, body.Password, r.UserAgent())
+		session, err = s.auth.Initialize(r.Context(), body.Username, body.Password, r.UserAgent())
 	}
 	if !s.finishAttempt(w, r, attempt, err, true) {
 		return

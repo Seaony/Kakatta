@@ -55,7 +55,7 @@ func maintenance(ctx context.Context, command string, args []string, input io.Re
 		return err
 	}
 	defer db.Close()
-	service, _, err := auth.New(ctx, auth.Dependencies{DB: db.DB()})
+	service, err := auth.New(ctx, auth.Dependencies{DB: db.DB()})
 	if err != nil {
 		return err
 	}

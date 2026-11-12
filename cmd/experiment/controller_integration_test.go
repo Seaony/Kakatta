@@ -246,11 +246,9 @@ func TestControllerManualDenialClosesBrowserAndBlocksReentry(t *testing.T) {
 			c.journal.now = func() time.Time { return stoppedAt }
 			c.journal.mu.Unlock()
 			if mode == "status" {
-				a := &access{used: true, session: "local-test", sessionExpires: time.Now().Add(time.Minute)}
 				req := httptest.NewRequest("GET", "http://local/status", nil)
-				req.AddCookie(&http.Cookie{Name: "kakatta_experiment", Value: a.session})
 				response := httptest.NewRecorder()
-				experimentHandler(c, a).ServeHTTP(response, req)
+				experimentHandler(c).ServeHTTP(response, req)
 				var state status
 				if err := json.Unmarshal(response.Body.Bytes(), &state); err != nil || response.Code != http.StatusOK || state.Phase != "failed" || !strings.Contains(state.Error, web.ErrDenied.Error()) {
 					t.Fatalf("状态查询没有发现人工阶段的直接拒绝：%d %s，%v", response.Code, response.Body, err)

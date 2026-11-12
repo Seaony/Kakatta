@@ -20,7 +20,7 @@ test.each([false, true])('正式完整路由首次初始化 / StrictMode=%s', as
     requests.push(`${request.method} ${path}`);
     if (path === '/api/v1/setup') {
       if (request.method === 'POST') { initialized = true; return Response.json(identity); }
-      return Response.json({ initialized, token_expires_at: initialized ? null : Date.now() + 1_800_000 });
+      return Response.json({ initialized });
     }
     if (path === '/api/v1/me') return Response.json(identity);
     if (path === '/api/v1/settings') return Response.json({ values: { 'general.language': 'zh-CN',
@@ -42,7 +42,6 @@ test.each([false, true])('正式完整路由首次初始化 / StrictMode=%s', as
   try {
     const user = userEvent.setup();
     await screen.findByRole('button', { name: '建立管理员并继续' });
-    await user.type(screen.getByLabelText('一次性初始化令牌', { selector: 'input' }), 'temporary-local-token');
     await user.type(screen.getByRole('textbox', { name: '用户名' }), identity.username);
     await user.type(screen.getByLabelText('登录密码', { selector: 'input' }), 'LocalReviewPasswordOnly123');
     await user.click(screen.getByRole('button', { name: '建立管理员并继续' }));

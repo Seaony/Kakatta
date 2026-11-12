@@ -83,7 +83,7 @@ func runtimeFixture(t *testing.T, source backup.KeySource) (*runtimeManager, aut
 			t.Error(err)
 		}
 	})
-	session, err := m.graph.authentication.Initialize(t.Context(), m.graph.bootstrap.Token, "本地用户", "local-password", "本地测试")
+	session, err := m.graph.authentication.Initialize(t.Context(), "本地用户", "local-password", "本地测试")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -116,8 +116,8 @@ func TestSeedCommandCreatesOfflineDataAndPreservesInitialization(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	authentication, bootstrap, err := auth.New(t.Context(), auth.Dependencies{DB: db, Cipher: cipher})
-	if err != nil || bootstrap.Token == "" {
+	authentication, err := auth.New(t.Context(), auth.Dependencies{DB: db, Cipher: cipher})
+	if err != nil {
 		t.Fatalf("正常首次初始化流程不可用：%v", err)
 	}
 	status, err := authentication.Setup(t.Context())

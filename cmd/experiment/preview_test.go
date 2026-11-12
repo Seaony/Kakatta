@@ -43,18 +43,14 @@ func TestExperimentPreview(t *testing.T) {
 	}
 	c.holdVerification(r, web.ErrNeedVerify)
 	c.release()
-	a, err := newAccess()
+	l, err := net.Listen("tcp4", "127.0.0.1:8080")
 	if err != nil {
 		t.Fatal(err)
 	}
-	l, err := net.Listen("tcp4", ":8080")
-	if err != nil {
-		t.Fatal(err)
-	}
-	server := &http.Server{Handler: experimentHandler(c, a), ReadHeaderTimeout: 10 * time.Second}
+	server := &http.Server{Handler: experimentHandler(c), ReadHeaderTimeout: 10 * time.Second}
 	defer server.Close()
 	go server.Serve(l)
-	fmt.Printf("临时页面已就绪，令牌：%s\n", a.token)
+	fmt.Println("临时页面已就绪：http://127.0.0.1:8080")
 	stopFile := os.Getenv("KAKATTA_PREVIEW_STOP")
 	deadline := time.NewTimer(7 * time.Minute)
 	defer deadline.Stop()

@@ -63,7 +63,6 @@ type serverFixture struct {
 	auth     *auth.Service
 	settings *testSettingsStore
 	clock    atomic.Int64
-	initial  string
 	session  auth.Session
 }
 
@@ -81,12 +80,10 @@ func newServerFixture(t *testing.T, initialized bool) *serverFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var bootstrap auth.Bootstrap
-	f.auth, bootstrap, err = auth.New(t.Context(), auth.Dependencies{DB: f.store.DB(), Cipher: cipher, Now: now})
+	f.auth, err = auth.New(t.Context(), auth.Dependencies{DB: f.store.DB(), Cipher: cipher, Now: now})
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.initial = bootstrap.Token
 	base, err := appsettings.New(t.Context(), f.store.DB(), settings.Environment{}, now)
 	if err != nil {
 		t.Fatal(err)
@@ -107,7 +104,7 @@ func newServerFixture(t *testing.T, initialized bool) *serverFixture {
 	}
 	t.Cleanup(func() { f.server.Close(); f.store.Close() })
 	if initialized {
-		f.session, err = f.auth.Initialize(t.Context(), f.initial, "本地用户", testPassword, "本地测试浏览器")
+		f.session, err = f.auth.Initialize(t.Context(), "本地用户", testPassword, "本地测试浏览器")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -195,7 +192,7 @@ func TestSetupLoginAndSlidingCookie(t *testing.T) {
 	if decodeBody[auth.SetupStatus](t, status).Initialized {
 		t.Fatal("新数据目录不能已经初始化")
 	}
-	body, _ := json.Marshal(map[string]string{"token": f.initial, "username": "本地用户", "password": testPassword})
+	body, _ := json.Marshal(map[string]string{"username": "本地用户", "password": testPassword})
 	setup := f.request(http.MethodPost, "/api/v1/setup", string(body), false)
 	requireStatus(t, setup, http.StatusOK)
 	cookie := activeCookie(t, setup)
@@ -212,8 +209,8 @@ func TestSetupLoginAndSlidingCookie(t *testing.T) {
 		t.Fatal("初始化身份不完整")
 	}
 	status = f.request(http.MethodGet, "/api/v1/setup", "", false)
-	if value := decodeBody[auth.SetupStatus](t, status); !value.Initialized || value.TokenExpiresAt != nil {
-		t.Fatal("初始化成功后必须清掉初始化令牌有效期")
+	if value := decodeBody[auth.SetupStatus](t, status); !value.Initialized {
+		t.Fatal("初始化成功后应返回已有管理员")
 	}
 	requireStatus(t, f.request(http.MethodPost, "/api/v1/setup", string(body), false), http.StatusConflict)
 	f.advance(time.Second)

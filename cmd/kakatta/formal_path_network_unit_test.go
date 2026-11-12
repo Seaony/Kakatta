@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -250,29 +248,5 @@ func TestFormalAuditRestorationRequiresExistingSession(t *testing.T) {
 				}
 			})
 		}
-	}
-}
-
-func TestFormalInitialTokenRequiresPrivateRegularFile(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "初始化令牌.txt")
-	token := strings.Repeat("x", 43)
-	if err := os.WriteFile(path, []byte(token+"\n"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if got, err := formalInitialToken(path); err != nil || got != token {
-		t.Fatal("合法令牌文件未通过", err)
-	}
-	if err := os.Chmod(path, 0644); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := formalInitialToken(path); err == nil {
-		t.Fatal("公开权限的令牌文件未拒绝")
-	}
-	link := filepath.Join(t.TempDir(), "初始化令牌.txt")
-	if err := os.Symlink(path, link); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := formalInitialToken(link); err == nil {
-		t.Fatal("令牌文件符号链接未拒绝")
 	}
 }

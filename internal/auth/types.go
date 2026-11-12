@@ -19,7 +19,6 @@ const (
 var (
 	ErrInvalidCredentials = errors.New("auth.invalid_credentials")
 	ErrUnauthenticated    = errors.New("auth.unauthenticated")
-	ErrSetupExpired       = errors.New("auth.setup_expired")
 	ErrAlreadyInitialized = errors.New("auth.already_initialized")
 	ErrChallengeExpired   = errors.New("auth.challenge_expired")
 	ErrInvalidInput       = errors.New("auth.invalid_input")
@@ -36,14 +35,8 @@ type Dependencies struct {
 	DataDir string
 }
 
-type Bootstrap struct {
-	Token     string `json:"-"`
-	ExpiresAt *int64 `json:"-"`
-}
-
 type SetupStatus struct {
-	Initialized    bool   `json:"initialized"`
-	TokenExpiresAt *int64 `json:"token_expires_at"`
+	Initialized bool `json:"initialized"`
 }
 
 type Identity struct {
@@ -98,12 +91,10 @@ func (e *storageError) Unwrap() error        { return e.cause }
 func (e *storageError) Is(target error) bool { return target == ErrStorage }
 func (e *storageError) GoString() string     { return e.Error() }
 
-func (Bootstrap) String() string       { return "初始化凭据" }
 func (Session) String() string         { return "登录会话" }
 func (LoginResult) String() string     { return "登录结果" }
 func (IssuedToken) String() string     { return "新令牌" }
 func (TOTPSetup) String() string       { return "两步验证绑定凭据" }
-func (b Bootstrap) GoString() string   { return b.String() }
 func (s Session) GoString() string     { return s.String() }
 func (r LoginResult) GoString() string { return r.String() }
 func (t IssuedToken) GoString() string { return t.String() }

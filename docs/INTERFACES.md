@@ -48,7 +48,7 @@ func VerifyTOTP(secret, code string, now time.Time, lastAcceptedStep int64) (ste
 - 主密钥为 32 字节。默认文件及指定文件保存原始字节，环境变量使用标准 Base64。显式来源错误不回退；已有数据库但默认密钥缺失时拒绝自动补造。
 - AES-GCM 自带随机 nonce，保持 `12 字节 nonce + 密文与 tag` 格式。AAD 严格为 `表:列:不可变键`，字段非空且不含冒号。错误不回显输入。
 - TOTP 为 SHA1、6 位、30 秒、前后一步。匹配步必须大于已使用步，存储层在创建会话的同一事务中条件更新 `admin.totp_last_step`；失败不发 Cookie。
-- 初始化与第二步挑战只在内存，分别 30 分钟和 5 分钟；网页登录按 30 天闲置和 90 天绝对期限处理，API 令牌直到吊销。各用途分别生成随机值，不复用令牌。
+- 登录第二步挑战只在内存，5 分钟有效；网页登录按 30 天闲置和 90 天绝对期限处理，API 令牌直到吊销。各用途分别生成随机值，不复用令牌。
 
 ## 设置
 
@@ -121,11 +121,11 @@ func config.AcquireServerLock(dataDir string) (io.Closer, error)
 }
 ```
 
-`fields` 的元素为 `{"key":"...","reason":{"code":"...","args":{}}}`。成功响应直接返回描述里的对象，不另包一层 `data`。Cookie 会话和 Bearer 令牌共用同一鉴权；登录、初始化和验证码协议端点按各自凭据校验，其他业务、文档、SSE、WebSocket 和远程资产均鉴权。浏览器写操作统一经过 `http.CrossOriginProtection`，不另造 CSRF 令牌协议。
+`fields` 的元素为 `{"key":"...","reason":{"code":"...","args":{}}}`。成功响应直接返回描述里的对象，不另包一层 `data`。Cookie 会话和 Bearer 令牌共用同一鉴权；登录和验证码协议端点按各自凭据校验；首次建立管理员仅在未初始化时开放，备份恢复和确认仅在未初始化时可匿名访问，其余业务、文档、SSE、WebSocket 和远程资产均鉴权。浏览器写操作统一经过 `http.CrossOriginProtection`，不另造 CSRF 令牌协议。
 
 M2 的边界如下，字段由同一描述约束：
 
-- `/api/v1/setup`：读取初始化状态、以一次性令牌建立管理员；不公开用户名或已存配置。
+- `/api/v1/setup`：GET 只返回 `initialized`；未初始化时 POST 接收 `username`、`password`，直接建立管理员和网页会话，已有管理员时拒绝重复创建。不公开用户名或已存配置。
 - `/api/v1/auth/login`、`/api/v1/auth/totp`、`/api/v1/auth/logout`：密码、第二步挑战、退出；`/api/v1/me` 返回当前身份和界面语言、外观。
 - `/api/v1/settings`、`/api/v1/settings/definitions`：设置快照、原子保存和元数据。
 - `/api/v1/security/tokens`、`/api/v1/security/tokens/{id}`：设备和令牌列表、新建令牌、吊销；已存令牌只给元数据，新建成功才返回一次明文。

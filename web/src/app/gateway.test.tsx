@@ -45,7 +45,7 @@ async function mountGateway(fetch: ApiFetch, backup = false) {
 test('登录后的日语偏好接入网页和文档语言，不被旧中文身份覆盖', async () => {
   const gateway = await mountGateway(async (request) => {
     const path = new URL(request.url).pathname;
-    if (path === '/api/v1/setup') return Response.json({ initialized: true, token_expires_at: null });
+    if (path === '/api/v1/setup') return Response.json({ initialized: true });
     if (path === '/api/v1/me') return Response.json(user);
     if (path === '/api/v1/settings') return Response.json({ values: { 'general.language': 'ja' }, sources: {}, warnings: [] });
     throw new Error(`测试未声明路径：${path}`);
@@ -68,7 +68,7 @@ test.each([
   dataset.kakattaPublicHttp = marker;
   const gateway = await mountGateway(async (request) => {
     const path = new URL(request.url).pathname;
-    if (path === '/api/v1/setup') return Response.json({ initialized, token_expires_at: null });
+    if (path === '/api/v1/setup') return Response.json({ initialized });
     if (path === '/api/v1/settings') return Response.json({ values: {}, sources: {}, warnings: [] });
     if (path === '/api/v1/me' && authenticated) return Response.json(user);
     if (path === '/api/v1/me' || path === '/api/v1/tasks') return Response.json({ error: { code: 'auth.unauthenticated', args: {} }, fields: [], request_id: 'login' }, { status: 401 });
@@ -100,7 +100,7 @@ test('登录失效保留原页非敏感草稿，明确重新登录后恢复同�
   let expired = false, logins = 0;
   const gateway = await mountGateway(async (request) => {
     const path = new URL(request.url).pathname;
-    if (path === '/api/v1/setup') return Response.json({ initialized: true, token_expires_at: null });
+    if (path === '/api/v1/setup') return Response.json({ initialized: true });
     if (path === '/api/v1/settings') return Response.json({ values: { 'general.timezone': 'Asia/Tokyo' }, sources: {}, warnings: [] });
     if (path === '/api/v1/auth/login') { logins++; expired = false; return Response.json({ status: 'authenticated', user }); }
     if (path === '/api/v1/tasks' || path === '/api/v1/me' && expired) return Response.json({ error: { code: 'auth.unauthenticated', args: {} }, fields: [], request_id: 'expired' }, { status: 401 });
@@ -132,7 +132,7 @@ test('已有身份刷新失败保留草稿与旧内容，不伪造成退出登�
   let unavailable = false;
   const gateway = await mountGateway(async (request) => {
     const path = new URL(request.url).pathname;
-    if (path === '/api/v1/setup') return Response.json({ initialized: true, token_expires_at: null });
+    if (path === '/api/v1/setup') return Response.json({ initialized: true });
     if (path === '/api/v1/settings') return Response.json({ values: {}, sources: {}, warnings: [] });
     if (path === '/api/v1/me') return unavailable ? Response.json({ error: { code: 'http.unavailable', args: {} }, fields: [], request_id: 'offline' }, { status: 503 }) : Response.json(user);
     throw new Error(`测试未声明路径：${path}`);
@@ -153,7 +153,7 @@ test.each([false, true])('退出先确认未保存内容，选择继续退出为
   let logouts = 0, signedOut = false;
   const gateway = await mountGateway(async (request) => {
     const path = new URL(request.url).pathname;
-    if (path === '/api/v1/setup') return Response.json({ initialized: true, token_expires_at: null });
+    if (path === '/api/v1/setup') return Response.json({ initialized: true });
     if (path === '/api/v1/settings') return Response.json({ values: {}, sources: {}, warnings: [] });
     if (path === '/api/v1/me') return signedOut ? Response.json({ error: { code: 'auth.unauthenticated', args: {} }, fields: [], request_id: 'signed-out' }, { status: 401 }) : Response.json(user);
     if (path === '/api/v1/auth/logout') { logouts++; signedOut = true; return new Response(null, { status: 204 }); }

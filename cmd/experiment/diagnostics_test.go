@@ -153,7 +153,7 @@ func TestExperimentDiagnosticWriteFailureStopsBeforeAnotherVisit(t *testing.T) {
 		t.Fatalf("日志坏了仍申请闲鱼访问：%d %v", calls, err)
 	}
 	response := httptest.NewRecorder()
-	experimentHandler(c, &access{}).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "http://local/healthz", nil))
+	experimentHandler(c).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "http://local/healthz", nil))
 	if response.Code != http.StatusServiceUnavailable || !strings.Contains(stderr.String(), "已停止访问") {
 		t.Fatalf("没有明显报告失败：%d %s", response.Code, stderr.String())
 	}
@@ -220,7 +220,7 @@ func TestExperimentStartupLogDoesNotBlockFirstSuccessfulInitialization(t *testin
 	}
 }
 
-func TestExperimentOccupiedPortIsReportedAndPersistedBeforeToken(t *testing.T) {
+func TestExperimentOccupiedPortIsReportedAndPersisted(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -229,8 +229,8 @@ func TestExperimentOccupiedPortIsReportedAndPersistedBeforeToken(t *testing.T) {
 	data := t.TempDir()
 	var output bytes.Buffer
 	err = runCommand([]string{"--data", data, "--fixture", "--listen", listener.Addr().String()}, &output, io.Discard)
-	if err == nil || !strings.Contains(err.Error(), "--listen :8180") || strings.Contains(output.String(), "初始化令牌") {
-		t.Fatalf("端口占用提示不明确或输出不可用令牌：%v %s", err, output.String())
+	if err == nil || !strings.Contains(err.Error(), "--listen 127.0.0.1:8180") {
+		t.Fatalf("端口占用提示不明确：%v %s", err, output.String())
 	}
 	files, _ := filepath.Glob(filepath.Join(data, "experiment-fixture", "1", "logs", "events-*.jsonl"))
 	content, _ := os.ReadFile(files[0])

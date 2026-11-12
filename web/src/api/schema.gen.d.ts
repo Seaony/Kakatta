@@ -35,8 +35,8 @@ export interface paths {
         get: operations["getSetupStatus"];
         put?: never;
         /**
-         * 以一次性令牌建立管理员
-         * @description 验证初始化令牌后原子建立管理员。令牌只在内存保留三十分钟，成功后不能再使用。
+         * 首次建立管理员
+         * @description 未初始化时直接设置用户名和密码，原子建立管理员并登录；已有管理员时拒绝重复初始化。
          */
         post: operations["setupAdmin"];
         delete?: never;
@@ -1864,7 +1864,7 @@ export interface paths {
         put?: never;
         /**
          * 上传并完整验证恢复候选
-         * @description 仅接收 file/password。先完整校验、解密并验证候选，成功只返回安全预览和单次票据；本步骤不覆盖当前数据。文件按流式准备。
+         * @description 未初始化时可直接从备份恢复；已有管理员时必须登录。仅接收 file/password。先完整校验、解密并验证候选，成功只返回安全预览和单次票据；本步骤不覆盖当前数据。文件按流式准备。
          */
         post: operations["prepareBackupRestore"];
         delete?: never;
@@ -1884,7 +1884,7 @@ export interface paths {
         put?: never;
         /**
          * 确认覆盖为已验证备份
-         * @description 票据绑定原身份及当前运行代，确认前重新校验认证并单次消费。停止和排空旧资源后切换；成功 restored=true，所有旧会话与令牌失效，账号需重新扫码，使用备份中的密码重新登录。
+         * @description 未初始化时可直接从备份恢复；已有管理员时必须登录。票据绑定原身份及当前运行代，确认前重新校验认证并单次消费。停止和排空旧资源后切换；成功 restored=true，所有旧会话与令牌失效，账号需重新扫码，使用备份中的密码重新登录。
          */
         post: operations["confirmBackupRestore"];
         delete?: never;
@@ -1968,15 +1968,8 @@ export interface components {
         };
         SetupStatus: {
             initialized: boolean;
-            /**
-             * Format: int64
-             * @description UTC Unix 毫秒；尚无记录时为 null。
-             */
-            token_expires_at: number | null;
         };
         SetupRequest: {
-            /** @description 容器日志中的一次性初始化令牌。 */
-            token: string;
             username: string;
             /** @description 管理员密码。 */
             password: string;
@@ -4809,7 +4802,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description 只返回是否初始化及令牌到期时间；不返回令牌、用户名或设置。 */
+            /** @description 只返回是否已有管理员。 */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -4848,7 +4841,6 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
-            401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             409: components["responses"]["Conflict"];
             413: components["responses"]["PayloadTooLarge"];

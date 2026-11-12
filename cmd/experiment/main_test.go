@@ -5,10 +5,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestCommandRejectsUnattendedRealBrowsing(t *testing.T) {
@@ -21,71 +19,71 @@ func TestCommandRejectsUnattendedRealBrowsing(t *testing.T) {
 		t.Fatal(err)
 	}
 }
-func TestExperimentAuthenticationCoversControlAndRemote(t *testing.T) {
+
+func TestExperimentControlOpensWithoutCredentialExchange(t *testing.T) {
 	c, err := newController(options{Data: t.TempDir(), Account: 1, Details: 2, Keyword: "相机", Fixture: true}, testSettings())
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	a, err := newAccess()
+	h := experimentHandler(c)
+	status := httptest.NewRecorder()
+	h.ServeHTTP(status, httptest.NewRequest(http.MethodGet, "http://local/status", nil))
+	if status.Code != http.StatusOK || !bytes.Contains(status.Body.Bytes(), []byte("idle")) || len(status.Result().Cookies()) != 0 {
+		t.Fatalf("直接打开应能读到状态且不换取网页会话：%d", status.Code)
+	}
+	page := httptest.NewRecorder()
+	h.ServeHTTP(page, httptest.NewRequest(http.MethodGet, "http://local/", nil))
+	if page.Code != http.StatusOK || strings.Contains(page.Body.String(), "auth-form") || strings.Contains(page.Body.String(), `name="token"`) || !strings.Contains(page.Body.String(), `id="controls" aria-label="实验操作"`) {
+		t.Fatal("实验页应直接显示操作，不再显示凭据输入")
+	}
+	close := httptest.NewRecorder()
+	h.ServeHTTP(close, httptest.NewRequest(http.MethodPost, "http://local/close", nil))
+	if close.Code != http.StatusNoContent || len(close.Result().Cookies()) != 0 {
+		t.Fatalf("没有网页会话也应可操作控制页：%d", close.Code)
+	}
+}
+func TestExperimentDirectControlKeepsCrossOriginWriteProtection(t *testing.T) {
+	c, err := newController(options{Data: t.TempDir(), Account: 1, Details: 2, Keyword: "相机", Fixture: true}, testSettings())
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := experimentHandler(c, a)
-	for _, tc := range []struct{ method, path string }{{"GET", "/status"}, {"POST", "/session"}, {"POST", "/run"}, {"POST", "/verify"}, {"POST", "/confirm"}, {"POST", "/close"}, {"GET", "/remote/"}, {"GET", "/remote/vnc"}, {"GET", "/remote/novnc/core/rfb.js"}} {
+	defer c.Close()
+	h := experimentHandler(c)
+	for _, path := range []string{"/session", "/run", "/verify", "/confirm", "/close"} {
+		r := httptest.NewRequest(http.MethodPost, "http://local"+path, nil)
+		r.Header.Set("Sec-Fetch-Site", "cross-site")
 		w := httptest.NewRecorder()
-		h.ServeHTTP(w, httptest.NewRequest(tc.method, "http://local"+tc.path, nil))
-		if w.Code != 401 {
-			t.Fatalf("未登录的%s %s返回%d", tc.method, tc.path, w.Code)
+		h.ServeHTTP(w, r)
+		if w.Code != http.StatusForbidden {
+			t.Fatalf("跨站写入%s返回%d", path, w.Code)
+		}
+	}
+	for _, path := range []string{"/remote/", "/remote/vnc", "/remote/novnc/core/rfb.js"} {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "http://local"+path, nil))
+		if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "还没有打开浏览器") {
+			t.Fatalf("画面应直接返回浏览器状态：%s返回%d", path, w.Code)
 		}
 	}
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, httptest.NewRequest("GET", "http://local/healthz", nil))
-	if w.Code != 200 {
-		t.Fatal("健康检查不能要求登录")
-	}
-	login := func(token string) *httptest.ResponseRecorder {
-		r := httptest.NewRequest("POST", "http://local/auth", strings.NewReader(url.Values{"token": {token}}.Encode()))
-		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		w := httptest.NewRecorder()
-		h.ServeHTTP(w, r)
-		return w
-	}
-	if got := login("wrong"); got.Code != 401 {
-		t.Fatal("错误初始化令牌通过了")
-	}
-	token := a.token
-	success := login(token)
-	if success.Code != 204 {
-		t.Fatalf("令牌登录失败：%d %s", success.Code, success.Body)
-	}
-	cookies := success.Result().Cookies()
-	if len(cookies) != 1 || !cookies[0].HttpOnly || cookies[0].SameSite != http.SameSiteStrictMode {
-		t.Fatal("实验会话Cookie缺少保护")
-	}
-	if got := login(token); got.Code != 401 {
-		t.Fatal("初始化令牌不能重用")
-	}
-	r := httptest.NewRequest("GET", "http://local/status", nil)
-	r.AddCookie(cookies[0])
-	w = httptest.NewRecorder()
-	h.ServeHTTP(w, r)
-	if w.Code != 200 || !bytes.Contains(w.Body.Bytes(), []byte("idle")) {
-		t.Fatal("登录后读不到状态")
-	}
-	r = httptest.NewRequest("POST", "http://local/close", nil)
-	r.AddCookie(cookies[0])
-	r.Header.Set("Sec-Fetch-Site", "cross-site")
-	w = httptest.NewRecorder()
-	h.ServeHTTP(w, r)
-	if w.Code != 403 {
-		t.Fatal("跨站不能关闭会话")
-	}
-	a.sessionExpires = time.Now().Add(-time.Second)
-	if a.authorized(r) {
-		t.Fatal("过期会话仍然可用")
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "http://local/auth", nil))
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("旧会话兑换入口仍然存在：%d", w.Code)
 	}
 }
+
+func TestExperimentListenDefaultsToLoopbackAndKeepsContainerOverride(t *testing.T) {
+	o, _, err := parseOptions(nil, io.Discard)
+	if err != nil || o.Listen != "127.0.0.1:8080" {
+		t.Fatalf("默认入口应只监听回环地址：%q，%v", o.Listen, err)
+	}
+	o, _, err = parseOptions([]string{"--listen", ":8080"}, io.Discard)
+	if err != nil || o.Listen != ":8080" {
+		t.Fatalf("容器显式监听地址被改变：%q，%v", o.Listen, err)
+	}
+}
+
 func TestSettingsValidation(t *testing.T) {
 	for _, change := range []func(*experimentSettings){func(s *experimentSettings) { s.HomeSeconds.Min = 0 }, func(s *experimentSettings) { s.AccountGapSeconds = -1 }, func(s *experimentSettings) { s.Timezone = "bad/zone" }, func(s *experimentSettings) { s.QuietStart = "1am" }, func(s *experimentSettings) { s.QuietStart = "1:00" }} {
 		s := testSettings()
@@ -93,26 +91,5 @@ func TestSettingsValidation(t *testing.T) {
 		if s.validate() == nil {
 			t.Fatal("无效设置通过了")
 		}
-	}
-}
-
-func TestAuthenticationStartsNewIdleWindow(t *testing.T) {
-	a, err := newAccess()
-	if err != nil {
-		t.Fatal(err)
-	}
-	a.tokenExpires = time.Now().Add(time.Minute)
-	r := httptest.NewRequest("POST", "http://local/auth", strings.NewReader(url.Values{"token": {a.token}}.Encode()))
-	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	w := httptest.NewRecorder()
-	a.login(w, r)
-	if w.Code != 204 || time.Until(a.sessionExpires) < 29*time.Minute {
-		t.Fatal("初始化令牌将要到期时，网页会话也提前到期")
-	}
-	a.sessionExpires = time.Now().Add(time.Minute)
-	r = httptest.NewRequest("GET", "http://local/status", nil)
-	r.AddCookie(w.Result().Cookies()[0])
-	if !a.authorized(r) || time.Until(a.sessionExpires) < 29*time.Minute {
-		t.Fatal("正在使用的人工会话没有续期")
 	}
 }

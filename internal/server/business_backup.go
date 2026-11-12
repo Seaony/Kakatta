@@ -28,20 +28,38 @@ func (s *Server) RegisterBackup(backups *backup.Service) error {
 		return errors.New("备份接口已经注册")
 	}
 	b := &backupHandler{businessHandler: &businessHandler{server: s}, backup: backups}
+	s.RegisterProtected("POST /api/v1/backup/export", http.HandlerFunc(b.exportBackup))
 	for _, route := range []struct {
 		pattern string
 		handler http.HandlerFunc
 	}{
-		{"POST /api/v1/backup/export", b.exportBackup},
 		{"POST /api/v1/backup/restore", b.prepareRestore},
 		{"POST /api/v1/backup/confirm", b.confirmRestore},
 	} {
-		s.RegisterProtected(route.pattern, route.handler)
+		s.mux.Handle(route.pattern, b.firstRunOrAuthenticated(route.handler))
 	}
 	return nil
 }
 
+func (b *backupHandler) firstRunOrAuthenticated(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		status, err := b.server.auth.Setup(r.Context())
+		if err != nil {
+			b.server.writeFailure(w, r, err)
+			return
+		}
+		if status.Initialized {
+			b.server.authenticated(next).ServeHTTP(w, r)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func backupOwner(identity auth.Identity) string {
+	if identity.TokenID == 0 {
+		return "first-run"
+	}
 	return fmt.Sprintf("%s:%d", identity.Kind, identity.TokenID)
 }
 
@@ -151,6 +169,16 @@ func (b *backupHandler) confirmRestore(w http.ResponseWriter, r *http.Request) {
 	}
 	identity := currentIdentity(r)
 	err = b.backup.ConfirmRestore(r.Context(), *input.Ticket, backupOwner(identity), func(ctx context.Context) error {
+		if identity.TokenID == 0 {
+			status, err := b.server.auth.Setup(ctx)
+			if err != nil {
+				return err
+			}
+			if status.Initialized {
+				return auth.ErrUnauthenticated
+			}
+			return nil
+		}
 		return b.server.auth.Validate(ctx, identity)
 	})
 	if err != nil {

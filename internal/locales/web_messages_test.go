@@ -87,8 +87,6 @@ func TestWebMessageArgumentsHaveBothLanguages(t *testing.T) {
 		{Code: "web.settings.range_max", Args: map[string]any{"label": "页间等待", "unit": "秒"}},
 		{Code: "web.settings.range_min", Args: map[string]any{"label": "页间等待", "unit": "秒"}},
 		{Code: "web.settings.unblock_named", Args: map[string]any{"name": "测试卖家"}},
-		{Code: "web.setup.token_remaining", Args: map[string]any{"count": 1}},
-		{Code: "web.setup.token_remaining", Args: map[string]any{"count": 137}},
 		{Code: "accounts.cooling_until", Args: map[string]any{"time": "2026/11/11 10:30:00 (Asia/Shanghai)"}},
 		{Code: "accounts.delete_effect", Args: map[string]any{"name": "家用网络"}},
 		{Code: "accounts.gap", Args: map[string]any{"time": "2026/11/11 10:30:00 (Asia/Shanghai)"}},

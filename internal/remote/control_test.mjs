@@ -20,7 +20,7 @@ class Element {
 }
 
 async function page(state, status = 200, actionResponse = null) {
-    const nodes = new Map();
+    const nodes = new Map(['#remote', '#error', '#log-section'].map(id => { const node = new Element(); node.hidden = true; return [id, node]; }));
     const timers = new Map();
     const requests = [];
     const window = new Element();
@@ -31,7 +31,7 @@ async function page(state, status = 200, actionResponse = null) {
     };
     let timerID = 0;
     vm.runInNewContext(source, {
-        document, window, URLSearchParams, FormData, location: { origin: 'http://tool.test' },
+        document, window, location: { origin: 'http://tool.test' },
         fetch: async (url, options) => { requests.push({ url, options }); return url !== '/status' && actionResponse ? actionResponse : { status, ok: status === 200, json: async () => state }; },
         setTimeout: (callback, delay) => { const id = ++timerID; timers.set(id, { callback, delay }); return id; },
         clearTimeout: id => timers.delete(id),
@@ -79,10 +79,23 @@ test('终态关闭画面并停止轮询，离开页面清掉计时器', async ()
     assert.equal(timers.size, 0);
 });
 
-test('失效会话只保留令牌表单，不继续读取状态或加载画面', async () => {
-    const { nodes, timers } = await page({}, 401);
-    assert.equal(nodes.get('#login').hidden, false);
-    assert.equal(nodes.get('#controls').hidden, true);
+test('直接打开即可操作，不经过会话兑换', async () => {
+    const { nodes, requests } = await page({ phase: 'idle', events: [] });
+    assert.equal(nodes.has('#login'), false);
+    assert.equal(nodes.has('#auth-form'), false);
+    assert.equal(nodes.get('#session').disabled, false);
+    assert.equal(nodes.get('#remote').hidden, true);
+    nodes.get('#session').handlers.click();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(requests.map(request => request.url), ['/status', '/session', '/status']);
+    assert.equal(requests[1].options.method, 'POST');
+});
+
+test('读取失败显示原因，不加载远程画面或继续轮询', async () => {
+    const { nodes, timers } = await page({}, 503);
+    assert.equal(nodes.has('#auth-form'), false);
+    assert.equal(nodes.get('#error').hidden, false);
+    assert.equal(nodes.get('#error').textContent, '读取实验状态失败，请刷新页面重试。');
     assert.equal(nodes.get('#remote').hidden, true);
     assert.equal(nodes.get('#remote').querySelector('iframe').src, 'about:blank');
     assert.equal(timers.size, 0);

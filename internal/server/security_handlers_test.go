@@ -70,7 +70,7 @@ func TestSecurityActionFailuresStillShareLoginProtection(t *testing.T) {
 func TestInitialSetupCompletesLoginAndResolvesFailureEvent(t *testing.T) {
 	f := newServerFixture(t, false)
 	events := observeLoginFailureEvent(t, f)
-	body, _ := json.Marshal(map[string]string{"token": f.initial, "username": "本地用户", "password": testPassword})
+	body, _ := json.Marshal(map[string]string{"username": "本地用户", "password": testPassword})
 	result := f.request(http.MethodPost, "/api/v1/setup", string(body), false)
 	requireStatus(t, result, http.StatusOK)
 	if len(*events) != 2 || !(*events)[0] || (*events)[1] || activeCookie(t, result).Value == "" {

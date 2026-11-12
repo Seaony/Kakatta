@@ -24,9 +24,8 @@ frame.contentWindow.postMessage({ type: 'kakatta:viewport', region: { x, y, widt
 
 ## 单次实验控制页
 
-`ControlPage()` 返回自包含页面，`ControlPagePolicy()` 返回对应固定内容哈希的 CSP。它不依赖登录前不能读取的远程资产。调用方给 `/` 返回页面及这个 CSP，并实现以下同源接口：
+`ControlPage()` 返回自包含页面，`ControlPagePolicy()` 返回对应固定内容哈希的 CSP。打开即可读取状态和操作，不需要先兑换网页会话。调用方给 `/` 返回页面及这个 CSP，并实现以下同源接口：
 
-- `POST /auth`：表单字段 `token`。
 - `POST /session`：打开独立登录流程，由服务端检查成功并关闭浏览器。
 - `POST /run`：另开浏览器跑一次实验流程。
 - `POST /verify`：打开或复用等待人工处理的验证画面。
@@ -34,15 +33,17 @@ frame.contentWindow.postMessage({ type: 'kakatta:viewport', region: { x, y, widt
 - `POST /close`：结束并关闭浏览器。
 - `GET /status`：`{phase,running,events:[{at,event,fields}],error,reason,next_allowed_at,verification_pending,viewport}`。
 
-phase 支持 `idle/opening/ready/running/verification/completed/failed/closed`。`completed/failed/closed` 停止轮询，下一次操作会重新刷新；其余阶段每两秒读取本地状态。`reason`、`next_allowed_at` 直接显示服务端提示，页面不计算冷却时间。登录失效的接口返回 401。
+phase 支持 `idle/opening/ready/running/verification/completed/failed/closed`。`completed/failed/closed` 停止轮询，下一次操作会重新刷新；其余阶段每两秒读取本地状态。`reason`、`next_allowed_at` 直接显示服务端提示，页面不计算冷却时间。
 
 `verification_pending: true` 会在关闭或失败后继续保留“打开验证画面”入口；确认按钮只在当前验证画面打开时显示。操作接口的 409 正文按纯文本显示具体原因。
 
 `viewport` 变化时控制页向当前画面发送一次位置消息；相同位置不会在轮询时反复重置用户平移。重新连接的画面仍会自行读取位置接口。
 
+实验工具默认监听 `127.0.0.1:8080`；容器内显式使用 `--listen :8080`，宿主发布端口仍绑定 `127.0.0.1`。账号间隔、访问额度、风控停手和同源写保护继续生效。
+
 ## 本地验证
 
-`go test -race ./internal/remote` 使用假 VNC 和 httptest。`node --test internal/remote/*_test.mjs` 检查触摸起点、连续移动、第二触点、取消、平移、缩放拦截，以及控制页的登录、验证和终态。
+`go test -race ./internal/remote` 使用假 VNC 和 httptest。`node --test internal/remote/*_test.mjs` 检查触摸起点、连续移动、第二触点、取消、平移、缩放拦截，以及控制页的直接访问、验证和终态。
 
 真实 x11vnc 测试只在明确设置 `KAKATTA_REMOTE_X11_TEST=1` 和 `DISPLAY` 的隔离 Linux 容器里运行；测试不访问任何外部网站。noVNC 的来源、许可和修改说明见 `assets/novnc/UPSTREAM.md`。
 

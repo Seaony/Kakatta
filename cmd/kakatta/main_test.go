@@ -29,18 +29,14 @@ type observedLog struct {
 	mu      sync.Mutex
 	lines   bytes.Buffer
 	address chan string
-	token   string
 }
 
 func (w *observedLog) Write(line []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.lines.Write(line)
-	var entry struct{ Token, Listen string }
+	var entry struct{ Listen string }
 	if json.Unmarshal(line, &entry) == nil {
-		if entry.Token != "" {
-			w.token = entry.Token
-		}
 		if entry.Listen != "" {
 			w.address <- entry.Listen
 		}
@@ -87,13 +83,7 @@ func TestServeStartsWithEmbeddedPageAndShutsDown(t *testing.T) {
 			t.Fatalf("%s：状态%d，响应%s，错误%v", test.path, response.StatusCode, body, err)
 		}
 	}
-	logs.mu.Lock()
-	token := logs.token
-	logs.mu.Unlock()
-	if token == "" {
-		t.Fatal("缺少首次初始化令牌")
-	}
-	body, _ := json.Marshal(map[string]string{"token": token, "username": "测试用户", "password": "local-test-password"})
+	body, _ := json.Marshal(map[string]string{"username": "测试用户", "password": "local-test-password"})
 	response, err := client.Post("http://"+address+"/api/v1/setup", "application/json", bytes.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
@@ -146,8 +136,8 @@ func TestServeStartsWithEmbeddedPageAndShutsDown(t *testing.T) {
 	}
 	logs.mu.Lock()
 	defer logs.mu.Unlock()
-	if strings.Count(logs.lines.String(), `"token":`) != 1 || strings.Contains(logs.lines.String(), "local-test-password") {
-		t.Fatal("初始化日志次数错误或泄露了密码")
+	if strings.Contains(logs.lines.String(), `"token":`) || strings.Contains(logs.lines.String(), "local-test-password") {
+		t.Fatal("启动日志泄露了凭据")
 	}
 }
 
@@ -190,11 +180,11 @@ func TestMaintenanceWithoutMasterKeyRevokesSessions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, bootstrap, err := auth.New(t.Context(), auth.Dependencies{DB: db.DB(), Cipher: cipher})
+	service, err := auth.New(t.Context(), auth.Dependencies{DB: db.DB(), Cipher: cipher})
 	if err != nil {
 		t.Fatal(err)
 	}
-	session, err := service.Initialize(t.Context(), bootstrap.Token, "用户", "old-password", "本地测试")
+	session, err := service.Initialize(t.Context(), "用户", "old-password", "本地测试")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,7 +192,7 @@ func TestMaintenanceWithoutMasterKeyRevokesSessions(t *testing.T) {
 	if err := run(t.Context(), []string{"reset-password", "--data", data, "--disable-totp"}, strings.NewReader("  new-password  \n"), &output, nil); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(output.String(), "new-password") || strings.Contains(output.String(), bootstrap.Token) {
+	if strings.Contains(output.String(), "new-password") {
 		t.Fatal("维护输出泄露凭据")
 	}
 	if _, err := service.Authenticate(t.Context(), session.Token, auth.WebSession); err == nil {

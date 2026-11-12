@@ -63,7 +63,7 @@ func graphFixture(t *testing.T) *runtimeGraph {
 
 func graphAdmin(t *testing.T, g *runtimeGraph) auth.Session {
 	t.Helper()
-	session, err := g.authentication.Initialize(t.Context(), g.bootstrap.Token, "本地用户", "graph-test-password", "运行代测试")
+	session, err := g.authentication.Initialize(t.Context(), "本地用户", "graph-test-password", "运行代测试")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +220,7 @@ func TestRuntimeGraphConstructsStoppedDependenciesAndRegistersRealRoutes(t *test
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = g.close(context.Background()) })
-	if g.generation != "first-generation" || g.keySource != backup.KeyExternalFile || g.key != key || g.preferences == nil || g.authentication == nil || g.models == nil || g.notifications == nil || g.core == nil || g.handler == nil || g.bootstrap.Token == "" {
+	if g.generation != "first-generation" || g.keySource != backup.KeyExternalFile || g.key != key || g.preferences == nil || g.authentication == nil || g.models == nil || g.notifications == nil || g.core == nil || g.handler == nil {
 		t.Fatal("运行代依赖或实际密钥没有完整装配")
 	}
 	status, err := g.core.GetSystemStatus(t.Context())
@@ -404,7 +404,7 @@ func TestRuntimeGraphCloseJoinsModelReceiptThenClosesDatabaseAndStream(t *testin
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := g.close(ctx); err != nil || g.close(ctx) != nil || g.key != [32]byte{} || g.bootstrap.Token != "" || g.ctx.Err() == nil {
+	if err := g.close(ctx); err != nil || g.close(ctx) != nil || g.key != [32]byte{} || g.ctx.Err() == nil {
 		t.Fatal("运行代没有完整关闭或清除私有凭据", err)
 	}
 	select {

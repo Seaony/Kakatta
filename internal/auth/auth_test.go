@@ -49,7 +49,6 @@ type fixture struct {
 	s      *Service
 	clock  *testClock
 	cipher *security.Cipher
-	boot   Bootstrap
 	dsn    string
 }
 
@@ -92,7 +91,7 @@ CREATE TABLE auth_tokens (
 		}
 		f.exec(t, "INSERT INTO admin (id, username, password_hash, created_at, password_changed_at) VALUES (1, 'owner', ?, ?, ?)", passwordFixture.phc, f.clock.now().UnixMilli(), f.clock.now().UnixMilli())
 	}
-	f.s, f.boot, err = New(context.Background(), Dependencies{DB: db, Cipher: cipher, Now: f.clock.now})
+	f.s, err = New(context.Background(), Dependencies{DB: db, Cipher: cipher, Now: f.clock.now})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,62 +170,57 @@ func (f *fixture) enable(t *testing.T, identity Identity) TOTPSetup {
 	return setup
 }
 
-func TestInitializeTokenLifetimeAndAtomicSession(t *testing.T) {
+func TestInitializeAtomicSession(t *testing.T) {
 	ctx := context.Background()
 	f := newFixture(t, false)
-	if len(f.boot.Token) != 43 || f.boot.ExpiresAt == nil {
-		t.Fatal("缺少初始化凭据")
-	}
 	status, err := f.s.Setup(ctx)
-	if err != nil || status.Initialized || *status.TokenExpiresAt != f.clock.now().Add(30*time.Minute).UnixMilli() {
-		t.Fatalf("初始化状态错误: %#v %v", status, err)
+	if err != nil || status.Initialized {
+		t.Fatal("新实例状态错误", err)
 	}
-	_, err = f.s.Initialize(ctx, "wrong", "owner", "password", "browser")
-	requireError(t, err, ErrInvalidCredentials)
-	_, err = f.s.Initialize(ctx, f.boot.Token, "  ", "password", "browser")
+	_, err = f.s.Initialize(ctx, "  ", "password", "browser")
 	requireError(t, err, ErrInvalidInput)
 	f.exec(t, "CREATE TRIGGER fail_session BEFORE INSERT ON auth_tokens BEGIN SELECT RAISE(ABORT, 'test failure'); END")
-	_, err = f.s.Initialize(ctx, f.boot.Token, " owner ", "password", "browser")
+	_, err = f.s.Initialize(ctx, " owner ", "password", "browser")
 	requireError(t, err, ErrStorage)
 	if f.count(t, "admin") != 0 || f.count(t, "auth_tokens") != 0 {
-		t.Fatal("会话写失败留下了半成品管理员")
+		t.Fatal("会话失败留下半成品管理员")
 	}
 	f.exec(t, "DROP TRIGGER fail_session")
-	session, err := f.s.Initialize(ctx, f.boot.Token, " owner ", "password", "browser")
+	session, err := f.s.Initialize(ctx, " owner ", "password", "browser")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if session.Identity.Username != "owner" || session.Token == f.boot.Token || session.ExpiresAt != f.clock.now().Add(sessionIdle).UnixMilli() {
+	if session.Identity.Username != "owner" || len(session.Token) != 43 || session.ExpiresAt != f.clock.now().Add(sessionIdle).UnixMilli() {
 		t.Fatal("首次会话错误")
 	}
-	_, err = f.s.Authenticate(ctx, session.Token, WebSession)
+	if _, err := f.s.Authenticate(ctx, session.Token, WebSession); err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.s.Initialize(ctx, "second", "password", "browser")
+	requireError(t, err, ErrAlreadyInitialized)
+	status, err = f.s.Setup(ctx)
+	if err != nil || !status.Initialized {
+		t.Fatal("初始化状态错误", err)
+	}
+	reopened, err := New(ctx, Dependencies{DB: f.db, Cipher: f.cipher, Now: f.clock.now})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = f.s.Initialize(ctx, f.boot.Token, "second", "password", "browser")
-	requireError(t, err, ErrAlreadyInitialized)
-	status, err = f.s.Setup(ctx)
-	if err != nil || !status.Initialized || status.TokenExpiresAt != nil {
-		t.Fatal("初始化成功后仍暴露令牌状态")
-	}
-	_, boot, err := New(ctx, Dependencies{DB: f.db, Cipher: f.cipher, Now: f.clock.now})
-	if err != nil || boot.Token != "" || boot.ExpiresAt != nil {
-		t.Fatal("已有管理员时重新生成初始化凭据")
+	if _, err := reopened.Authenticate(ctx, session.Token, WebSession); err != nil {
+		t.Fatal(err)
 	}
 }
 
-func TestInitializationExpiryAndRestart(t *testing.T) {
+func TestInitializationHasNoStartupDeadline(t *testing.T) {
 	f := newFixture(t, false)
-	ctx := context.Background()
-	f.clock.add(setupLifetime)
-	_, err := f.s.Initialize(ctx, f.boot.Token, "owner", "password", "browser")
-	requireError(t, err, ErrSetupExpired)
-	newService, next, err := New(ctx, Dependencies{DB: f.db, Cipher: f.cipher, Now: f.clock.now})
-	if err != nil || next.Token == "" || next.Token == f.boot.Token {
-		t.Fatal("重启没有产生独立初始化凭据")
+	f.clock.add(24 * time.Hour)
+	reopened, err := New(t.Context(), Dependencies{DB: f.db, Cipher: f.cipher, Now: f.clock.now})
+	if err != nil {
+		t.Fatal(err)
 	}
-	_, err = newService.Initialize(ctx, f.boot.Token, "owner", "password", "browser")
-	requireError(t, err, ErrInvalidCredentials)
+	if _, err := reopened.Initialize(t.Context(), "owner", "password", "browser"); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestPasswordLoginAndTokenKinds(t *testing.T) {
@@ -409,7 +403,7 @@ func TestPasswordChangeAndCLIMaintenance(t *testing.T) {
 	if err != nil || login.Session == nil {
 		t.Fatal(err)
 	}
-	maintenance, _, err := New(ctx, Dependencies{DB: f.db, Now: f.clock.now})
+	maintenance, err := New(ctx, Dependencies{DB: f.db, Now: f.clock.now})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -447,7 +441,7 @@ func TestTOTPEnableLoginReplayAndDisable(t *testing.T) {
 	}
 	_, err = f.s.VerifyChallenge(ctx, login.Challenge, codeAt(t, setup.Secret, f.clock.now()))
 	requireError(t, err, ErrChallengeExpired)
-	restarted, _, err := New(ctx, Dependencies{DB: f.db, Cipher: f.cipher, Now: f.clock.now})
+	restarted, err := New(ctx, Dependencies{DB: f.db, Cipher: f.cipher, Now: f.clock.now})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -541,7 +535,7 @@ func TestTOTPErrorsExpiryAndMaintenanceWithoutKey(t *testing.T) {
 	f.clock.add(challengeLifetime)
 	_, err = f.s.VerifyChallenge(ctx, login.Challenge, codeAt(t, setup.Secret, f.clock.now()))
 	requireError(t, err, ErrChallengeExpired)
-	maintenance, _, err := New(ctx, Dependencies{DB: f.db, Now: f.clock.now})
+	maintenance, err := New(ctx, Dependencies{DB: f.db, Now: f.clock.now})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -595,7 +589,7 @@ func TestStorageErrorsCancellationAndSecretSerialization(t *testing.T) {
 	f := newFixture(t, true)
 	session := f.session(t)
 	secret := "sensitive-value-do-not-print"
-	for _, value := range []any{Bootstrap{Token: secret}, Session{Token: secret}, LoginResult{Challenge: secret}, IssuedToken{Token: secret}, TOTPSetup{Secret: secret, SetupToken: secret, URI: secret}} {
+	for _, value := range []any{Session{Token: secret}, LoginResult{Challenge: secret}, IssuedToken{Token: secret}, TOTPSetup{Secret: secret, SetupToken: secret, URI: secret}} {
 		encoded, err := json.Marshal(value)
 		if err != nil || strings.Contains(string(encoded), secret) || strings.Contains(fmt.Sprint(value), secret) || strings.Contains(fmt.Sprintf("%#v", value), secret) {
 			t.Fatal("敏感凭据进入默认序列化或日志")
@@ -615,7 +609,7 @@ func TestStorageErrorsCancellationAndSecretSerialization(t *testing.T) {
 	}
 	_, err = f.s.Setup(ctx)
 	requireError(t, err, ErrStorage)
-	_, _, err = New(ctx, Dependencies{DB: f.db, Cipher: f.cipher})
+	_, err = New(ctx, Dependencies{DB: f.db, Cipher: f.cipher})
 	requireError(t, err, ErrStorage)
 }
 
@@ -641,7 +635,7 @@ func TestSeparateMaintenanceInvalidatesPendingSetupWhileDisabled(t *testing.T) {
 	}
 	defer otherDB.Close()
 	otherDB.SetMaxOpenConns(1)
-	maintenance, _, err := New(ctx, Dependencies{DB: otherDB, Now: f.clock.now})
+	maintenance, err := New(ctx, Dependencies{DB: otherDB, Now: f.clock.now})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -676,14 +670,14 @@ func TestMissingGenerationAndDamagedTOTPFailClosed(t *testing.T) {
 	if f.count(t, "auth_tokens") != 1 {
 		t.Fatal("缺代数仍建立了新会话")
 	}
-	resumed, _, err := New(ctx, Dependencies{DB: f.db, Cipher: f.cipher, Now: f.clock.now})
+	resumed, err := New(ctx, Dependencies{DB: f.db, Cipher: f.cipher, Now: f.clock.now})
 	if err != nil {
 		t.Fatal(err)
 	}
 	f.exec(t, "UPDATE admin SET totp_enabled_at=?", f.clock.now().UnixMilli())
 	_, err = resumed.PasswordLogin(ctx, "owner", "old password", "browser")
 	requireError(t, err, ErrStorage)
-	_, _, err = New(ctx, Dependencies{DB: f.db, Cipher: f.cipher, Now: f.clock.now})
+	_, err = New(ctx, Dependencies{DB: f.db, Cipher: f.cipher, Now: f.clock.now})
 	requireError(t, err, ErrStorage)
 }
 
@@ -822,19 +816,16 @@ func TestAPITokenCanChangePasswordAndKeepsOnlyItself(t *testing.T) {
 func TestConcurrentInitializationCreatesOnlyOneAdmin(t *testing.T) {
 	f := newFixture(t, false)
 	ctx := context.Background()
-	other, boot, err := New(ctx, Dependencies{DB: f.db, Cipher: f.cipher, Now: f.clock.now})
+	other, err := New(ctx, Dependencies{DB: f.db, Cipher: f.cipher, Now: f.clock.now})
 	if err != nil {
 		t.Fatal(err)
 	}
 	start := make(chan struct{})
 	results := make(chan error, 2)
-	for _, input := range []struct {
-		service *Service
-		token   string
-	}{{f.s, f.boot.Token}, {other, boot.Token}} {
+	for _, service := range []*Service{f.s, other} {
 		go func() {
 			<-start
-			_, err := input.service.Initialize(ctx, input.token, "owner", "password", "browser")
+			_, err := service.Initialize(ctx, "owner", "password", "browser")
 			results <- err
 		}()
 	}
@@ -861,7 +852,7 @@ func TestTOTPLoginCannotDowngradeWithoutValidCipher(t *testing.T) {
 	current := f.session(t)
 	setup := f.enable(t, current.Identity)
 	f.clock.add(30 * time.Second)
-	withoutCipher, _, err := New(ctx, Dependencies{DB: f.db, Now: f.clock.now})
+	withoutCipher, err := New(ctx, Dependencies{DB: f.db, Now: f.clock.now})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -874,7 +865,7 @@ func TestTOTPLoginCannotDowngradeWithoutValidCipher(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wrongKey, _, err := New(ctx, Dependencies{DB: f.db, Cipher: wrongCipher, Now: f.clock.now})
+	wrongKey, err := New(ctx, Dependencies{DB: f.db, Cipher: wrongCipher, Now: f.clock.now})
 	if err != nil {
 		t.Fatal(err)
 	}

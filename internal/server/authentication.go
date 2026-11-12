@@ -168,7 +168,6 @@ func (s *Server) writeFailure(w http.ResponseWriter, r *http.Request, err error)
 	}{
 		{auth.ErrInvalidCredentials, http.StatusUnauthorized},
 		{auth.ErrUnauthenticated, http.StatusUnauthorized},
-		{auth.ErrSetupExpired, http.StatusUnauthorized},
 		{auth.ErrChallengeExpired, http.StatusUnauthorized},
 		{auth.ErrAlreadyInitialized, http.StatusConflict},
 		{auth.ErrInvalidInput, http.StatusBadRequest},

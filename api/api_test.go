@@ -82,7 +82,7 @@ func TestEveryOperationDeclaresItsAuthentication(t *testing.T) {
 	public := map[string]string{
 		"get /healthz":            "none",
 		"get /api/v1/setup":       "initialization_status",
-		"post /api/v1/setup":      "initialization_token",
+		"post /api/v1/setup":      "uninitialized_only",
 		"post /api/v1/auth/login": "username_password",
 		"post /api/v1/auth/totp":  "login_challenge_and_totp",
 	}
@@ -107,6 +107,11 @@ func TestEveryOperationDeclaresItsAuthentication(t *testing.T) {
 			if credential, public := public[method+" "+path]; public {
 				if operation["x-authentication"] != credential || !reflect.DeepEqual(security, []any{}) {
 					t.Fatalf("协议端点的凭据不符：%s %s", method, path)
+				}
+			} else if method == "post" && (path == "/api/v1/backup/restore" || path == "/api/v1/backup/confirm") {
+				expected := append([]any{map[string]any{}}, wantSecurity...)
+				if operation["x-authentication"] != "uninitialized_or_session_or_api_token" || !reflect.DeepEqual(security, expected) {
+					t.Fatalf("恢复接口的首次使用边界不符：%s %s", method, path)
 				}
 			} else if operation["x-authentication"] != "session_or_api_token" || !reflect.DeepEqual(security, wantSecurity) {
 				t.Fatalf("业务端点没有同时接受受保护的会话和接口令牌：%s %s", method, path)
@@ -180,7 +185,7 @@ func TestSecretsHaveTheRightDirection(t *testing.T) {
 		"ProviderInput":         {"api_key"},
 		"ProxyCreate":           {"url"},
 		"ProxyPatch":            {"url"},
-		"SetupRequest":          {"token", "password"},
+		"SetupRequest":          {"password"},
 		"LoginRequest":          {"password"},
 		"TOTPLoginRequest":      {"challenge", "code"},
 		"ChangePasswordRequest": {"old_password", "new_password"},

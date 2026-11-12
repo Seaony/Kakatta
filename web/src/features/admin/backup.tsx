@@ -8,13 +8,23 @@ import type { Schema } from '../../api/types';
 import { useAuthentication } from '../../app/auth-state';
 import { Button, Dialog, FormSection, InlineMessage, PageHeader, TextField } from '../../components/ui';
 import { useTranslation } from '../../i18n';
+import { formatDateTime } from '../../i18n/format';
 import { ErrorNotice, fieldError, useAdminTime, usePrivateAction } from './shared';
 
 export function BackupPage() {
+  const time = useAdminTime();
+  return <BackupContents time={time} />;
+}
+
+export function InitialBackupRestore({ onCancel }: { onCancel(): void }) {
+  const { t, locale } = useTranslation();
+  return <BackupContents initialSetup onCancel={onCancel} time={(at) => at === null ? t('admin.unknown') : `${formatDateTime(at, locale, 'UTC')} (UTC)`} />;
+}
+
+function BackupContents({ time, initialSetup = false, onCancel }: { time(at: number | null): string; initialSetup?: boolean; onCancel?: () => void }) {
   const { t } = useTranslation();
   const api = useApi();
   const queryClient = useQueryClient();
-  const time = useAdminTime();
   const authentication = useAuthentication();
   const exporting = usePrivateAction();
   const preparing = usePrivateAction();
@@ -30,7 +40,7 @@ export function BackupPage() {
   const fileInput = useRef<HTMLInputElement>(null);
   const restoreError = restoring.error;
   const restoreUnauthorized = restoreError instanceof ApiError && restoreError.status === 401;
-  const identityLost = authentication?.authenticated === false || restoreUnauthorized || [exporting.error, preparing.error].some((error) => error instanceof ApiError && error.status === 401);
+  const identityLost = (!initialSetup && authentication?.authenticated === false) || restoreUnauthorized || [exporting.error, preparing.error].some((error) => error instanceof ApiError && error.status === 401);
   const busy = exporting.pending || preparing.pending || restoring.pending;
   const disabled = identityLost || busy || preview !== null;
   const mismatch = confirm.length > 0 && password !== confirm;
@@ -44,6 +54,7 @@ export function BackupPage() {
 
   useEffect(() => {
     if (!identityLost) return;
+    if (initialSetup) void queryClient.invalidateQueries({ queryKey: ['api', 'setup'] });
     setPassword('');
     setConfirm('');
     clearRestoreInput();
@@ -140,23 +151,26 @@ export function BackupPage() {
   </div>;
 
   return <div className="min-w-0 space-y-xxl">
+    {onCancel && <Button onClick={onCancel} disabled={busy}>{t('web.setup.back_to_account')}</Button>}
     <PageHeader title={t('admin.backup.title')} description={t('admin.backup.description')} />
-    <FormSection title={t('admin.backup.export')} description={t('admin.backup.password_reason')}>
-      <form className="max-w-prose space-y-lg" onSubmit={(event) => { event.preventDefault(); exportBackup(); }}>
-        <TextField type="password" label={t('admin.backup.password')} autoComplete="new-password" value={password} onChange={(event) => { setPassword(event.target.value); setExported(false); }} required disabled={disabled} {...fieldError(exporting.field('password'))} />
-        <TextField type="password" label={t('admin.backup.confirm_password')} autoComplete="new-password" value={confirm} onChange={(event) => { setConfirm(event.target.value); setExported(false); }} required disabled={disabled} {...fieldError(mismatch ? t('admin.password.mismatch') : undefined)} />
-        <ErrorNotice error={exporting.error} />
-        {exported && <InlineMessage tone="positive">{t('admin.backup.export_started')}</InlineMessage>}
-        <div className="flex flex-wrap gap-sm">
-          <Button type="submit" variant="primary" busy={exporting.pending} busyLabel={t('admin.backup.exporting')} disabled={disabled || exporting.blocked || !password || !confirm || mismatch}>{t('admin.backup.export_action')}</Button>
-          {exporting.pending && <Button onClick={exporting.cancel}>{t('common.cancel')}</Button>}
-        </div>
-      </form>
-    </FormSection>
-    <FormSection title={t('admin.backup.contents')}>
-      <dl className="max-w-prose space-y-lg text-body"><div className="space-y-sm"><dt className="font-medium">{t('admin.backup.included')}</dt><dd className="text-text-secondary">{t('admin.backup.included_detail')}</dd></div><div className="space-y-sm"><dt className="font-medium">{t('admin.backup.excluded')}</dt><dd className="text-text-secondary">{t('admin.backup.excluded_detail')}</dd></div></dl>
-      <div className="flex flex-wrap gap-lg"><Link to="/tasks" className="inline-flex min-h-control items-center text-body text-accent-text underline">{t('admin.backup.task_export')}</Link><Link to="/results" className="inline-flex min-h-control items-center text-body text-accent-text underline">{t('admin.backup.csv_export')}</Link><Link to="/logs" className="inline-flex min-h-control items-center text-body text-accent-text underline">{t('admin.backup.log_export')}</Link></div>
-    </FormSection>
+    {!initialSetup && <>
+      <FormSection title={t('admin.backup.export')} description={t('admin.backup.password_reason')}>
+        <form className="max-w-prose space-y-lg" onSubmit={(event) => { event.preventDefault(); exportBackup(); }}>
+          <TextField type="password" label={t('admin.backup.password')} autoComplete="new-password" value={password} onChange={(event) => { setPassword(event.target.value); setExported(false); }} required disabled={disabled} {...fieldError(exporting.field('password'))} />
+          <TextField type="password" label={t('admin.backup.confirm_password')} autoComplete="new-password" value={confirm} onChange={(event) => { setConfirm(event.target.value); setExported(false); }} required disabled={disabled} {...fieldError(mismatch ? t('admin.password.mismatch') : undefined)} />
+          <ErrorNotice error={exporting.error} />
+          {exported && <InlineMessage tone="positive">{t('admin.backup.export_started')}</InlineMessage>}
+          <div className="flex flex-wrap gap-sm">
+            <Button type="submit" variant="primary" busy={exporting.pending} busyLabel={t('admin.backup.exporting')} disabled={disabled || exporting.blocked || !password || !confirm || mismatch}>{t('admin.backup.export_action')}</Button>
+            {exporting.pending && <Button onClick={exporting.cancel}>{t('common.cancel')}</Button>}
+          </div>
+        </form>
+      </FormSection>
+      <FormSection title={t('admin.backup.contents')}>
+        <dl className="max-w-prose space-y-lg text-body"><div className="space-y-sm"><dt className="font-medium">{t('admin.backup.included')}</dt><dd className="text-text-secondary">{t('admin.backup.included_detail')}</dd></div><div className="space-y-sm"><dt className="font-medium">{t('admin.backup.excluded')}</dt><dd className="text-text-secondary">{t('admin.backup.excluded_detail')}</dd></div></dl>
+        <div className="flex flex-wrap gap-lg"><Link to="/tasks" className="inline-flex min-h-control items-center text-body text-accent-text underline">{t('admin.backup.task_export')}</Link><Link to="/results" className="inline-flex min-h-control items-center text-body text-accent-text underline">{t('admin.backup.csv_export')}</Link><Link to="/logs" className="inline-flex min-h-control items-center text-body text-accent-text underline">{t('admin.backup.log_export')}</Link></div>
+      </FormSection>
+    </>}
     <FormSection title={t('admin.backup.restore')} description={t('admin.backup.restore_description')}>
       <form className="max-w-prose space-y-lg" onSubmit={(event) => { event.preventDefault(); prepareRestore(); }}>
         <TextField ref={fileInput} type="file" label={t('admin.backup.file')} accept=".zip,application/zip" onChange={(event) => { setFile(event.target.files?.item(0) ?? null); setExpired(false); }} required disabled={disabled} {...fieldError(preparing.field('file'))} />
@@ -178,10 +192,10 @@ export function BackupPage() {
         <p className="text-body text-text-secondary">{t('admin.backup.failure_safe')}</p>
       </div>
     </FormSection>
-    <FormSection title={t('admin.backup.after_restore')}>
+    {!initialSetup && <FormSection title={t('admin.backup.after_restore')}>
       <ul className="max-w-prose list-disc space-y-md pl-xl text-body"><li>{t('admin.backup.check_data')}</li><li>{t('admin.backup.check_accounts')}</li><li>{t('admin.backup.check_tokens')}</li><li>{t('admin.backup.external_key')}</li></ul>
       <p className="max-w-prose text-body text-text-secondary">{t('admin.backup.unknown_result')}</p>
-    </FormSection>
+    </FormSection>}
     <Dialog open={preview !== null} onOpenChange={(open) => { if (!open) setPreview(null); }} title={t('admin.backup.preview_title')} closeLabel={t('common.cancel')}>
       {preview && <div className="space-y-lg">
         <dl className="grid min-w-0 gap-md text-body sm:grid-cols-2">

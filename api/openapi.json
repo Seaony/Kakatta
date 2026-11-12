@@ -75,7 +75,7 @@
         "x-authentication": "initialization_status",
         "responses": {
           "200": {
-            "description": "只返回是否初始化及令牌到期时间；不返回令牌、用户名或设置。",
+            "description": "只返回是否已有管理员。",
             "content": {
               "application/json": {
                 "schema": {
@@ -91,13 +91,13 @@
       },
       "post": {
         "operationId": "setupAdmin",
-        "summary": "以一次性令牌建立管理员",
-        "description": "验证初始化令牌后原子建立管理员。令牌只在内存保留三十分钟，成功后不能再使用。",
+        "summary": "首次建立管理员",
+        "description": "未初始化时直接设置用户名和密码，原子建立管理员并登录；已有管理员时拒绝重复初始化。",
         "tags": [
           "安全"
         ],
         "security": [],
-        "x-authentication": "initialization_token",
+        "x-authentication": "uninitialized_only",
         "requestBody": {
           "required": true,
           "content": {
@@ -137,9 +137,6 @@
           },
           "400": {
             "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
@@ -8483,11 +8480,12 @@
       "post": {
         "operationId": "prepareBackupRestore",
         "summary": "上传并完整验证恢复候选",
-        "description": "仅接收 file/password。先完整校验、解密并验证候选，成功只返回安全预览和单次票据；本步骤不覆盖当前数据。文件按流式准备。",
+        "description": "未初始化时可直接从备份恢复；已有管理员时必须登录。仅接收 file/password。先完整校验、解密并验证候选，成功只返回安全预览和单次票据；本步骤不覆盖当前数据。文件按流式准备。",
         "tags": [
           "导入导出与备份"
         ],
         "security": [
+          {},
           {
             "CookieSession": []
           },
@@ -8498,7 +8496,7 @@
             "BearerToken": []
           }
         ],
-        "x-authentication": "session_or_api_token",
+        "x-authentication": "uninitialized_or_session_or_api_token",
         "responses": {
           "200": {
             "description": "操作完成。",
@@ -8557,11 +8555,12 @@
       "post": {
         "operationId": "confirmBackupRestore",
         "summary": "确认覆盖为已验证备份",
-        "description": "票据绑定原身份及当前运行代，确认前重新校验认证并单次消费。停止和排空旧资源后切换；成功 restored=true，所有旧会话与令牌失效，账号需重新扫码，使用备份中的密码重新登录。",
+        "description": "未初始化时可直接从备份恢复；已有管理员时必须登录。票据绑定原身份及当前运行代，确认前重新校验认证并单次消费。停止和排空旧资源后切换；成功 restored=true，所有旧会话与令牌失效，账号需重新扫码，使用备份中的密码重新登录。",
         "tags": [
           "导入导出与备份"
         ],
         "security": [
+          {},
           {
             "CookieSession": []
           },
@@ -8572,7 +8571,7 @@
             "BearerToken": []
           }
         ],
-        "x-authentication": "session_or_api_token",
+        "x-authentication": "uninitialized_or_session_or_api_token",
         "responses": {
           "200": {
             "description": "操作完成。",
@@ -8885,22 +8884,11 @@
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "initialized",
-          "token_expires_at"
+          "initialized"
         ],
         "properties": {
           "initialized": {
             "type": "boolean"
-          },
-          "token_expires_at": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64",
-            "description": "UTC Unix 毫秒；尚无记录时为 null。",
-            "minimum": -9007199254740991,
-            "maximum": 9007199254740991
           }
         }
       },
@@ -8908,18 +8896,10 @@
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "token",
           "username",
           "password"
         ],
         "properties": {
-          "token": {
-            "type": "string",
-            "minLength": 1,
-            "writeOnly": true,
-            "x-sensitive": true,
-            "description": "容器日志中的一次性初始化令牌。"
-          },
           "username": {
             "type": "string",
             "minLength": 1

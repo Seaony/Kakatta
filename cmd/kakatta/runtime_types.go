@@ -29,7 +29,6 @@ type runtimeGraph struct {
 	database        *store.Store
 	preferences     *appsettings.Store
 	authentication  *auth.Service
-	bootstrap       auth.Bootstrap
 	models          *modelservice.Service
 	notifications   *notification.Service
 	core            *service.Service

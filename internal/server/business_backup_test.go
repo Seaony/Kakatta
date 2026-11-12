@@ -201,6 +201,51 @@ func TestBusinessBackupEncryptedRoundTripAndTicketOwner(t *testing.T) {
 	assertTransferTempEmpty(t, tmp)
 }
 
+func TestFirstRunBackupRestoreOnlyAllowsAnonymousBeforeAccountSetup(t *testing.T) {
+	f, runtime := newBackupHTTPFixture(t)
+	resultTask(t, f)
+	archive := requestTestArchive(t, f, runtime)
+	resultExec(t, f, "DELETE FROM auth_tokens")
+	resultExec(t, f, "DELETE FROM admin")
+	body, media, _ := uploadTestBody(t, uploadTestPart{"file", archive, true}, uploadTestPart{"password", localArchivePassword, false})
+	response := uploadTestRequest(f, "/api/v1/backup/restore", body, media, false)
+	requireStatus(t, response, http.StatusOK)
+	preview := decodeBody[backup.RestorePreview](t, response)
+	requireStatus(t, f.request(http.MethodPost, "/api/v1/backup/export", `{}`, false), http.StatusUnauthorized)
+	confirm := f.request(http.MethodPost, "/api/v1/backup/confirm", `{"ticket":"`+preview.Ticket+`"}`, false)
+	requireStatus(t, confirm, http.StatusOK)
+	if runtime.installed != 1 {
+		t.Fatal("新实例未完成原有备份确认流程")
+	}
+	if _, err := f.auth.Initialize(t.Context(), "new-owner", testPassword, "browser"); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/api/v1/backup/restore", "/api/v1/backup/confirm"} {
+		requireStatus(t, f.request(http.MethodPost, path, `{}`, false), http.StatusUnauthorized)
+	}
+}
+
+func TestFirstRunBackupRestoreRechecksAccountBeforeReplacement(t *testing.T) {
+	f, runtime := newBackupHTTPFixture(t)
+	resultTask(t, f)
+	archive := requestTestArchive(t, f, runtime)
+	resultExec(t, f, "DELETE FROM auth_tokens")
+	resultExec(t, f, "DELETE FROM admin")
+	body, media, _ := uploadTestBody(t, uploadTestPart{"file", archive, true}, uploadTestPart{"password", localArchivePassword, false})
+	response := uploadTestRequest(f, "/api/v1/backup/restore", body, media, false)
+	requireStatus(t, response, http.StatusOK)
+	preview := decodeBody[backup.RestorePreview](t, response)
+	runtime.beforeInstallCheck = func(ctx context.Context) error {
+		_, err := f.auth.Initialize(ctx, "new-owner", testPassword, "browser")
+		return err
+	}
+	response = f.request(http.MethodPost, "/api/v1/backup/confirm", `{"ticket":"`+preview.Ticket+`"}`, false)
+	requireStatus(t, response, http.StatusForbidden)
+	if runtime.installed != 0 {
+		t.Fatal("已有管理员后仍允许匿名覆盖数据")
+	}
+}
+
 func TestBusinessBackupCandidateAuthErrorIsInvalidArchive(t *testing.T) {
 	f, runtime := newBackupHTTPFixture(t)
 	resultExec(t, f, "UPDATE admin SET password_hash='invalid-private-candidate-hash'")

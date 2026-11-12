@@ -176,22 +176,14 @@ func TestDevelopmentRuntimeDriver(t *testing.T) {
 	var saved developmentRuntimeSaved
 	if stage == "first" {
 		developmentRuntimeHTTP(t, client, "GET", developmentRuntimeURL+"/api/v1/me", nil, 401, nil)
-		token, err := os.ReadFile("/data/初始化令牌.txt")
-		info, infoErr := os.Stat("/data/初始化令牌.txt")
-		if err != nil || infoErr != nil || info.Mode().Perm() != 0600 || len(strings.TrimSpace(string(token))) < 26 {
-			t.Fatal("真实模式没有提供私有初始化令牌文件")
-		}
-		developmentRuntimeHTTP(t, client, "POST", developmentRuntimeURL+"/api/v1/setup", map[string]string{"token": strings.TrimSpace(string(token)), "username": "容器验收", "password": "development-runtime-password"}, 200, nil)
-		if _, err := os.Stat("/data/初始化令牌.txt"); !os.IsNotExist(err) {
-			t.Fatal("完成初始化后没有删除令牌文件")
-		}
+		developmentRuntimeHTTP(t, client, "POST", developmentRuntimeURL+"/api/v1/setup", map[string]string{"username": "容器验收", "password": "development-runtime-password"}, 200, nil)
 		developmentRuntimeHTTP(t, client, "POST", developmentRuntimeURL+"/api/v1/auth/login", map[string]string{"username": "容器验收", "password": "development-runtime-password"}, 200, nil)
 		developmentRuntimeHTTP(t, client, "GET", developmentRuntimeURL+"/api/v1/me", nil, 200, nil)
 		saved.Cookies = jar.Cookies(base)
 		if len(saved.Cookies) != 1 || saved.Cookies[0].Name != "kakatta_session" {
 			t.Fatal("真实登录没有建立网页会话")
 		}
-		record("未登录接口拒绝访问；正式令牌初始化、密码登录和令牌清理均通过")
+		record("未登录接口拒绝访问；直接设置账号密码及正常登录均通过")
 		saved = developmentRuntimeSetup(t, client, saved)
 		developmentRuntimeWait(t, "假扫码完成并关闭浏览器", 45*time.Second, func() bool {
 			developmentRuntimeHTTP(t, client, "POST", developmentRuntimeControl+"/control", map[string]string{"action": "login_complete"}, 200, nil)

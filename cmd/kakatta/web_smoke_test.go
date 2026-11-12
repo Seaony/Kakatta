@@ -86,7 +86,7 @@ func TestWebSmoke(t *testing.T) {
 		mobile        bool
 	}{{"desktop", 1280, 900, false}, {"mobile", 393, 852, true}} {
 		t.Run(viewport.name, func(t *testing.T) {
-			base, token, diagnosticFiles := startWebSmokeServer(t)
+			base, diagnosticFiles := startWebSmokeServer(t)
 			options := append(chromedp.DefaultExecAllocatorOptions[:], chromedp.ExecPath(chrome))
 			allocator, stopAllocator := chromedp.NewExecAllocator(t.Context(), options...)
 			defer stopAllocator()
@@ -200,7 +200,7 @@ func TestWebSmoke(t *testing.T) {
 				assertWebSmokeLayout(t, browser, &events)
 			}
 			const username, password = webSmokeUsername, webSmokePassword
-			setup := webSmokePage{"setup", "/setup", "web.setup.title", "main input[name=token]", ""}
+			setup := webSmokePage{"setup", "/setup", "web.setup.title", "main input[name=username]", ""}
 			for _, language := range webSmokeLanguages {
 				browserLanguage := string(language)
 				if language == locales.Ja {
@@ -213,7 +213,6 @@ func TestWebSmoke(t *testing.T) {
 			checkPage(setup, locales.En, false)
 			runWebSmoke(t, browser, &events, smokeBrowserLanguage("zh-CN"))
 			checkPage(setup, locales.ZhCN, false)
-			fillWebSmokeInput(t, browser, &events, `input[name=token]`, token)
 			fillWebSmokeInput(t, browser, &events, `input[name=username]`, username)
 			fillWebSmokeInput(t, browser, &events, `input[name=password]`, password)
 			runWebSmoke(t, browser, &events,
@@ -256,7 +255,7 @@ func TestWebSmoke(t *testing.T) {
 	}
 }
 
-func startWebSmokeServer(t *testing.T) (string, string, webSmokeDiagnosticFiles) {
+func startWebSmokeServer(t *testing.T) (string, webSmokeDiagnosticFiles) {
 	t.Helper()
 	data := t.TempDir()
 	seed := exec.CommandContext(t.Context(), "/tests/seed", "--data", data)
@@ -296,13 +295,7 @@ func startWebSmokeServer(t *testing.T) (string, string, webSmokeDiagnosticFiles)
 			t.Error("网页测试服务关闭超时")
 		}
 	})
-	logs.mu.Lock()
-	token := logs.token
-	logs.mu.Unlock()
-	if token == "" {
-		t.Fatal("缺少测试初始化令牌")
-	}
-	return "http://" + address, token, diagnosticFiles
+	return "http://" + address, diagnosticFiles
 }
 
 func seedWebSmokeSellerMetrics(t *testing.T, data string) {

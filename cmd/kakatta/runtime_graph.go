@@ -77,7 +77,7 @@ func newRuntimeGraphWithResources(life context.Context, cfg config.Config, paths
 	if err != nil {
 		return nil, err
 	}
-	g.authentication, g.bootstrap, err = auth.New(ctx, auth.Dependencies{DB: g.database.DB(), Cipher: cipher, DataDir: paths.DataDir})
+	g.authentication, err = auth.New(ctx, auth.Dependencies{DB: g.database.DB(), Cipher: cipher, DataDir: paths.DataDir})
 	if err != nil {
 		return nil, err
 	}
@@ -232,7 +232,6 @@ func (g *runtimeGraph) close(ctx context.Context) error {
 		}
 		if g.closeErr == nil {
 			clear(g.key[:])
-			g.bootstrap = auth.Bootstrap{}
 		}
 	})
 	return g.closeErr

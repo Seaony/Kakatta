@@ -17,7 +17,7 @@ function localAPI(authenticated: boolean, requested: string[] = []) {
   return createApiClient({ fetch: async (request) => {
     const path = new URL(request.url).pathname;
     requested.push(path);
-    if (path === '/api/v1/setup') return Response.json({ initialized: true, token_expires_at: null });
+    if (path === '/api/v1/setup') return Response.json({ initialized: true });
     if (path === '/api/v1/me') return authenticated ? Response.json(identity) : Response.json({ error: { code: 'auth.unauthenticated', args: {} }, fields: [], request_id: 'local-auth' }, { status: 401 });
     if (path === '/api/v1/settings') return Response.json({ values: { 'general.onboarding_done': true }, sources: {}, warnings: [] });
     throw new Error(`测试没有提供这个本机接口：${path}`);

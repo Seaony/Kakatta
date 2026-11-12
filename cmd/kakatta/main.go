@@ -163,10 +163,6 @@ func serveRuntime(ctx context.Context, cfg config.Config, lookup config.Lookup, 
 		Handler: handler, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: time.Minute,
 		MaxHeaderBytes: 1 << 20, BaseContext: func(net.Listener) context.Context { return ctx },
 	}
-	bootstrap := runtime.graph.bootstrap
-	if bootstrap.Token != "" {
-		logger.Info("首次初始化令牌，只显示这一次", "token", bootstrap.Token, "expires_at", bootstrap.ExpiresAt)
-	}
 	logger.Info("服务已启动", "listen", listener.Addr().String())
 	if err := diagnostic.Event("service_started", map[string]any{"listen": listener.Addr().String()}); err != nil {
 		cleanup, stop := context.WithTimeout(context.Background(), 30*time.Second)
