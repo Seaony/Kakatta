@@ -61,7 +61,10 @@ func (c *Checker) Read(ctx context.Context) (Status, error) {
 	if enabled {
 		next := state.nextCheckAt(now)
 		result.NextCheckAt = &next
-		if current := fullVersion(c.deps.CurrentVersion); !result.Stale && current != "" && state.KnownRelease != nil {
+		if !result.Stale && state.KnownRelease == nil {
+			available := false
+			result.UpdateAvailable = &available
+		} else if current := fullVersion(c.deps.CurrentVersion); !result.Stale && current != "" && state.KnownRelease != nil {
 			available := semver.Compare(fullVersion(state.KnownRelease.Version), current) > 0
 			result.UpdateAvailable = &available
 		}

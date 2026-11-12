@@ -3,6 +3,7 @@ import { apiData, useApi, useApiError, useMessageText } from '../../api/hooks';
 import { apiKey } from '../../api/keys';
 import type { Schema } from '../../api/types';
 import { useTranslation } from '../../i18n';
+import { formatSettingUnit } from '../../i18n/format';
 import { Button, Checkbox, InlineMessage, SelectField, TextField } from '../../components/ui';
 import { taskOverrideKeys, type TaskDraft } from './model';
 
@@ -35,7 +36,7 @@ function inputText(value: Schema<'JsonValue'> | undefined): string {
 }
 
 export function OverrideFields({ value, onChange, definitions, globals, disabled, errorFor }: { value: Schema<'SettingValues'>; onChange(value: Schema<'SettingValues'>): void; definitions: Schema<'SettingDefinition'>[]; globals: Schema<'SettingValues'>; disabled: boolean; errorFor(key: string): string | undefined }) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const messageText = useMessageText();
   return <div className="min-w-0 divide-y divide-border">{definitions.filter((definition) => definition.task_override && taskOverrideKeys.some((key) => definition.key === `crawl.${key}`)).map((definition) => {
     const key = definition.key.slice('crawl.'.length);
@@ -43,8 +44,9 @@ export function OverrideFields({ value, onChange, definitions, globals, disabled
     const effective = overridden ? value[key] : globals[definition.key] ?? definition.default;
     const range = effective !== null && typeof effective === 'object' && !Array.isArray(effective) ? effective : {};
     const label = messageText(definition.label);
-    const unit = definition.unit ? messageText({ code: `units.${definition.unit}`, args: { count: typeof definition.default === 'number' ? definition.default : 2 } }) : '';
+    const unit = formatSettingUnit(definition.unit, locale);
     const defaultRange = definition.default !== null && typeof definition.default === 'object' && !Array.isArray(definition.default) ? definition.default : {};
+    const defaultUnit = formatSettingUnit(definition.unit, locale, definition.kind === 'range' ? typeof defaultRange.min === 'number' && defaultRange.min === defaultRange.max ? defaultRange.min : undefined : typeof definition.default === 'number' ? definition.default : undefined);
     const defaultText = definition.kind === 'range' ? `${inputText(defaultRange.min)}–${inputText(defaultRange.max)}` : inputText(definition.default);
     const minimum = Number(definition.kind === 'range' ? range.min : effective);
     const maximum = Number(definition.kind === 'range' ? range.max : effective);
@@ -58,7 +60,7 @@ export function OverrideFields({ value, onChange, definitions, globals, disabled
         onChange(next);
       }} /></div>
       {definition.kind === 'range' ? <div className="grid min-w-0 gap-lg sm:grid-cols-2"><TextField label={t('web.settings.range_min', { label, unit })} inputMode="decimal" value={inputText(range.min)} disabled={disabled || !overridden} onChange={(event) => onChange({ ...value, [key]: { ...range, min: event.target.value } })} /><TextField label={t('web.settings.range_max', { label, unit })} inputMode="decimal" value={inputText(range.max)} disabled={disabled || !overridden} onChange={(event) => onChange({ ...value, [key]: { ...range, max: event.target.value } })} /></div> : <TextField label={unit ? `${label} (${unit})` : label} inputMode="numeric" value={inputText(effective)} disabled={disabled || !overridden} onChange={(event) => onChange({ ...value, [key]: event.target.value })} />}
-      <dl className="flex min-w-0 flex-wrap gap-x-md gap-y-sm text-body"><dt className="text-text-label">{t('web.settings.default_label')}</dt><dd className="tabular-nums text-text-body">{defaultText}{unit ? ` ${unit}` : ''}</dd></dl>
+      <dl className="flex min-w-0 flex-wrap gap-x-md gap-y-sm text-body"><dt className="text-text-label">{t('web.settings.default_label')}</dt><dd className="tabular-nums text-text-body">{defaultText}{defaultUnit ? ` ${defaultUnit}` : ''}</dd></dl>
       <p className="text-body text-text-secondary">{messageText(definition.recommendation.text)}</p><p className="text-body text-text-secondary">{messageText(definition.risk)}</p>{error && <p role="alert" className="text-body text-danger">{error}</p>}
       {outside && <InlineMessage tone="warning">{messageText({ code: 'settings.outside_recommendation', args: {} })}</InlineMessage>}
     </section>;

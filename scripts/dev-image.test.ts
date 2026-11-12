@@ -4,7 +4,10 @@ import { relative, resolve } from 'node:path';
 import { developmentImageHash } from './dev';
 
 const repository = resolve(import.meta.dir, '..');
-const directories = ['cmd/devhost', 'internal/development', 'internal/devfixture', 'internal/diagnostics', 'internal/xianyu/fake', 'internal/analysis', 'internal/limits', 'internal/locales'];
+const dependencies = Bun.spawn(['go', 'list', '-tags', 'kakatta_dev', '-deps', '-f', '{{if .Module}}{{if .Module.Main}}{{.Dir}}{{end}}{{end}}', './cmd/devhost'], { cwd: repository, env: { ...process.env, GOOS: 'linux', GOPROXY: 'off' }, stdout: 'pipe', stderr: 'pipe' });
+const [dependencyCode, dependencyOutput, dependencyError] = await Promise.all([dependencies.exited, new Response(dependencies.stdout).text(), new Response(dependencies.stderr).text()]);
+if (dependencyCode !== 0) throw new Error(dependencyError);
+const directories = dependencyOutput.trim().split('\n').filter(Boolean).map(directory => relative(repository, directory));
 const files = ['Dockerfile', '.dockerignore', 'compose.dev.yaml', 'go.mod', 'go.sum', 'deploy/entrypoint.sh', 'deploy/dev-entrypoint.sh'];
 
 async function fixture(label = 'match', failure = '') {
@@ -129,8 +132,21 @@ test('散列覆盖管理器实际编译的源码和资源，普通后端网页�
       await writeFile(file, original);
     }
     for (const path of ['internal/service/hot.go', 'web/hot.tsx', 'internal/development/ignored_test.go']) {
-      const file = resolve(f.dir, path); await mkdir(resolve(file, '..'), { recursive: true }); await writeFile(file, '热更新或测试内容');
+      const file = resolve(f.dir, path); await mkdir(resolve(file, '..'), { recursive: true }); await writeFile(file, path.endsWith('.go') ? `package ${path.includes('/development/') ? 'development' : 'service'}\n` : '热更新内容');
       expect(await developmentImageHash(f.dir), path).toBe(before);
     }
   } finally { await f.close(); }
-}, 15_000);
+}, 30_000);
+
+test('管理器新增当前模块依赖时自动计入镜像输入', async () => {
+  const f = await fixture();
+  try {
+    await mkdir(resolve(f.dir, 'internal/newdependency'), { recursive: true });
+    const dependency = resolve(f.dir, 'internal/newdependency/dependency.go');
+    await writeFile(dependency, 'package newdependency\nconst Value = 1\n');
+    await writeFile(resolve(f.dir, 'cmd/devhost/new_dependency.go'), 'package main\nimport _ "github.com/Seaony/Kakatta/internal/newdependency"\n');
+    const before = await developmentImageHash(f.dir);
+    await writeFile(dependency, 'package newdependency\nconst Value = 2\n');
+    expect(await developmentImageHash(f.dir)).not.toBe(before);
+  } finally { await f.close(); }
+});

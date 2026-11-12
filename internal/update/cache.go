@@ -45,7 +45,7 @@ func (state cacheState) validate() error {
 			return errors.New("更新检查时间无效")
 		}
 	}
-	if state.LastAttemptAt == nil && (state.LastSuccessAt != nil || state.RetryAt != nil || state.Error != nil) || (state.LastSuccessAt == nil) != (state.KnownRelease == nil) || state.KnownRelease != nil && !validRelease(*state.KnownRelease) {
+	if state.LastAttemptAt == nil && (state.LastSuccessAt != nil || state.RetryAt != nil || state.Error != nil) || state.KnownRelease != nil && (state.LastSuccessAt == nil || !validRelease(*state.KnownRelease)) {
 		return errors.New("更新检查缓存不完整")
 	}
 	if state.KnownRelease == nil && (state.ETag != "" || state.LastModified != "") || state.ETag != "" && !validETag(state.ETag) {

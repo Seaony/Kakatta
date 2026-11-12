@@ -6,6 +6,7 @@ import type { Schema } from '../../api/types';
 import { ApiError } from '../../api/errors';
 import { Button, FormSection, SelectField, Skeleton, StatePanel, TextField } from '../../components/ui';
 import { useTranslation } from '../../i18n';
+import { formatSettingUnit } from '../../i18n/format';
 import { aiSettingKeys, parseSettingInteger, type AISettingKey, type AISettingsDraft } from './draft';
 import { AIErrorNotice, useAIErrorDescription } from './error-notice';
 import { useUnsavedChanges } from '../../app/unsaved-changes';
@@ -13,7 +14,7 @@ import { fieldWarnings } from '../settings-general/model';
 
 export function AISettingsPanel() {
   const api = useApi();
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const errorText = useAIErrorDescription();
   const messageText = useMessageText();
   const queryClient = useQueryClient();
@@ -84,7 +85,8 @@ export function AISettingsPanel() {
           const disabled = save.isPending || settings.sources[key] === 'environment';
           const warnings = fieldWarnings(definition, { kind: 'scalar', text: value }, draft[key] === undefined ? settings.warnings.filter((warning) => warning.key === key).map((warning) => warning.reason) : []);
           const common = { label: messageText(definition.label), hint: messageText(definition.why), ...(error ? { error } : {}) };
-          const defaultValue = definition.default === null ? t('web.ai.no_proxy') : `${String(definition.default)}${definition.unit ? ` ${messageText({ code: `units.${definition.unit}`, args: { count: typeof definition.default === 'number' ? definition.default : 2 } })}` : ''}`;
+          const unit = formatSettingUnit(definition.unit, locale, typeof definition.default === 'number' ? definition.default : undefined);
+          const defaultValue = definition.default === null ? t('web.ai.no_proxy') : `${String(definition.default)}${unit ? ` ${unit}` : ''}`;
           return <div key={key} className="min-w-0 space-y-sm">
             {key === 'ai.proxy_id' ? <>
               <SelectField {...common} disabled={disabled || !proxies.data} value={currentProxy} onValueChange={(next) => update(key, next)} options={[

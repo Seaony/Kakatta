@@ -181,7 +181,7 @@ func TestUpdateCacheCorruptionFailsClosed(t *testing.T) {
 		func(raw map[string]json.RawMessage) { raw["extra"] = json.RawMessage(`1`) },
 		func(raw map[string]json.RawMessage) { raw["last_attempt_at"] = json.RawMessage(`0`) },
 		func(raw map[string]json.RawMessage) { raw["last_attempt_at"] = json.RawMessage(`null`) },
-		func(raw map[string]json.RawMessage) { raw["known_release"] = json.RawMessage(`null`) },
+		func(raw map[string]json.RawMessage) { raw["last_success_at"] = json.RawMessage(`null`) },
 		func(raw map[string]json.RawMessage) { raw["etag"] = json.RawMessage(`"invalid"`) },
 		func(raw map[string]json.RawMessage) { raw["last_modified"] = json.RawMessage(`"invalid"`) },
 		func(raw map[string]json.RawMessage) {

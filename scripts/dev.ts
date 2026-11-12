@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, readdir } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
+import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -10,7 +10,8 @@ const imageLabel = 'io.github.seaony.kakatta.dev-inputs';
 
 export async function developmentImageHash(projectRoot = root) {
   // 管理进程及其依赖编进镜像；普通后端和网页由挂载源码热更新。
-  const packages = ['cmd/devhost', 'internal/development', 'internal/devfixture', 'internal/diagnostics', 'internal/xianyu/fake', 'internal/analysis', 'internal/limits', 'internal/locales'];
+  const directories = await capture(['go', 'list', '-tags', 'kakatta_dev', '-deps', '-f', '{{if .Module}}{{if .Module.Main}}{{.Dir}}{{end}}{{end}}', './cmd/devhost'], projectRoot, { ...process.env, GOOS: 'linux', CGO_ENABLED: '0' });
+  const packages = directories.split('\n').filter(Boolean).map(directory => relative(projectRoot, directory));
   const sources = await Promise.all(packages.map(async path => (await readdir(resolve(projectRoot, path), { withFileTypes: true }))
     .filter(file => file.isFile() && (file.name.endsWith('.go') && !file.name.endsWith('_test.go') || file.name.endsWith('.json')))
     .map(file => `${path}/${file.name}`)));
@@ -61,8 +62,8 @@ function start(command: string[], cwd = root, env: NodeJS.ProcessEnv = process.e
   return { process: child, exited };
 }
 
-async function capture(command: string[], cwd = root) {
-  const child = spawn(command[0], command.slice(1), { cwd, stdio: ['ignore', 'pipe', 'inherit'], detached: true });
+async function capture(command: string[], cwd = root, env = process.env) {
+  const child = spawn(command[0], command.slice(1), { cwd, env, stdio: ['ignore', 'pipe', 'inherit'], detached: true });
   let output = '';
   child.stdout.on('data', chunk => { output += chunk.toString(); });
   const code = await new Promise<number>((done, failed) => {

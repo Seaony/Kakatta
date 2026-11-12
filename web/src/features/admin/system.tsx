@@ -31,6 +31,8 @@ export function SystemPage() {
   const time = useAdminTime();
   const status = useQuery({ queryKey: apiKey('system-status'), queryFn: async ({ signal }) => apiData(await api.GET('/api/v1/system/status', { signal })) });
   const storageStopped = status.error instanceof ApiError && ['runtime.storage_full', 'runtime.storage_locked', 'runtime.storage_unavailable'].includes(status.error.reason.code);
+  const canReadUpdates = status.isSuccess && !storageStopped;
+  const update = useQuery({ queryKey: apiKey('update-status'), enabled: canReadUpdates, queryFn: async ({ signal }) => apiData(await api.GET('/api/v1/system/update', { signal })) });
   const definitions = useQuery({ queryKey: apiKey('setting-definitions'), queryFn: async ({ signal }) => apiData(await api.GET('/api/v1/settings/definitions', { signal })) });
   const health = useQuery({ queryKey: apiKey('system-status', 'health'), queryFn: async ({ signal }) => {
     try { return apiData(await api.GET('/healthz', { signal })).status === 'ok'; }
@@ -43,11 +45,18 @@ export function SystemPage() {
   });
   const rows = events.data?.pages.flatMap((page) => page.items) ?? [];
   const bytes = (value: number | null) => value === null ? t('admin.unknown') : new Intl.NumberFormat(locale, { style: 'unit', unit: 'megabyte', maximumFractionDigits: 1 }).format(value / (1024 * 1024));
-  const refresh = () => { void status.refetch(); void health.refetch(); void events.refetch(); };
+  const refresh = () => {
+    void health.refetch(); void events.refetch();
+    void status.refetch().then((current) => {
+      // 恢复时由查询重新启用后读取，避免重复请求。
+      if (current.isSuccess && canReadUpdates) void update.refetch();
+    });
+  };
   return <div className="min-w-0 space-y-xxl">
-    <PageHeader title={t('admin.system.title')} description={t('admin.system.description')} actions={<><DiagnosticsExport /><Button onClick={refresh} busy={status.isFetching || health.isFetching || events.isFetching}>{t('admin.refresh')}</Button></>} />
+    <PageHeader title={t('admin.system.title')} description={t('admin.system.description')} actions={<><DiagnosticsExport /><Button onClick={refresh} busy={status.isFetching || health.isFetching || events.isFetching || update.isFetching}>{t('admin.refresh')}</Button></>} />
     <FormSection title={t('admin.system.health')}>
       {health.isPending ? <StatePanel kind="pending" label={t('common.loading')} /> : health.isError ? <ErrorNotice error={health.error} /> : <StatusBadge tone={health.data ? 'positive' : 'danger'}>{t(health.data ? 'admin.system.health_ok' : 'admin.system.health_unavailable')}</StatusBadge>}
+      {!storageStopped && <><ErrorNotice error={update.error} />{update.data?.error && <InlineMessage tone="warning"><p>{message(update.data.error)}</p><Link to="/settings/about" className="inline-flex min-h-control items-center text-accent-text underline">{t('admin.about.updates')}</Link></InlineMessage>}</>}
     </FormSection>
     {status.isError && <><ErrorNotice error={status.error} />{status.data && <InlineMessage tone="warning">{t('admin.stale')}</InlineMessage>}<Button onClick={() => void status.refetch()}>{t('common.retry')}</Button></>}
     {status.isPending && <StatePanel kind="pending" label={t('common.loading')} />}

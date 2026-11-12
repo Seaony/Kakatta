@@ -575,7 +575,7 @@ API Key、推送 Token、Webhook 请求头、代理地址（可能带密码）�
 | `general.appearance` | `system` | `system` / `light` / `dark` |
 | `general.timezone` | 环境变量 `TZ`，没有就用 `Asia/Shanghai` | 启动 Chrome 时把 Chrome 进程的 `TZ` 环境变量设成这个值 |
 | `general.public_url` | 空 | 用户从外面访问 Kakatta 的地址，推送里「在 Kakatta 查看」的链接用它，空就不放这个链接 |
-| `general.update_check` | true | 每天检查一次 GitHub Releases 有没有新版本，有就在网页上提示（`DECISIONS.md` 第 43 条） |
+| `general.update_check` | true | 每天检查一次 GitHub Releases 有没有新版本，有就在网页上提示；接口返回 404 表示暂无发布，正常保存本次成功检查。网络失败只记警告并在系统状态页显示，不改每日频率（`DECISIONS.md` 第 43、140 条） |
 | `general.onboarding_done` | false | |
 | `security.trusted_proxies` | `[]` | 可信的反向代理（IP 或网段）列表。只信任列表里的代理传来的 `X-Forwarded-*` 头，用来取真实 IP（2.3，`DECISIONS.md` 第 40 条）；空 = 一律用连接的来源 IP。也可以用环境变量 `KAKATTA_TRUSTED_PROXIES`（逗号分隔）指定，指定了就以它为准，界面上只读 |
 | `retention.findings_days` | 30 | 7 / 30 / 90 / 0（0 = 永久） |

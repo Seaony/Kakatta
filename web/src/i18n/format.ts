@@ -21,6 +21,10 @@ export function formatInteger(value: number, locale: Locale): string {
   return new Intl.NumberFormat(locale).format(value);
 }
 
+export function formatSettingUnit(unit: string, locale: Locale, count = 2): string {
+  return !unit || unit === 'count' ? '' : formatMessage({ code: `units.${unit}`, args: { count } }, locale);
+}
+
 export function formatDateTime(utcMilliseconds: number, locale: Locale, timeZone: string): string {
   requireInteger(utcMilliseconds);
   if (Number.isNaN(new Date(utcMilliseconds).valueOf())) throw new RangeError('显示时间超出日期范围');

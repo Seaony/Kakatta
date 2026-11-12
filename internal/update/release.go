@@ -47,6 +47,8 @@ func (c *Checker) fetch(ctx context.Context, state cacheState) (fetchOutcome, er
 	now := max(*state.LastAttemptAt, c.deps.Now().UTC().UnixMilli())
 	result := fetchOutcome{retryAt: responseWait(response.Header, now)}
 	switch response.StatusCode {
+	case http.StatusNotFound:
+		return result, nil
 	case http.StatusNotModified:
 		if state.KnownRelease == nil || state.ETag == "" && state.LastModified == "" {
 			return result, errors.New("更新检查返回304但没有条件缓存")

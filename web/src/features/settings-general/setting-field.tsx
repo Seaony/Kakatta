@@ -3,6 +3,7 @@ import { TextField } from '../../components/ui/text-field';
 import { StatusBadge } from '../../components/ui/status-badge';
 import { useMessageText } from '../../api/hooks';
 import { useTranslation } from '../../i18n';
+import { formatSettingUnit } from '../../i18n/format';
 import type { Definition, Draft, JsonValue, Message, Snapshot } from './model';
 import { fieldWarnings } from './model';
 
@@ -17,11 +18,11 @@ export function SettingField({ definition, draft, source, errors, warnings, disa
   disabled: boolean;
   onChange(draft: Draft): void;
 }) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const text = useMessageText();
   const label = text(definition.label);
   const id = fieldID(definition.key);
-  const unit = definition.unit ? text({ code: `units.${definition.unit}`, args: { count: 1 } }) : '';
+  const unit = formatSettingUnit(definition.unit, locale);
   const error = errors.length ? errors.map(text).join(' ') : undefined;
   const readOnly = source === 'environment';
   const locked = disabled || readOnly;
@@ -49,11 +50,12 @@ export function SettingField({ definition, draft, source, errors, warnings, disa
   function displayDefault() {
     const value = definition.default;
     if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-      if ('min' in value && 'max' in value) return `${String(value.min)}–${String(value.max)} ${unit}`;
+      if ('min' in value && 'max' in value) return [`${String(value.min)}–${String(value.max)}`, formatSettingUnit(definition.unit, locale, typeof value.min === 'number' && value.min === value.max ? value.min : undefined)].filter(Boolean).join(' ');
       if ('start' in value && 'end' in value) return `${t(value.enabled ? 'web.settings.enabled' : 'web.settings.disabled')} · ${String(value.start)}–${String(value.end)}`;
     }
     const display = optionLabel(value);
-    return display ? `${display}${unit && !definition.options.length ? ` ${unit}` : ''}` : t('web.settings.empty_value');
+    const defaultUnit = formatSettingUnit(definition.unit, locale, typeof value === 'number' ? value : undefined);
+    return display ? `${display}${defaultUnit && !definition.options.length ? ` ${defaultUnit}` : ''}` : t('web.settings.empty_value');
   }
 
   return <div id={id} tabIndex={-1} className="min-w-0 scroll-mt-lg space-y-md border-b border-border py-xl last:border-b-0">

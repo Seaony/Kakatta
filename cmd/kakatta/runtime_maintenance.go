@@ -181,6 +181,10 @@ func (g *runtimeGraph) logMaintenance(err error) {
 	if errors.As(err, &failure) {
 		reason = failure.Reason
 	}
+	if reason.Code == "update.check_failed" {
+		slog.Warn("更新检查失败", "reason", reason)
+		return
+	}
 	slog.Error("运行维护失败", "reason", reason)
 }
 
